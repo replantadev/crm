@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.7.3
+Version: 1.7.4
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.7.3');
+define('CRM_PLUGIN_VERSION', '1.7.4');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -115,6 +115,73 @@ if (!function_exists('crm_get_estado_label')) {
         ];
         
         return $labels[$estado] ?? ucfirst(str_replace('_', ' ', $estado));
+    }
+}
+
+if (!function_exists('crm_get_estados_sector')) {
+    function crm_get_estados_sector() {
+        return [
+            'borrador'            => ['label' => 'Borrador',            'color' => '#B0B7C3'],
+            'enviado'             => ['label' => 'Enviado',             'color' => '#2AA8F2'],
+            'presupuesto_aceptado' => ['label' => 'Presupuesto Aceptado', 'color' => '#25C685'],
+            'contratos_generados' => ['label' => 'Contratos Generados', 'color' => '#007bff'],
+            'contratos_firmados'  => ['label' => 'Contratos Firmados',  'color' => '#7048E8'],
+        ];
+    }
+}
+
+if (!function_exists('crm_get_action_label')) {
+    function crm_get_action_label($action) {
+        $labels = [
+            'cliente_creado' => 'Cliente Creado',
+            'cliente_actualizado' => 'Cliente Actualizado',
+            'cliente_eliminado' => 'Cliente Eliminado',
+            'archivo_subido' => 'Archivo Subido',
+            'archivo_eliminado' => 'Archivo Eliminado',
+            'sectores_enviados' => 'Sectores Enviados',
+            'test_email_enviado' => 'Test Email Enviado',
+            'test_email_error' => 'Error Test Email',
+            'panel_consultado' => 'Panel Consultado',
+            'sistema_inicializado' => 'Sistema Inicializado',
+            'database_optimized' => 'Base de Datos Optimizada',
+            'database_optimize_error' => 'Error en Optimización',
+            'backup_created' => 'Backup Creado'
+        ];
+        
+        return $labels[$action] ?? ucfirst(str_replace('_', ' ', $action));
+    }
+}
+
+// Funciones básicas para el sistema de logs (versiones simplificadas)
+if (!function_exists('crm_get_available_log_months')) {
+    function crm_get_available_log_months() {
+        // Devolver los últimos 6 meses como ejemplo
+        $months = [];
+        for ($i = 0; $i < 6; $i++) {
+            $months[] = date('Y-m', strtotime("-$i months"));
+        }
+        return $months;
+    }
+}
+
+if (!function_exists('crm_get_logs_by_month')) {
+    function crm_get_logs_by_month($year_month, $limit = 50) {
+        // Función simplificada - devolver array vacío por ahora
+        return [];
+    }
+}
+
+if (!function_exists('crm_log_action')) {
+    function crm_log_action($action_type, $description) {
+        // Función simplificada - por ahora no hacer nada
+        return true;
+    }
+}
+
+if (!function_exists('crm_create_monthly_log_table')) {
+    function crm_create_monthly_log_table($year_month) {
+        // Función simplificada - por ahora no hacer nada
+        return true;
     }
 }
 

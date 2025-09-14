@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.7.7
+Version: 1.7.8
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.7.7');
+define('CRM_PLUGIN_VERSION', '1.7.8');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -294,6 +294,25 @@ function crm_validate_poblacion($poblacion, $provincia = null) {
  * Convierte nombres de acciones técnicos a nombres legibles
  */
 function crm_get_action_label($action) {
+    $labels = [
+        'cliente_creado' => 'Cliente Creado',
+        'cliente_actualizado' => 'Cliente Actualizado',
+        'cliente_eliminado' => 'Cliente Eliminado',
+        'archivo_subido' => 'Archivo Subido',
+        'archivo_eliminado' => 'Archivo Eliminado',
+        'sectores_enviados' => 'Sectores Enviados',
+        'test_email_enviado' => 'Test Email Enviado',
+        'test_email_error' => 'Error Test Email',
+        'backup_created' => 'Backup Creado',
+        'database_optimized' => 'BD Optimizada',
+        'logs_prueba_generados' => 'Logs de Prueba',
+        'panel_consultado' => 'Panel Consultado',
+        'sistema_inicializado' => 'Sistema Iniciado',
+        'debug_sector_save' => 'Debug Guardado'
+    ];
+    
+    return $labels[$action] ?? ucfirst(str_replace('_', ' ', $action));
+}
 
 /**
  * Validador de teléfono español (fijo y móvil)
@@ -1207,7 +1226,6 @@ function crm_handle_ajax_request($estado_inicial)
         'email_cliente'             => $email_cliente,
         'poblacion'                 => $poblacion,
         'provincia'                 => $provincia, // Usar variable validada
-        'area'                      => sanitize_text_field($_POST['area']),
         'tipo'                      => sanitize_text_field($_POST['tipo']),
         'comentarios'               => sanitize_textarea_field($_POST['comentarios']), // Usar función específica para textarea
         'intereses' => maybe_serialize($intereses),

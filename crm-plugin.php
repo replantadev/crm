@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.7.9
+Version: 1.8.0
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.7.9');
+define('CRM_PLUGIN_VERSION', '1.8.0');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -2514,10 +2514,47 @@ function crm_create_activity_log_table() {
 }
 
 // Crear tabla al activar el plugin
+/**
+ * Actualizar estructura de tabla de clientes
+ */
+function crm_update_clients_table_structure() {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'crm_clients';
+    
+    // Verificar si la columna provincia existe
+    $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $table_name LIKE 'provincia'");
+    
+    if (empty($column_exists)) {
+        // Agregar columna provincia
+        $wpdb->query("ALTER TABLE $table_name ADD COLUMN provincia VARCHAR(100) DEFAULT 'León' AFTER poblacion");
+        
+        // Log de la migración
+        error_log("CRM: Columna 'provincia' agregada a la tabla $table_name");
+    }
+    
+    // Verificar otras columnas que podrían faltar
+    $required_columns = [
+        'poblacion' => "VARCHAR(100) DEFAULT ''",
+        'provincia' => "VARCHAR(100) DEFAULT 'León'",
+        'tipo' => "VARCHAR(50) DEFAULT ''",
+        'comentarios' => "TEXT"
+    ];
+    
+    foreach ($required_columns as $column => $definition) {
+        $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $table_name LIKE '$column'");
+        
+        if (empty($column_exists)) {
+            $wpdb->query("ALTER TABLE $table_name ADD COLUMN $column $definition");
+            error_log("CRM: Columna '$column' agregada a la tabla $table_name");
+        }
+    }
+}
+
 function crm_plugin_activation() {
     crm_create_activity_log_table();
     crm_migrate_to_monthly_logs();
     crm_generate_sample_activities();
+    crm_update_clients_table_structure(); // Actualizar estructura de tabla de clientes
 }
 
 /**
@@ -2578,3 +2615,12 @@ function crm_migrate_to_monthly_logs() {
 }
 
 register_activation_hook(__FILE__, 'crm_plugin_activation');
+
+// También ejecutar al cargar el plugin para actualizaciones
+add_action('plugins_loaded', function() {
+    $current_version = get_option('crm_plugin_version', '0.0.0');
+    if (version_compare($current_version, CRM_PLUGIN_VERSION, '<')) {
+        crm_update_clients_table_structure();
+        update_option('crm_plugin_version', CRM_PLUGIN_VERSION);
+    }
+});

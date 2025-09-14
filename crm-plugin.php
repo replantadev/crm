@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.8.0
+Version: 1.8.1
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.8.0');
+define('CRM_PLUGIN_VERSION', '1.8.1');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -2532,6 +2532,28 @@ function crm_update_clients_table_structure() {
         error_log("CRM: Columna 'provincia' agregada a la tabla $table_name");
     }
     
+    // Verificar y actualizar la columna tipo si es ENUM con valores antiguos
+    $tipo_column = $wpdb->get_results("SHOW COLUMNS FROM $table_name LIKE 'tipo'");
+    
+    if (!empty($tipo_column)) {
+        $column_definition = $tipo_column[0]->Type;
+        
+        // Si la columna tipo es ENUM con valores A, B, C, cambiarla a VARCHAR
+        if (strpos($column_definition, "enum('A','B','C')") !== false || 
+            strpos($column_definition, "enum('A', 'B', 'C')") !== false) {
+            
+            // Primero, actualizar los valores existentes
+            $wpdb->query("UPDATE $table_name SET tipo = 'Residencial' WHERE tipo = 'A'");
+            $wpdb->query("UPDATE $table_name SET tipo = 'Autónomo' WHERE tipo = 'B'");
+            $wpdb->query("UPDATE $table_name SET tipo = 'Empresa' WHERE tipo = 'C'");
+            
+            // Cambiar la columna a VARCHAR
+            $wpdb->query("ALTER TABLE $table_name MODIFY COLUMN tipo VARCHAR(50) DEFAULT ''");
+            
+            error_log("CRM: Columna 'tipo' migrada de ENUM a VARCHAR y valores actualizados");
+        }
+    }
+    
     // Verificar otras columnas que podrían faltar
     $required_columns = [
         'poblacion' => "VARCHAR(100) DEFAULT ''",
@@ -2541,6 +2563,9 @@ function crm_update_clients_table_structure() {
     ];
     
     foreach ($required_columns as $column => $definition) {
+        // Solo agregar si no existe (la columna tipo ya la manejamos arriba)
+        if ($column === 'tipo') continue;
+        
         $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $table_name LIKE '$column'");
         
         if (empty($column_exists)) {

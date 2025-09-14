@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.7.8
+Version: 1.7.9
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.7.8');
+define('CRM_PLUGIN_VERSION', '1.7.9');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -213,43 +213,6 @@ function crm_get_estado_label($estado) {
     return $labels[$estado] ?? ucfirst(str_replace('_', ' ', $estado));
 }
 
-/**
- * Obtiene las 50 provincias oficiales de España
- */
-function crm_get_provincias_espana() {
-    return [
-        'Álava', 'Albacete', 'Alicante', 'Almería', 'Asturias', 'Ávila', 'Badajoz', 'Barcelona',
-        'Burgos', 'Cáceres', 'Cádiz', 'Cantabria', 'Castellón', 'Ciudad Real', 'Córdoba', 'Cuenca',
-        'Girona', 'Granada', 'Guadalajara', 'Guipúzcoa', 'Huelva', 'Huesca', 'Islas Baleares', 'Jaén',
-        'La Coruña', 'La Rioja', 'Las Palmas', 'León', 'Lleida', 'Lugo', 'Madrid', 'Málaga',
-        'Murcia', 'Navarra', 'Orense', 'Palencia', 'Pontevedra', 'Salamanca', 'Santa Cruz de Tenerife',
-        'Segovia', 'Sevilla', 'Soria', 'Tarragona', 'Teruel', 'Toledo', 'Valencia', 'Valladolid',
-        'Vizcaya', 'Zamora', 'Zaragoza'
-    ];
-}
-
-/**
- * Valida si una provincia es válida
- */
-function crm_validate_provincia($provincia) {
-    $provincias_validas = crm_get_provincias_espana();
-    return in_array($provincia, $provincias_validas, true);
-}
-
-/**
- * Valida población según la provincia (básico)
- */
-function crm_validate_poblacion($poblacion, $provincia = null) {
-    // Validación básica: no vacío, longitud razonable, caracteres válidos
-    if (empty($poblacion) || strlen($poblacion) < 2 || strlen($poblacion) > 100) {
-        return false;
-    }
-    
-    // Solo caracteres alfanuméricos, espacios, guiones, apostrofes y acentos
-    if (!preg_match('/^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\s\-\'\.]+$/', $poblacion)) {
-        return false;
-    }
-    
 /**
  * Obtiene las 50 provincias oficiales de España
  */

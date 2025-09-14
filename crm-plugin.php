@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.7.0
+Version: 1.7.1
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,50 +23,10 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.7.0');
+define('CRM_PLUGIN_VERSION', '1.7.1');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
-
-// Definir constante para GitHub token si no existe (para repositorios privados)
-if (!defined('CRM_GITHUB_TOKEN')) {
-    define('CRM_GITHUB_TOKEN', ''); // Dejar vacío para repositorios públicos
-}
-
-// Actualizaciones automáticas desde GitHub
-if (file_exists(CRM_PLUGIN_PATH . 'vendor/autoload.php')) {
-    require_once CRM_PLUGIN_PATH . 'vendor/autoload.php';
-}
-
-if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
-    $updateChecker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-        'https://github.com/replantadev/crm/',
-        CRM_PLUGIN_FILE,
-        'crm-basico'
-    );
-    
-    // Si el repositorio es privado y hay token, usarlo para autenticación
-    if (defined('CRM_GITHUB_TOKEN') && !empty(CRM_GITHUB_TOKEN)) {
-        $updateChecker->setAuthentication(CRM_GITHUB_TOKEN);
-    }
-    
-    // Configurar la rama principal
-    $updateChecker->setBranch('master');
-    
-    // Hook para limpiar caché después de actualizar
-    $updateChecker->addFilter('upgrader_process_complete', function() {
-        // Limpiar caché de WordPress después de actualizar
-        if (function_exists('wp_cache_flush')) {
-            wp_cache_flush();
-        }
-        
-        // Limpiar opciones transitorias del plugin
-        delete_transient('crm_plugin_cache');
-        
-        // Forzar regeneración de archivos estáticos
-        update_option('crm_last_update', time());
-    });
-}
 
 // Definir constante para GitHub token si no existe (para repositorios privados)
 if (!defined('CRM_GITHUB_TOKEN')) {

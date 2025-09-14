@@ -2,7 +2,7 @@
 /*
 Plugin Name: CRM Básico
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM.
-Version: 1.6.0
+Version: 1.6.1
 Author: Luis Javier
 */
 
@@ -11,21 +11,27 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Definir constantes del plugin
+define('CRM_PLUGIN_VERSION', '1.6.1');
+define('CRM_PLUGIN_FILE', __FILE__);
+define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
+define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
+
 // Definir constante para GitHub token si no existe (para repositorios privados)
 if (!defined('CRM_GITHUB_TOKEN')) {
     define('CRM_GITHUB_TOKEN', ''); // Dejar vacío para repositorios públicos
 }
 
 // Actualizaciones automáticas desde GitHub
-if (file_exists(plugin_dir_path(__FILE__) . 'vendor/autoload.php')) {
-    require_once plugin_dir_path(__FILE__) . 'vendor/autoload.php';
+if (file_exists(CRM_PLUGIN_PATH . 'vendor/autoload.php')) {
+    require_once CRM_PLUGIN_PATH . 'vendor/autoload.php';
 }
 
 if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
     $updateChecker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
         'https://github.com/replantadev/crm/',
-        __FILE__,
-        'crm-basicp'
+        CRM_PLUGIN_FILE,
+        'crm-basico'
     );
     
     // Si el repositorio es privado y hay token, usarlo para autenticación
@@ -34,22 +40,33 @@ if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
     }
     
     // Configurar la rama principal
-    $updateChecker->setBranch('main');
+    $updateChecker->setBranch('master');
+    
+    // Hook para limpiar caché después de actualizar
+    $updateChecker->addFilter('upgrader_process_complete', function() {
+        // Limpiar caché de WordPress después de actualizar
+        if (function_exists('wp_cache_flush')) {
+            wp_cache_flush();
+        }
+        
+        // Limpiar opciones transitorias del plugin
+        delete_transient('crm_plugin_cache');
+        
+        // Forzar regeneración de archivos estáticos
+        update_option('crm_last_update', time());
+    });
 }
 
-// Evitar acceso directo
-if (!defined('ABSPATH')) {
-    exit;
-}
-// Incluir el archivo de acceso
-require_once plugin_dir_path(__FILE__) . 'acceso.php';
-require_once plugin_dir_path(__FILE__) . 'shortcodes.php';
+// Incluir archivos del plugin
+require_once CRM_PLUGIN_PATH . 'acceso.php';
+require_once CRM_PLUGIN_PATH . 'shortcodes.php';
 
 add_action('wp_enqueue_scripts', 'crm_enqueue_styles');
 function crm_enqueue_styles()
 {
-    wp_enqueue_style('crm-styles', plugin_dir_url(__FILE__) . 'crm-styles.css');
+    wp_enqueue_style('crm-styles', CRM_PLUGIN_URL . 'crm-styles.css', [], CRM_PLUGIN_VERSION);
 }
+
 add_action('wp_enqueue_scripts', 'crm_enqueue_scripts');
 function crm_enqueue_scripts()
 {
@@ -65,8 +82,8 @@ function crm_enqueue_scripts()
         wp_enqueue_script('datatables-js', 'https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js', ['jquery'], null, true);
         wp_enqueue_style('datatables-css', 'https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css');
 
-        // Encolar el script personalizado para inicializar DataTables
-        wp_enqueue_script('crm-lista-altas-js', plugin_dir_url(__FILE__) . '/js/crm-lista-altas2.js', ['jquery', 'datatables-js'], null, true);
+        // Encolar el script personalizado para inicializar DataTables con versión
+        wp_enqueue_script('crm-lista-altas-js', CRM_PLUGIN_URL . 'js/crm-lista-altas2.js', ['jquery', 'datatables-js'], CRM_PLUGIN_VERSION, true);
 
         // Pasar datos al script (como nonce y URL de AJAX)
         wp_localize_script('crm-lista-altas-js', 'crmData', [
@@ -79,7 +96,7 @@ function crm_enqueue_scripts()
         // Encolar DataTables (JavaScript y CSS)
         wp_enqueue_script('datatables-js', 'https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js', ['jquery'], null, true);
         wp_enqueue_style('datatables-css', 'https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css');
-        wp_enqueue_script('todas-las-altas-js', plugin_dir_url(__FILE__) . '/js/todas-las-altasv2.js', ['jquery', 'datatables-js'], null, true);
+        wp_enqueue_script('todas-las-altas-js', CRM_PLUGIN_URL . 'js/todas-las-altasv2.js', ['jquery', 'datatables-js'], CRM_PLUGIN_VERSION, true);
 
         wp_localize_script('todas-las-altas-js', 'crmData', [
             'ajaxurl' => admin_url('admin-ajax.php'),
@@ -143,7 +160,7 @@ function crm_formulario_alta_cliente()
     $intereses = is_array($intereses) ? $intereses : [];
 
     // Encolar el script JavaScript y localizar datos
-    wp_enqueue_script('crm-scriptv2', plugins_url('/js/crm-scriptv7.js', __FILE__), array('jquery'), '1.0', true);
+    wp_enqueue_script('crm-scriptv2', CRM_PLUGIN_URL . 'js/crm-scriptv7.js', array('jquery'), CRM_PLUGIN_VERSION, true);
     wp_localize_script('crm-scriptv2', 'crmData', array(
         'ajaxurl' => admin_url('admin-ajax.php'),
         'nonce'   => wp_create_nonce('crm_alta_cliente_nonce'),

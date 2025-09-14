@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.7.2
+Version: 1.7.3
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.7.2');
+define('CRM_PLUGIN_VERSION', '1.7.3');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -70,8 +70,53 @@ if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
 
 // Incluir archivos del plugin
 require_once CRM_PLUGIN_PATH . 'acceso.php';
-require_once CRM_PLUGIN_PATH . 'crm_plugin.php';
 require_once CRM_PLUGIN_PATH . 'shortcodes.php';
+
+// Definir funciones necesarias para los shortcodes
+if (!function_exists('crm_get_colores_sectores')) {
+    function crm_get_colores_sectores() {
+        return [
+            'energia'            => '#FF6B6B',
+            'alarmas'            => '#FFB400',
+            'telecomunicaciones' => '#00B8D9',
+            'seguros'            => '#6DD400',
+            'renovables'         => '#38B24A',
+        ];
+    }
+}
+
+if (!function_exists('crm_get_estados_disponibles')) {
+    function crm_get_estados_disponibles() {
+        return [
+            'borrador'            => ['label' => 'Borrador',            'color' => '#B0B7C3'],
+            'enviado'             => ['label' => 'Enviado',             'color' => '#2AA8F2'],
+            'presupuesto_aceptado' => ['label' => 'Presupuesto Aceptado', 'color' => '#25C685'],
+            'contratos_generados' => ['label' => 'Contratos Generados', 'color' => '#007bff'],
+            'contratos_firmados'  => ['label' => 'Contratos Firmados',  'color' => '#7048E8'],
+        ];
+    }
+}
+
+if (!function_exists('crm_get_estado_label')) {
+    function crm_get_estado_label($estado) {
+        $labels = [
+            'borrador' => 'Borrador',
+            'enviado' => 'Enviado',
+            'pendiente_revision' => 'Pendiente Revisión',
+            'aceptado' => 'Aceptado',
+            'presupuesto_enviado' => 'Presupuesto Enviado',
+            'presupuesto_generado' => 'Presupuesto Generado',
+            'presupuesto_aceptado' => 'Presupuesto Aceptado',
+            'contratos_firmados' => 'Contratos Firmados',
+            'contratos_generados' => 'Contratos Generados',
+            'cliente_convertido' => 'Cliente Convertido',
+            'reunion_inicial' => 'Reunión Inicial',
+            'cancelado' => 'Cancelado'
+        ];
+        
+        return $labels[$estado] ?? ucfirst(str_replace('_', ' ', $estado));
+    }
+}
 
 add_action('wp_enqueue_scripts', 'crm_enqueue_styles');
 function crm_enqueue_styles()

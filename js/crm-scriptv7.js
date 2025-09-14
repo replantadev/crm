@@ -5,511 +5,456 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
     }
 
-    // Botones del flujo normal:
+    // ————— Botones de flujo normal —————
     const saveButton = form.querySelector("button[name='crm_guardar_cliente']");
-    const sendButton = form.querySelector("button[name='crm_enviar_cliente']");
-    // Botón especial “Guardar como [Estado]”
+    let sendButton = form.querySelector("button[name='crm_enviar_cliente']");
+    if (!sendButton) {
+        sendButton = document.createElement("button");
+        sendButton.type = "submit";
+        sendButton.name = "crm_enviar_cliente";
+        sendButton.style.display = "none";
+        form.appendChild(sendButton);
+    }
+
+    // ————— Botón admin “Guardar como [Estado]” —————
     const adminCustomButton = form.querySelector("#admin-custom-button");
-
-    // Campo hidden con el estado actual
     const estadoHidden = form.querySelector("#estado_formulario");
-    // Select de estado (solo visible/útil para admin)
     const estadoSelect = form.querySelector("select[name='estado']");
-
-    // Guardar el estado original con el que cargó la página:
-    const originalEstado = estadoHidden ? estadoHidden.value : "borrador";
     const forzarCheckbox = document.getElementById("forzar_estado");
-    //const estadoSelect = document.getElementById("estado");
     if (forzarCheckbox && estadoSelect) {
+        estadoSelect.disabled = !forzarCheckbox.checked;
         forzarCheckbox.addEventListener("change", () => {
-            if (forzarCheckbox.checked) {
-                estadoSelect.disabled = false;
+            estadoSelect.disabled = !forzarCheckbox.checked;
+        });
+    }
+    const checkboxes = Array.from(form.querySelectorAll("input[name='intereses[]']"));
+    const cards = Array.from(form.querySelectorAll(".sector-card"));
+    const sectors = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
+    // ————— Mostrar/ocultar cards por “intereses” —————
+    function toggleCards() {
+        const checked = new Set(
+            Array.from(form.querySelectorAll("input[name='intereses[]']:checked"))
+                .map(ch => ch.value)
+        );
+
+        cards.forEach(card => {
+            const sector = sectors.find(s => card.classList.contains(`sector-${s}`));
+            if (!sector) return;
+
+            const hasFiles = card.querySelector(".uploaded-file") !== null;
+            const chk = form.querySelector(`input[name="intereses[]"][value="${sector}"]`);
+            const lbl = form.querySelector(`label[for="interes-${sector}"]`);
+
+            // 1) muestro/oculto card
+            card.style.display = (checked.has(sector) || hasFiles) ? "block" : "none";
+
+            // 2) si hay archivos → checkbox forced + disabled + clase sector
+            if (hasFiles) {
+                chk.checked = true;
+                chk.disabled = true;
+                lbl.classList.add(`interes-disabled-with-files`, `interes-${sector}`);
+                card.classList.add(`card-has-files`);
             } else {
-                estadoSelect.disabled = true;
+                chk.disabled = false;
+                lbl.classList.remove(`interes-disabled-with-files`, `interes-${sector}`);
+                card.classList.remove(`card-has-files`);
             }
         });
-        // Al cargar la página:
-        estadoSelect.disabled = !forzarCheckbox.checked;
     }
 
-    // -------------------------------------------------------------------------
-    // 1) Función para capitalizar (para texto del botón):
-    function capitalize(str) {
-        return str.charAt(0).toUpperCase() + str.slice(1);
-    }
 
-    // -------------------------------------------------------------------------
-    // 2) Mostrar/ocultar los botones del flujo normal
-    function toggleFlowButtons(show) {
-        // show = true => se muestran
-        // show = false => se ocultan
-        if (saveButton) saveButton.style.display = show ? "inline-block" : "none";
-        if (sendButton) sendButton.style.display = show ? "inline-block" : "none";
-    }
 
-    // -------------------------------------------------------------------------
-    // Referencias a contenedores y campos
-    const facturasContainer = document.getElementById("facturas-container");
-    const presupuestosContainer = document.getElementById("presupuestos-container");
-    const contratosFirmadosContainer = document.querySelector(".contratos-firmados-container");
-    const intereses = form.querySelectorAll("input[name='intereses[]']");
+    // 3) Arranco una vez
+    toggleCards();
 
-    // Spinner
+    // Quitar interés desde la card (solo admin)
+    document.body.addEventListener('click', async e => {
+        if (!e.target.matches('.remove-interest-btn')) return;
+        const sector = e.target.dataset.sector;
+        const client_id = form.querySelector('input[name="client_id"]').value;
+
+        // 1) confirm
+        if (!confirm(`¿Estás seguro de que quieres quitar el interés “${sector}”? Esta acción no se puede deshacer.`)) {
+            return;
+        }
+
+        // 2) invocar AJAX para quitar interés en BD
+        const res = await fetch(crmData.ajaxurl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                action: 'crm_quitar_interes',
+                client_id: client_id,
+                sector: sector,
+                nonce: crmData.nonce
+            })
+        }).then(r => r.json());
+
+        if (!res.success) {
+            return showToast(res.data.message || 'Error al quitar interés', 'error');
+        }
+        showToast(res.data.message, 'success');
+
+        // 3) limpiar UI local
+        // eliminar ficheros visibles
+        form.querySelectorAll(`.sector-${sector} .uploaded-file`).forEach(d => d.remove());
+        // desmarcar checkbox
+        const chk = form.querySelector(`input[name="intereses[]"][value="${sector}"]`);
+        if (chk) chk.checked = false;
+        // ocultar card
+        const card = form.querySelector(`.sector-card.sector-${sector}`);
+        if (card) {
+            card.classList.remove('card-has-files');
+            card.style.display = 'none';
+        }
+        // re-renderizar
+        toggleCards();
+    });
+
+
+function showToast(msg, tipo, duration = 4000) {
+    const toast = document.createElement("div");
+    toast.className = "crm-toast " + (tipo || "info");
+    toast.innerHTML = msg;
+    
+    // Colores según el tipo
+    let backgroundColor = "#36bb6f"; // verde por defecto
+    if (tipo === "error") backgroundColor = "#dc3545"; // rojo
+    if (tipo === "info") backgroundColor = "#17a2b8"; // azul
+    
+    Object.assign(toast.style, {
+        position: "fixed",
+        top: "25px", right: "25px",
+        background: backgroundColor,
+        color: "#fff", padding: "12px 24px",
+        borderRadius: "8px",
+        fontSize: "1rem",
+        zIndex: 99999,
+        boxShadow: "0 3px 16px rgba(0,0,0,0.2)",
+        maxWidth: "400px",
+        wordWrap: "break-word"
+    });
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), duration);
+    
+    return toast; // devolver el elemento para poder manipularlo
+}
+
+
+
+
+
+    // cada vez que cambie un interés
+    checkboxes.forEach(chk =>
+        chk.addEventListener("change", toggleCards)
+    );
+
+    // ————— Enviar por sector —————
+    form.addEventListener('click', e => {
+        if (!e.target.matches('.send-sector-btn')) return;
+        const sector = e.target.dataset.sector;
+        // inyectamos el campo para el AJAX
+        const h = document.createElement('input');
+        h.type = 'hidden';
+        h.name = 'enviar_sector[]';
+        h.value = sector;
+        form.appendChild(h);
+        // disparamos el envío AJAX
+        sendClientData('crm_enviar_cliente_ajax');
+    });
+
+
+    // ————— Subida de archivos —————
+    form.addEventListener("click", async e => {
+        if (!e.target.matches(".upload-btn")) return;
+        const btn = e.target;
+        const sector = btn.dataset.sector;
+        const tipo = btn.dataset.tipo; // factura|presupuesto|contrato_firmado
+        const input = form.querySelector(`.upload-input[data-sector="${sector}"][data-tipo="${tipo}"]`);
+        if (!input || !input.files.length) {
+            console.warn("Selecciona archivo antes de subir.");
+            return;
+        }
+
+        for (let file of input.files) {
+            const fd = new FormData();
+            fd.append("file", file);
+            fd.append("sector", sector);
+            fd.append("nonce", crmData.nonce);
+            try {
+                const res = await fetch(`${crmData.ajaxurl}?action=crm_subir_${tipo}`, { method: "POST", body: fd });
+                const json = await res.json();
+                if (json.success) {
+                    const container = btn.closest(".upload-section");
+                    const div = document.createElement("div");
+                    div.className = "uploaded-file";
+                    div.innerHTML = `
+          <a href="${json.data.url}" target="_blank">${json.data.name}</a>
+          <button type="button" class="remove-file-btn" data-url="${json.data.url}" data-tipo="${tipo}">×</button>
+          <input type="hidden" name="${tipo === "factura"
+                            ? `facturas[${sector}][]`
+                            : tipo === "presupuesto"
+                                ? `presupuesto[${sector}][]`
+                                : `contratos_firmados[${sector}][]`
+                        }" value="${json.data.url}">`;
+                    container.insertBefore(div, input);
+                    toggleCards();
+                } else {
+                    console.error(json.data.message);
+                }
+            } catch (err) {
+                console.error("Error AJAX:", err);
+            }
+        }
+
+        input.value = "";
+    });
+
+    // ————— Eliminación de archivos —————
+    form.addEventListener("click", async e => {
+        if (!e.target.matches(".remove-file-btn")) return;
+        const btn = e.target;
+        const url = btn.dataset.url;
+        const tipo = btn.dataset.tipo;
+        const body = new URLSearchParams({ action: `crm_eliminar_${tipo}`, url, nonce: crmData.nonce });
+        try {
+            const res = await fetch(crmData.ajaxurl, {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: body.toString()
+            });
+            const json = await res.json();
+            if (json.success) {
+                btn.closest(".uploaded-file").remove();
+                toggleCards();
+            } else {
+                console.error(json.data.message);
+            }
+        } catch (err) {
+            console.error("Error AJAX:", err);
+        }
+    });
+
+
+
+    // ————— AJAX de envío y validaciones intactas —————
     const spinner = document.createElement("div");
-    spinner.className = "spinner";
-    spinner.style.display = "none";
-
+    spinner.className = "spinner"; spinner.style.display = "none";
     const enviarSection = form.querySelector(".crm-section.enviar");
-    if (enviarSection) {
-        enviarSection.appendChild(spinner);
-    } else {
-        console.error("No se encontró la sección .crm-section.enviar para añadir el spinner.");
-    }
+    if (enviarSection) enviarSection.appendChild(spinner);
 
-    // -------------------------------------------------------------------------
-    // Función para alternar el estado de carga (deshabilitar botones, etc.)
-    const toggleLoadingState = (isLoading) => {
+    const toggleLoadingState = isLoading => {
         if (saveButton) saveButton.disabled = isLoading;
         if (sendButton) sendButton.disabled = isLoading;
         if (adminCustomButton) adminCustomButton.disabled = isLoading;
         spinner.style.display = isLoading ? "inline-block" : "none";
     };
 
-    // -------------------------------------------------------------------------
-    // Respuesta del servidor al procesar el formulario
-    const handleFormResponse = (response) => {
+    const handleFormResponse = response => {
         if (response.success) {
-            alert("¡Los datos se han guardado correctamente!");
+            showToast("¡Los datos se han guardado correctamente!", "success", 3000);
             if (response.data.redirect_url) {
-                window.location.href = response.data.redirect_url;
+                // Esperar 3 segundos antes de redirigir para que se pueda leer el toast
+                setTimeout(() => {
+                    window.location.href = response.data.redirect_url;
+                }, 3000);
             }
         } else {
-            alert(response.data.message || "Error desconocido");
+            showToast(response.data.message || "Error desconocido", "error", 5000);
         }
     };
 
-    // -------------------------------------------------------------------------
-    // Respuesta del servidor al subir archivos
-    const handleUploadResponse = (response, tipo) => {
-        if (response.success) {
-            alert(`Archivo ${response.data.name} subido correctamente.`);
-        } else {
-            alert(response.data.message || "Error desconocido");
+    const sendClientData = async action => {
+        const fd = new FormData(form);
+        // Añado también al FormData aquellos sectores que estén "disabled" pero con archivos
+        form.querySelectorAll('input[name="intereses[]"][disabled]').forEach(chk => {
+            fd.append('intereses[]', chk.value);
+        });
+
+        fd.append("action", action);
+        
+        // Debug: mostrar lo que se está enviando
+        console.log("Enviando acción:", action);
+        console.log("FormData entries:");
+        for (let [key, value] of fd.entries()) {
+            console.log(key, value);
         }
-    };
-
-    // -------------------------------------------------------------------------
-    // Enviar datos del formulario por AJAX
-    const sendClientData = async (action) => {
-        const formData = new FormData(form);
-        formData.append("action", action);
-
+        
         toggleLoadingState(true);
         try {
-            const response = await fetch(crmData.ajaxurl, {
-                method: "POST",
-                body: formData,
-            });
-            const result = await response.json();
-            handleFormResponse(result);
-        } catch (error) {
-            console.error("Error en la solicitud:", error);
-            alert("Ocurrió un error al procesar la solicitud.");
+            const res = await fetch(crmData.ajaxurl, { method: "POST", body: fd });
+            
+            // Verificar si la respuesta HTTP es exitosa
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            }
+            
+            // Obtener el texto de la respuesta primero
+            const responseText = await res.text();
+            console.log("Respuesta cruda del servidor:", responseText);
+            
+            // Intentar parsear como JSON
+            let json;
+            try {
+                json = JSON.parse(responseText);
+            } catch (parseError) {
+                console.error("Error al parsear JSON:", parseError);
+                console.error("Respuesta recibida:", responseText);
+                
+                // Buscar indicios de error de PHP
+                if (responseText.includes('Fatal error') || responseText.includes('Parse error') || responseText.includes('Warning')) {
+                    showToast("Error de PHP detectado. Revisa la consola para más detalles.", "error");
+                } else if (responseText.includes('<html') || responseText.includes('<!DOCTYPE')) {
+                    showToast("El servidor devolvió HTML en lugar de JSON. Posible error de redirección o plugin conflictivo.", "error");
+                } else {
+                    showToast("Respuesta del servidor no válida. Revisa la consola para más detalles.", "error");
+                }
+                return;
+            }
+            
+            handleFormResponse(json);
+        } catch (e) {
+            console.error("Error en la solicitud:", e);
+            showToast("Error de conexión: " + e.message, "error");
         } finally {
             toggleLoadingState(false);
         }
     };
 
-    // -------------------------------------------------------------------------
-    // Validar formulario antes de enviar
-    const validateForm = () => {
-        let isValid = true;
-
-        // Campos requeridos
-        const requiredFields = [
-            { selector: "[name='cliente_nombre']", message: "El nombre del cliente es obligatorio." },
-            { selector: "[name='empresa']", message: "El nombre de la empresa es obligatorio." },
-            { selector: "[name='direccion']", message: "La dirección es obligatoria." },
-        ];
-
-        requiredFields.forEach(({ selector, message }) => {
-            const input = form.querySelector(selector);
-            if (input && !input.value.trim()) {
-                isValid = false;
-                showError(input, message);
-            } else if (input) {
-                clearError(input);
-            }
-        });
-
-        // Validar email
-        const emailField = form.querySelector("[name='email_cliente']");
-        if (emailField && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailField.value)) {
-            isValid = false;
-            showError(emailField, "El email no es válido.");
-        } else if (emailField) {
-            clearError(emailField);
-        }
-
-        // Si NO es admin, requerimos al menos una factura
-        if (!crmData.is_admin) {
-            const facturasUploaded = facturasContainer.querySelector(".uploaded-file");
-            if (!facturasUploaded) {
-                isValid = false;
-                alert("Debes subir al menos una factura para enviar el cliente.");
-            }
-        }
-        // Si es admin, validaciones según el estado:
-        else {
-            if (estadoSelect) {
-                const selectedEstado = estadoSelect.value;
-                // Si "presupuesto_generado", verificar al menos un presupuesto
-                if (selectedEstado === 'presupuesto_generado' &&
-                    !presupuestosContainer.querySelector(".uploaded-file")) {
-                    isValid = false;
-                    alert("Debe subir al menos un presupuesto para generar el presupuesto.");
-                }
-                // Si "contratos_firmados", verificar un contrato subido
-                if (selectedEstado === 'contratos_firmados' &&
-                    (!contratosFirmadosContainer || !contratosFirmadosContainer.querySelector(".uploaded-file"))) {
-                    isValid = false;
-                    alert("Debe subir al menos un contrato firmado.");
-                }
-            }
-        }
-
-        return isValid;
-    };
-
-    // -------------------------------------------------------------------------
-    // Mostrar error
-    const showError = (field, message) => {
+    const showError = (field, msg) => {
         field.classList.add("invalid");
-        let error = field.nextElementSibling;
-        if (!error || !error.classList.contains("error-message")) {
-            error = document.createElement("span");
-            error.className = "error-message";
-            error.textContent = message;
-            field.insertAdjacentElement("afterend", error);
+        let err = field.nextElementSibling;
+        if (!err || !err.classList.contains("error-message")) {
+            err = document.createElement("span");
+            err.className = "error-message";
+            err.textContent = msg;
+            field.insertAdjacentElement("afterend", err);
         }
     };
-
-    // Quitar error
-    const clearError = (field) => {
+    const clearError = field => {
         field.classList.remove("invalid");
-        const error = field.nextElementSibling;
-        if (error && error.classList.contains("error-message")) {
-            error.remove();
-        }
+        let err = field.nextElementSibling;
+        if (err && err.classList.contains("error-message")) err.remove();
     };
 
-    // -------------------------------------------------------------------------
-    // Obtener intereses seleccionados
     const getSelectedInterests = () =>
-        Array.from(intereses)
-            .filter((checkbox) => checkbox.checked)
-            .map((checkbox) => checkbox.value);
+        Array.from(form.querySelectorAll("input[name='intereses[]']")).filter(c => c.checked).map(c => c.value);
 
-    // -------------------------------------------------------------------------
-    // Mostrar/ocultar contenedores de facturas
-    const updateFacturaContainers = () => {
-        const selectedInterests = getSelectedInterests();
-        document.querySelectorAll(".factura-sector").forEach((container) => {
-            const sector = container.id.replace("factura-", "");
-            container.style.display = selectedInterests.includes(sector) ? "block" : "none";
+    const validateForm = () => {
+        let valid = true;
+
+        // 1) Validaciones de campos obligatorios
+        [
+            { sel: "[name='cliente_nombre']", msg: "El nombre del cliente es obligatorio." },
+            { sel: "[name='empresa']", msg: "El nombre de la empresa es obligatorio." },
+            { sel: "[name='direccion']", msg: "La dirección es obligatoria." }
+        ].forEach(({ sel, msg }) => {
+            const inp = form.querySelector(sel);
+            if (inp && !inp.value.trim()) { valid = false; showError(inp, msg); }
+            else if (inp) clearError(inp);
         });
-        // Actualizar la visibilidad de los presupuestos
-        updatePresupuestoContainers();
-    };
 
-    // -------------------------------------------------------------------------
-    // Mostrar/ocultar contenedores de presupuestos según facturas
-    const updatePresupuestoContainers = () => {
-        document.querySelectorAll(".presupuesto-sector").forEach((container) => {
-            const sector = container.id.replace("presupuesto-", "");
-            const facturaUploaded = facturasContainer.querySelector(`#factura-${sector} .uploaded-file`);
-            container.style.display = facturaUploaded ? "block" : "none";
-        });
-    };
+        // 2) Validación de email
+        const email = form.querySelector("[name='email_cliente']");
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value)) {
+            valid = false;
+            showError(email, "El email no es válido.");
+        } else if (email) {
+            clearError(email);
+        }
 
-    // -------------------------------------------------------------------------
-    // Manejador de cambios en inputs de archivo
-    const attachFileChangeHandler = (input) => {
-        input.addEventListener("change", () => {
-            const parentElement = input.closest(".factura-sector, .presupuesto-sector, .contrato-firmado-sector");
-            const agregarDocumentoBtn = parentElement.querySelector(".agregar-documento-btn");
-
-            if (input.files.length > 0 && agregarDocumentoBtn) {
-                agregarDocumentoBtn.style.display = "inline-block";
-            } else if (agregarDocumentoBtn) {
-                agregarDocumentoBtn.style.display = "none";
+        // 3) Si NO es admin y NO estamos guardando borrador → exigir factura
+        if (!crmData.is_admin && estadoHidden.value !== 'borrador') {
+            const factura = form.querySelector(".upload-section.facturas .uploaded-file");
+            if (!factura) {
+                valid = false;
+                showToast("Debes subir al menos una factura para enviar el cliente.", "error");
             }
-        });
-    };
+        }
 
-    // -------------------------------------------------------------------------
-    // Subir archivo al hacer clic en “Agregar Documento”
-    const attachUploadHandler = (button, tipo) => {
-        button.addEventListener("click", async () => {
-            const sector = button.dataset.sector;
-            const input = button.parentElement.querySelector(".upload-input");
-
-            if (!input || input.files.length === 0) {
-                alert("Selecciona al menos un archivo para subir.");
-                return;
-            }
-
-            const uploadedFilesContainer = button.parentElement.querySelector(".uploaded-files");
-            const tipoAccion = `crm_subir_${tipo}`; // e.g. crm_subir_factura
-
-            for (const file of input.files) {
-                const formData = new FormData();
-                formData.append("file", file);
-                formData.append("sector", sector);
-                formData.append("nonce", crmData.nonce);
-
-                try {
-                    const response = await fetch(`${crmData.ajaxurl}?action=${tipoAccion}`, {
-                        method: "POST",
-                        body: formData,
-                    });
-                    const result = await response.json();
-
-                    if (result.success && result.data.url && result.data.name) {
-                        // Añadir un div con el enlace y un botón de eliminar
-                        const fileElement = document.createElement("div");
-                        fileElement.className = "uploaded-file";
-                        fileElement.innerHTML = `
-                            <a href="${result.data.url}" target="_blank">${result.data.name}</a>
-                            <button type="button" class="remove-file" data-url="${result.data.url}">X</button>`;
-
-                        uploadedFilesContainer.appendChild(fileElement);
-                        attachRemoveFileHandler(fileElement.querySelector(".remove-file"));
-
-                        // Input hidden con la URL
-                        const hiddenInput = document.createElement("input");
-                        hiddenInput.type = "hidden";
-                        if (tipo === 'contrato_firmado') {
-                            hiddenInput.name = `contratos_firmados[${sector}][]`;
-                        } else {
-                            hiddenInput.name = `${tipo}[${sector}][]`;
-                        }
-                        hiddenInput.value = result.data.url;
-                        button.parentElement.appendChild(hiddenInput);
-
-                        // Actualizar contenedores si es una factura
-                        if (tipo === 'factura') {
-                            updatePresupuestoContainers();
-                        }
-                        updateSubmitButtonState();
-                        handleUploadResponse(result, tipo);
-                    } else {
-                        console.error("Error en la respuesta del servidor:", result);
-                        alert(`Error al subir archivo: ${result.message || "Error desconocido"}`);
-                    }
-                } catch (error) {
-                    console.error("Error al subir archivo:", error);
-                    alert(`Error al procesar la solicitud: ${error.message}`);
+        // 4) Si SÍ es admin → las validaciones de presupuesto / contrato firmado
+        if (crmData.is_admin) {
+            const estado = estadoSelect.value;
+            if (estado === "presupuesto_generado") {
+                const presu = form.querySelector(".upload-section.presupuestos .uploaded-file");
+                if (!presu) {
+                    valid = false;
+                    showToast("Debe subir al menos un presupuesto para generar el presupuesto.", "error");
                 }
             }
-
-            // Ocultar el botón y limpiar el input
-            button.style.display = "none";
-            input.value = "";
-            updateSubmitButtonState();
-        });
-    };
-
-    // -------------------------------------------------------------------------
-    // Eliminar archivo subido
-    const attachRemoveFileHandler = (button) => {
-        button.addEventListener("click", async () => {
-            const url = button.dataset.url;
-            if (!url) {
-                alert("No se encontró la URL del archivo a eliminar.");
-                return;
-            }
-
-            // Determinar el tipo basado en la clase contenedora
-            let tipo = 'factura';
-            const parentContainer = button.closest(".factura-sector, .presupuesto-sector, .contrato-firmado-sector");
-            if (parentContainer) {
-                if (parentContainer.classList.contains("presupuesto-sector")) {
-                    tipo = 'presupuesto';
-                } else if (parentContainer.classList.contains("contrato-firmado-sector")) {
-                    tipo = 'contrato_firmado';
+            if (estado === "contratos_firmados") {
+                const ctf = form.querySelector(".upload-section.contratos-firmados .uploaded-file");
+                if (!ctf) {
+                    valid = false;
+                    showToast("Debe subir al menos un contrato firmado.", "error");
                 }
             }
-            const tipoAccion = `crm_eliminar_${tipo}`;
+        }
 
-            try {
-                const formData = new URLSearchParams();
-                formData.append("action", tipoAccion);
-                formData.append("url", url);
-                formData.append("nonce", crmData.nonce);
-
-                const response = await fetch(crmData.ajaxurl, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                    body: formData.toString(),
-                });
-                const result = await response.json();
-
-                if (result.success) {
-                    const uploadedFileDiv = button.closest(".uploaded-file");
-                    if (uploadedFileDiv) {
-                        uploadedFileDiv.remove();
-                    }
-                    // Remover también el input hidden que contenga esa URL
-                    const hiddenInput = button.parentElement.querySelector(`input[type="hidden"][value="${url}"]`);
-                    if (hiddenInput) {
-                        hiddenInput.remove();
-                    }
-
-                    updateSubmitButtonState();
-                    alert(result.message || "Archivo eliminado correctamente.");
-                } else {
-                    alert(`Error al eliminar archivo: ${result.data.message}`);
-                }
-            } catch (error) {
-                console.error("Error al eliminar archivo:", error);
-                alert(`Error al procesar la solicitud: ${error.message}`);
-            }
-        });
+        return valid;
     };
 
-    // -------------------------------------------------------------------------
-    // Manejar el envío del formulario
-    form.addEventListener("submit", (event) => {
+
+    form.addEventListener("submit", event => {
         event.preventDefault();
-
-        // Por defecto, asumimos que se pulsó “enviar cliente”
-        let action = "crm_enviar_cliente_ajax";
-
-        if (event.submitter) {
-            switch (event.submitter.name) {
-                case "crm_guardar_cliente":
-                    action = "crm_guardar_cliente_ajax";
-                    break;
-                // Botón “Marcar presupuesto aceptado” (flujo normal)
-                case "crm_marcar_presupuesto_aceptado":
-                    action = "crm_marcar_presupuesto_aceptado";
-                    break;
-                // Botón especial “Guardar como X” (nuevo)
-                case "crm_guardar_como_estado":
-                    action = "crm_enviar_cliente_ajax";
-                    break;
-                default:
-                    action = "crm_enviar_cliente_ajax";
-                    break;
-            }
+        const isEnviar = event.submitter?.name === "crm_enviar_cliente";
+        const isGuardar = event.submitter?.name === "crm_guardar_cliente";
+        const isCustom = event.submitter?.name === "crm_guardar_como_estado";
+        const forzaEstado = forzarCheckbox?.checked;
+        const pendings = Array.from(form.querySelectorAll('.upload-input'))
+            .some(input => input.files.length > 0);
+        if (pendings) {
+            event.preventDefault();
+            showToast('Tienes archivos seleccionados pero no has pulsado "Agregar Documento".\nPor favor hazlo antes de enviar.', "error");
+            return false;
         }
 
-        // Validación
-        if (validateForm()) {
-            sendClientData(action);
+        // 1) Enviar sin forzar → forzamos global "enviado"
+        if (isEnviar && !forzaEstado) {
+            estadoHidden.value = "enviado";
         }
+        // 2) Guardar → "borrador"
+        else if (isGuardar) {
+            estadoHidden.value = "borrador";
+        }
+        // 3) Custom (admin) → dejamos el valor del select
+
+        const action = isGuardar || isCustom
+            ? "crm_guardar_cliente_ajax"
+            : "crm_enviar_cliente_ajax";
+
+        if (validateForm()) sendClientData(action);
     });
 
-    // -------------------------------------------------------------------------
-    // Manejar cambios en el <select name="estado"> (solo Admin)
+
+
+
+    // ————— Admin custom-button y delegado —————
     if (crmData.is_admin && estadoSelect && adminCustomButton) {
         estadoSelect.addEventListener("change", () => {
-            const newEstado = estadoSelect.value;
-            if (estadoHidden) {
-                estadoHidden.value = newEstado;
-            }
-
-            // Si es diferente al original, mostramos el botón especial
-            if (newEstado !== originalEstado) {
-                adminCustomButton.textContent = `Guardar como ${capitalize(newEstado.replace('_', ' '))}`;
+            const ne = estadoSelect.value;
+            estadoHidden.value = ne;
+            if (ne !== originalEstado) {
+                adminCustomButton.textContent = `Guardar como ${capitalize(ne.replace(/_/g, ' '))}`;
                 adminCustomButton.style.display = "inline-block";
-                // Ocultar los botones del flujo normal
                 toggleFlowButtons(false);
             } else {
-                // Volvió al estado original => restauramos botones normales
                 adminCustomButton.style.display = "none";
                 toggleFlowButtons(true);
             }
-            updateSubmitButtonState();
         });
     }
-
-    // -------------------------------------------------------------------------
-    // Manejar cambios en el <select name="delegado"> para email
     if (crmData.is_admin) {
-        const delegadoSelect = form.querySelector('select[name="delegado"]');
-        const emailComercialInput = form.querySelector('#email_comercial');
-        if (delegadoSelect && emailComercialInput) {
-            const updateEmailComercial = () => {
-                const selectedOption = delegadoSelect.options[delegadoSelect.selectedIndex];
-                const email = selectedOption.text.match(/\(([^)]+)\)$/);
-                emailComercialInput.value = email ? email[1] : '';
+        const del = form.querySelector("select[name='delegado']");
+        const emailIn = form.querySelector("#email_comercial");
+        if (del && emailIn) {
+            const upd = () => {
+                const m = del.options[del.selectedIndex].text.match(/\(([^)]+)\)$/);
+                emailIn.value = m?.[1] || "";
             };
-            delegadoSelect.addEventListener('change', updateEmailComercial);
-            updateEmailComercial();
+            del.addEventListener("change", upd);
+            upd();
         }
     }
-
-    // -------------------------------------------------------------------------
-    // Función para actualizar el estado del botón de envío y el campo oculto
-    const updateSubmitButtonState = () => {
-        if (crmData.is_admin) {
-            const estadoSelect = form.querySelector('select[name="estado"]');
-            const selectedEstado = estadoSelect ? estadoSelect.value : 'enviado';
-
-            // Solo si sendButton existe
-            if (sendButton) {
-                sendButton.textContent = capitalize(selectedEstado.replace('_', ' '));
-            }
-
-            estadoHidden.value = selectedEstado;
-
-        } else {
-            // Lógica para rol "comercial"
-            const presupuestosUploaded = presupuestosContainer.querySelector(".uploaded-file");
-            const contratosFirmadosUploaded = contratosFirmadosContainer
-                ? contratosFirmadosContainer.querySelector(".uploaded-file")
-                : null;
-
-            if (presupuestosUploaded && sendButton) {
-                sendButton.textContent = "Generar Presupuesto";
-                estadoHidden.value = "presupuesto_generado";
-            } else if (contratosFirmadosUploaded && sendButton) {
-                sendButton.textContent = "Contratos Firmados";
-                estadoHidden.value = "contratos_firmados";
-            } else if (sendButton) {
-                sendButton.textContent = "Enviar Cliente";
-                estadoHidden.value = "enviado";
-            }
-        }
-    };
-
-
-    // -------------------------------------------------------------------------
-    // Inicializar contenedores y eventos
-    updateFacturaContainers();
-    intereses.forEach((checkbox) => checkbox.addEventListener("change", updateFacturaContainers));
-
-    // Adjuntar manejadores de cambio de archivo a todos los .upload-input
-    document.querySelectorAll(".upload-input").forEach((input) => attachFileChangeHandler(input));
-
-    // Adjuntar manejadores de subida a todos los botones "Agregar Documento"
-    document.querySelectorAll(".agregar-documento-btn").forEach((button) => {
-        const parentClasses = Array.from(button.parentElement.classList);
-        let tipo = 'factura';
-        if (parentClasses.includes('presupuesto-sector')) {
-            tipo = 'presupuesto';
-        } else if (parentClasses.includes('contrato-firmado-sector')) {
-            tipo = 'contrato_firmado';
-        }
-        attachUploadHandler(button, tipo);
-    });
-
-    // Adjuntar manejadores de eliminación a todos los botones "Eliminar Archivo"
-    document.querySelectorAll(".remove-file").forEach((button) => attachRemoveFileHandler(button));
-
-    // Actualizar el estado del botón de envío
-    updateSubmitButtonState();
 
 });

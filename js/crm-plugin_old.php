@@ -1,123 +1,24 @@
 <?php
 /*
 Plugin Name: CRM Básico
-Plugin URI: https://github.com/replantadev/crm/
-Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.7.0
+Description: Plugin para gestionar clientes con roles de comercial y administrador CRM.
+Version: 1.6
 Author: Luis Javier
-Author URI: https://github.com/replantadev
-Update URI: https://github.com/replantadev/crm/
-Requires at least: 5.0
-Tested up to: 6.3
-Requires PHP: 7.4
-License: GPL v2 or later
-License URI: https://www.gnu.org/licenses/gpl-2.0.html
-Text Domain: crm-basico
-Domain Path: /languages
-Network: false
 */
 
 // Evitar acceso directo
 if (!defined('ABSPATH')) {
     exit;
 }
-
-// Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.7.0');
-define('CRM_PLUGIN_FILE', __FILE__);
-define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
-define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
-
-// Definir constante para GitHub token si no existe (para repositorios privados)
-if (!defined('CRM_GITHUB_TOKEN')) {
-    define('CRM_GITHUB_TOKEN', ''); // Dejar vacío para repositorios públicos
-}
-
-// Actualizaciones automáticas desde GitHub
-if (file_exists(CRM_PLUGIN_PATH . 'vendor/autoload.php')) {
-    require_once CRM_PLUGIN_PATH . 'vendor/autoload.php';
-}
-
-if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
-    $updateChecker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-        'https://github.com/replantadev/crm/',
-        CRM_PLUGIN_FILE,
-        'crm-basico'
-    );
-    
-    // Si el repositorio es privado y hay token, usarlo para autenticación
-    if (defined('CRM_GITHUB_TOKEN') && !empty(CRM_GITHUB_TOKEN)) {
-        $updateChecker->setAuthentication(CRM_GITHUB_TOKEN);
-    }
-    
-    // Configurar la rama principal
-    $updateChecker->setBranch('master');
-    
-    // Hook para limpiar caché después de actualizar
-    $updateChecker->addFilter('upgrader_process_complete', function() {
-        // Limpiar caché de WordPress después de actualizar
-        if (function_exists('wp_cache_flush')) {
-            wp_cache_flush();
-        }
-        
-        // Limpiar opciones transitorias del plugin
-        delete_transient('crm_plugin_cache');
-        
-        // Forzar regeneración de archivos estáticos
-        update_option('crm_last_update', time());
-    });
-}
-
-// Definir constante para GitHub token si no existe (para repositorios privados)
-if (!defined('CRM_GITHUB_TOKEN')) {
-    define('CRM_GITHUB_TOKEN', ''); // Dejar vacío para repositorios públicos
-}
-
-// Actualizaciones automáticas desde GitHub
-if (file_exists(CRM_PLUGIN_PATH . 'vendor/autoload.php')) {
-    require_once CRM_PLUGIN_PATH . 'vendor/autoload.php';
-}
-
-if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
-    $updateChecker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-        'https://github.com/replantadev/crm/',
-        CRM_PLUGIN_FILE,
-        'crm-basico'
-    );
-    
-    // Si el repositorio es privado y hay token, usarlo para autenticación
-    if (defined('CRM_GITHUB_TOKEN') && !empty(CRM_GITHUB_TOKEN)) {
-        $updateChecker->setAuthentication(CRM_GITHUB_TOKEN);
-    }
-    
-    // Configurar la rama principal
-    $updateChecker->setBranch('master');
-    
-    // Hook para limpiar caché después de actualizar
-    $updateChecker->addFilter('upgrader_process_complete', function() {
-        // Limpiar caché de WordPress después de actualizar
-        if (function_exists('wp_cache_flush')) {
-            wp_cache_flush();
-        }
-        
-        // Limpiar opciones transitorias del plugin
-        delete_transient('crm_plugin_cache');
-        
-        // Forzar regeneración de archivos estáticos
-        update_option('crm_last_update', time());
-    });
-}
-
-// Incluir archivos del plugin
-require_once CRM_PLUGIN_PATH . 'acceso.php';
-require_once CRM_PLUGIN_PATH . 'shortcodes.php';
+// Incluir el archivo de acceso
+require_once plugin_dir_path(__FILE__) . 'acceso.php';
+require_once plugin_dir_path(__FILE__) . 'shortcodes.php';
 
 add_action('wp_enqueue_scripts', 'crm_enqueue_styles');
 function crm_enqueue_styles()
 {
-    wp_enqueue_style('crm-styles', CRM_PLUGIN_URL . 'crm-styles.css', [], CRM_PLUGIN_VERSION);
+    wp_enqueue_style('crm-styles', plugin_dir_url(__FILE__) . 'crm-styles.css', time(), true);
 }
-
 add_action('wp_enqueue_scripts', 'crm_enqueue_scripts');
 function crm_enqueue_scripts()
 {
@@ -133,8 +34,8 @@ function crm_enqueue_scripts()
         wp_enqueue_script('datatables-js', 'https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js', ['jquery'], null, true);
         wp_enqueue_style('datatables-css', 'https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css');
 
-        // Encolar el script personalizado para inicializar DataTables con versión
-        wp_enqueue_script('crm-lista-altas-js', CRM_PLUGIN_URL . 'js/crm-lista-altas2.js', ['jquery', 'datatables-js'], CRM_PLUGIN_VERSION, true);
+        // Encolar el script personalizado para inicializar DataTables
+        wp_enqueue_script('crm-lista-altas-js', plugin_dir_url(__FILE__) . 'js/crm-lista-altas2.js', ['jquery', 'datatables-js'], time(), true);
 
         // Pasar datos al script (como nonce y URL de AJAX)
         wp_localize_script('crm-lista-altas-js', 'crmData', [
@@ -147,7 +48,7 @@ function crm_enqueue_scripts()
         // Encolar DataTables (JavaScript y CSS)
         wp_enqueue_script('datatables-js', 'https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js', ['jquery'], null, true);
         wp_enqueue_style('datatables-css', 'https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css');
-        wp_enqueue_script('todas-las-altas-js', CRM_PLUGIN_URL . 'js/todas-las-altasv2.js', ['jquery', 'datatables-js'], CRM_PLUGIN_VERSION, true);
+        wp_enqueue_script('todas-las-altas-js', plugin_dir_url(__FILE__) . 'js/todas-las-altasv2.js', ['jquery', 'datatables-js'], time(), true);
 
         wp_localize_script('todas-las-altas-js', 'crmData', [
             'ajaxurl' => admin_url('admin-ajax.php'),
@@ -178,10 +79,79 @@ function crm_enqueue_chartjs()
 }
 
 
+/**
+ * Estados y colores por interés/sector
+ */
+function crm_get_estados_sector()
+{
+    return [
+        'borrador'            => ['label' => 'Borrador',            'color' => '#B0B7C3'],
+        'enviado'             => ['label' => 'Enviado',             'color' => '#2AA8F2'],
+        'presupuesto_aceptado' => ['label' => 'Presupuesto Aceptado', 'color' => '#25C685'],
+        'contratos_generados' => ['label' => 'Contratos Generados', 'color' => '#007bff'],
+        'contratos_firmados'  => ['label' => 'Contratos Firmados',  'color' => '#7048E8'],
+    ];
+}
+
+
+function crm_get_colores_sectores()
+{
+    return [
+        'energia'            => '#FF6B6B',
+        'alarmas'            => '#FFB400',
+        'telecomunicaciones' => '#00B8D9',
+        'seguros'            => '#6DD400',
+        'renovables'         => '#38B24A',
+    ];
+}
+
+/**
+ * Orden de estados para comparación
+ */
+function crm_get_orden_estados()
+{
+    /* añadimos el nuevo nivel antes de firmados */
+    return [
+        'borrador',
+        'enviado',
+        'presupuesto_aceptado',
+        'contratos_generados',
+        'contratos_firmados'
+    ];
+}
+
+/**
+ * Renderiza badges de estado por sector/interés.
+ */
+function crm_render_estado_badges($estado_por_sector = [], $sectores = [])
+{
+    $out = '';
+    foreach ($sectores as $sector) {
+        $estado = $estado_por_sector[$sector] ?? 'borrador';
+        $label  = ucfirst($sector) . ': ' . ucfirst(str_replace('_', ' ', $estado));
+        $out   .= '<span class="crm-badge estado ' . $estado . '">' . $label . '</span>';
+    }
+    return $out;
+}
+
+/**
+ * Devuelve el estado global de un cliente basado en el array estado_por_sector.
+ */
+function crm_calcula_estado_global($estado_por_sector)
+{
+    $orden = crm_get_orden_estados();
+    $min_idx = 99;
+
+    foreach ($estado_por_sector as $estado) {
+        $idx = array_search($estado, $orden);
+        if ($idx !== false && $idx < $min_idx) $min_idx = $idx;
+    }
+    return $orden[$min_idx] ?? 'borrador';
+}
+
 
 // Crear shortcode para el formulario de alta de cliente
 
-// Encolar y localizar el script JavaScript en el shortcode
 add_shortcode('crm_alta_cliente', 'crm_formulario_alta_cliente');
 function crm_formulario_alta_cliente()
 {
@@ -198,11 +168,19 @@ function crm_formulario_alta_cliente()
 
     // Determinar estado actual
     $estado_actual = isset($client_data) && isset($client_data['estado']) ? $client_data['estado'] : 'borrador';
-
+    $estado_por_sector = isset($client_data['estado_por_sector'])
+        ? maybe_unserialize($client_data['estado_por_sector'])
+        : [];
     $facturas = isset($client_data['facturas']) ? maybe_unserialize($client_data['facturas']) : [];
     $presupuestos = isset($client_data['presupuesto']) ? maybe_unserialize($client_data['presupuesto']) : [];
     $contratos_firmados = isset($client_data['contratos_firmados']) ? maybe_unserialize($client_data['contratos_firmados']) : [];
     $intereses = isset($client_data['intereses']) ? maybe_unserialize($client_data['intereses']) : [];
+    /* ---- NUEVO: cargar contratos generados ---- */
+    $contratos_generados = isset($client_data['contratos_generados'])
+        ? maybe_unserialize($client_data['contratos_generados'])
+        : [];
+    $contratos_generados = is_array($contratos_generados) ? $contratos_generados : [];
+
 
     // Asegurar que `facturas`, `presupuestos`, `contratos_firmados`, e `intereses` sean arrays
     $facturas = is_array($facturas) ? $facturas : [];
@@ -211,7 +189,7 @@ function crm_formulario_alta_cliente()
     $intereses = is_array($intereses) ? $intereses : [];
 
     // Encolar el script JavaScript y localizar datos
-    wp_enqueue_script('crm-scriptv2', CRM_PLUGIN_URL . 'js/crm-scriptv7.js', array('jquery'), CRM_PLUGIN_VERSION, true);
+    wp_enqueue_script('crm-scriptv2', plugins_url('/js/crm-scriptv7.js', __FILE__), array('jquery'), '1.0', true);
     wp_localize_script('crm-scriptv2', 'crmData', array(
         'ajaxurl' => admin_url('admin-ajax.php'),
         'nonce'   => wp_create_nonce('crm_alta_cliente_nonce'),
@@ -221,6 +199,57 @@ function crm_formulario_alta_cliente()
 
     ob_start();
 ?>
+
+    <!-- ——— Plantillas ocultas para la generación dinámica de secciones ——— -->
+    <div id="crm-templates" style="display:none;">
+        <template id="tpl-factura">
+            <div class="factura-sector" id="factura-{{sector}}">
+                <h4>Facturas de {{sectorLabel}}</h4>
+                <div class="uploaded-files" data-sector="{{sector}}">
+                    <p>No hay facturas disponibles.</p>
+                </div>
+                <input type="file" name="facturas[{{sector}}][]" multiple data-sector="{{sector}}" class="upload-input">
+                <button type="button" class="agregar-documento-btn" data-sector="{{sector}}" style="display:none;">Agregar Documento</button>
+            </div>
+        </template>
+
+        <template id="tpl-presupuesto">
+            <div class="presupuesto-sector" id="presupuesto-{{sector}}">
+                <h4>Presupuestos para {{sectorLabel}}</h4>
+                <div class="uploaded-files" data-sector="{{sector}}">
+                    <p>No hay presupuestos disponibles.</p>
+                </div>
+                <input type="file" name="presupuesto[{{sector}}][]" multiple data-sector="{{sector}}" class="upload-input">
+                <button type="button" class="agregar-documento-btn" data-sector="{{sector}}" style="display:none;">Agregar Documento</button>
+                <?php if (current_user_can('comercial')): ?>
+                    <button type="button" class="enviar-sector-btn enviar-{{sector}}" data-sector="{{sector}}" style="display:none;">
+                        Enviar {{sectorLabel}}
+                    </button>
+                <?php endif; ?>
+                <input type="hidden" name="estado_{{sector}}" value="borrador">
+            </div>
+        </template>
+
+        <template id="tpl-contrato-firmado">
+            <div class="contrato-firmado-sector" id="contrato-firmado-{{sector}}">
+                <h4>Contrato firmado para {{sectorLabel}}</h4>
+                <div class="uploaded-files" data-sector="{{sector}}">
+                    <p>No hay contratos disponibles.</p>
+                </div>
+                <input type="file" name="contratos_firmados[{{sector}}][]" multiple data-sector="{{sector}}" class="upload-input">
+                <button type="button" class="agregar-documento-btn" data-sector="{{sector}}" style="display:none;">Agregar Documento</button>
+            </div>
+        </template>
+    </div>
+
+
+
+
+
+
+
+
+
     <form id="crm-alta-cliente-form" method="post" enctype="multipart/form-data">
         <?php wp_nonce_field('crm_alta_cliente_nonce', 'crm_nonce'); ?>
         <input type="hidden" name="action" value="crm_guardar_cliente_ajax">
@@ -237,6 +266,13 @@ function crm_formulario_alta_cliente()
                 <?php if ($estado_actual === 'borrador'): ?>
                     <p><small>Este cliente está guardado como borrador. Aún no se ha enviado para revisión.</small></p>
                 <?php endif; ?>
+                <?php
+                // en crm_formulario_alta_cliente(), antes de ob_start():
+                $sectores = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
+                echo '<div class="crm-badges-estado">';
+                echo crm_render_estado_badges($estado_por_sector, $sectores);
+                echo '</div>';
+                ?>
             </div>
             <div class="half-width">
                 <?php if (current_user_can('crm_admin')): ?>
@@ -257,6 +293,21 @@ function crm_formulario_alta_cliente()
                     <input type="hidden" name="delegado" value="<?php echo esc_attr(isset($client_data['delegado']) ? $client_data['delegado'] : wp_get_current_user()->display_name); ?>">
                     <input type="hidden" name="email_comercial" value="<?php echo esc_attr(isset($client_data['email_comercial']) ? $client_data['email_comercial'] : wp_get_current_user()->user_email); ?>">
                 <?php endif; ?>
+                <?php if (current_user_can('crm_admin')): ?>
+
+                    <label for="estado">Estado global:</label>
+                    <select name="estado" id="estado">
+                        <option value="" disabled <?php selected($estado_actual, ''); ?>>Selecciona un estado</option>
+                        <?php foreach (crm_get_estados_sector() as $val => $arr): ?>
+                            <option value="<?php echo esc_attr($val) ?>" <?php selected($estado_actual, $val) ?>>
+                                <?php echo esc_html($arr['label']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+
+                <?php endif; ?>
+
+
             </div>
         </div>
 
@@ -314,6 +365,13 @@ function crm_formulario_alta_cliente()
                 ?>
             </div>
         </div>
+        <?php
+        $estado_por_sector = isset($client_data['estado_por_sector'])
+            ? maybe_unserialize($client_data['estado_por_sector'])
+            : [];
+
+
+        ?>
 
         <!-- Facturas -->
         <div class="crm-section facturas">
@@ -350,10 +408,13 @@ function crm_formulario_alta_cliente()
         <!-- Presupuestos -->
         <div class="crm-section presupuestos">
             <h3>Presupuestos del Cliente</h3>
+            <small><em>Sube los presupuestos aceptados por el cliente para cada sector de interés. El sistema notificará al administrador para que genere los contratos</em></small>
             <div id="presupuestos-container">
                 <?php
                 foreach ($sectores as $sector) {
                     $is_visible = in_array($sector, $intereses) ? 'block' : 'none';
+                    $estado_actual_sector = $estado_por_sector[$sector] ?? 'borrador';
+
                     echo "<div class='presupuesto-sector' id='presupuesto-{$sector}' style='display: {$is_visible};'>";
                     echo "<h4>Presupuestos para " . ucfirst($sector) . "</h4>";
 
@@ -373,7 +434,27 @@ function crm_formulario_alta_cliente()
 
                     echo "<input type='file' name='presupuesto[{$sector}][]' multiple data-sector='{$sector}' class='upload-input'>";
                     echo "<button type='button' class='agregar-documento-btn' data-sector='{$sector}' style='display: none;'>Agregar Documento</button>";
-                    echo "</div>";
+                ?>
+
+                    <?php if (current_user_can('comercial') && $estado_actual_sector === 'borrador') {
+                    ?>
+
+                        <!-- botón ENVIAR sector -->
+                        <button type="button"
+                            class="enviar-sector-btn enviar-<?php echo esc_attr($sector); ?>"
+                            data-sector="<?php echo esc_attr($sector); ?>">
+                            Enviar <?php echo ucfirst($sector); ?>
+                        </button>
+                    <?php } ?>
+
+
+
+                    <!-- SIEMPRE enviamos el estado de este sector (para el admin o para mantener valor) -->
+                    <input type="hidden"
+                        name="estado_<?php echo esc_attr($sector); ?>"
+                        value="<?php echo esc_attr($estado_actual_sector); ?>">
+                <?php
+                    echo '</div>';   //  cierro .presupuesto-sector
                 }
                 ?>
             </div>
@@ -383,20 +464,30 @@ function crm_formulario_alta_cliente()
             <!-- Contratos Generados -->
             <div class="crm-section contratos-generados">
                 <h3>Contratos Generados</h3>
-                <div class="contratos-generados-container">
-                    <?php
-                    // Asegurar que $contratos_generados es un array
-                    $contratos_generados = isset($client_data['contratos_generados']) ? maybe_unserialize($client_data['contratos_generados']) : [];
-                    $contratos_generados = is_array($contratos_generados) ? $contratos_generados : [];
 
+                <div class="chips-list">
+                    <?php
+                    $contratos_generados = is_array($contratos_generados) ? $contratos_generados : [];
                     foreach ($sectores as $sector) {
+                        $estado_sector = $estado_por_sector[$sector] ?? 'borrador';
+                        if (! in_array($estado_sector, ['presupuesto_aceptado', 'contratos_generados', 'contratos_firmados'])) {
+                            continue;   // aún no procede
+                        }
+
                         $checked = in_array($sector, $contratos_generados) ? 'checked' : '';
-                        echo "<input type='checkbox' id='contrato-generado-{$sector}' name='contratos_generados[]' value='{$sector}' {$checked}>";
-                        echo "<label for='contrato-generado-{$sector}'>" . ucfirst($sector) . "</label>";
-                    }
                     ?>
+                        <label class="toggle-chip sector-<?php echo $sector; ?><?php echo $checked ? ' checked' : ''; ?>">
+                            <input type="checkbox"
+                                class="contrato-gen"
+                                name="contratos_generados[]"
+                                value="<?php echo esc_attr($sector); ?>"
+                                <?php echo $checked; ?>>
+                            <?php echo ucfirst($sector); ?>
+                        </label>
+                    <?php } ?>
                 </div>
             </div>
+
 
             <!-- Contratos Firmados -->
             <div class="crm-section contratos-firmados">
@@ -437,65 +528,101 @@ function crm_formulario_alta_cliente()
             <div class="crm-section estado">
                 <label for="estado">Estado del Cliente:</label>
                 <label style="display:inline-block;margin-right:10px;">
-                <input type="checkbox" name="forzar_estado" id="forzar_estado" value="1">
-                Forzar el estado del cliente al seleccionado aquí
+                    <input type="checkbox" name="forzar_estado" id="forzar_estado" value="1">
+                    Forzar el estado del cliente al seleccionado aquí
                 </label>
-                <select name="estado" id="estado" required>
-                    <option value="" disabled <?php echo empty($estado_actual) ? 'selected' : ''; ?>>Selecciona un estado</option>
-                    <option value="borrador" <?php selected($estado_actual, 'borrador'); ?>>Borrador</option>
-                    <option value="enviado" <?php selected($estado_actual, 'enviado'); ?>>Enviado</option>
-                    <option value="presupuesto_generado" <?php selected($estado_actual, 'presupuesto_generado'); ?>>Presupuesto Generado</option>
-                    <option value="presupuesto_aceptado" <?php selected($estado_actual, 'presupuesto_aceptado'); ?>>Presupuesto Aceptado</option>
-                    <option value="contratos_firmados" <?php selected($estado_actual, 'contratos_firmados'); ?>>Contratos Firmados</option>
-                </select>
+                <?php
+                // Mostramos un selector de estado por cada interés marcado
+                foreach ($sectores as $sector) {
+                    if (in_array($sector, $intereses)) {
+                        $estado_valor = isset($estado_por_sector[$sector]) ? $estado_por_sector[$sector] : 'borrador';
+                ?>
+                        <div class="crm-section estado-sector">
+                            <label for="estado_<?php echo esc_attr($sector); ?>">
+                                Estado para <?php echo ucfirst($sector); ?>:
+                            </label>
+                            <select name="estado_<?php echo esc_attr($sector); ?>" id="estado_<?php echo esc_attr($sector); ?>">
+                                <option value="" disabled <?php selected($estado_valor, ''); ?>>Selecciona un estado</option>
+                                <option value="borrador" <?php selected($estado_valor, 'borrador'); ?>>Borrador</option>
+                                <option value="enviado" <?php selected($estado_valor, 'enviado'); ?>>Enviado</option>
+                                <option value="presupuesto_aceptado" <?php selected($estado_valor, 'presupuesto_aceptado'); ?>>Presupuesto Aceptado</option>
+                                <option value="contratos_generados" <?php selected($estado_valor, 'contratos_generados'); ?>>Contratos Generados</option>
+                                <option value="contratos_firmados" <?php selected($estado_valor, 'contratos_firmados'); ?>>Contratos Firmados</option>
+                            </select>
+
+                        </div>
+                <?php
+                    }
+                }
+                ?>
             </div>
         <?php endif; ?>
 
         <!-- Botón de Enviar -->
 
         <div class="crm-section enviar">
-            <!-- Borrador o pendiente de revisión -->
-            <?php if ($estado_actual === 'borrador' || $estado_actual === 'pendiente_revision'): ?>
+
+            <?php
+            /* ---------------- ESTADOS “tempranos” ---------------- */
+            if (in_array($estado_actual, ['borrador', 'pendiente_revision'])): ?>
+
                 <button type="submit" name="crm_guardar_cliente" class="crm-submit-btn">
                     Guardar como borrador
                 </button>
+
                 <button type="submit" name="crm_enviar_cliente" class="crm-submit-btn enviar-btn">
                     Enviar para revisión
                 </button>
 
-                <!-- Ya se envió -->
-            <?php elseif ($estado_actual === 'enviado'): ?>
-                <p>Este cliente ya fue enviado. Puedes modificar los datos y volver a enviarlo si es necesario.</p>
+            <?php
+            /* ---------------- YA ENVIADO, pero hay algún sector sin enviar -------------- */
+            elseif ($estado_actual === 'enviado' && in_array('borrador', $estado_por_sector)): ?>
+
+                <p>Ficha enviada. Aún quedan sectores en borrador, puedes completar
+                    la información y volver a enviarla.</p>
+
                 <button type="submit" name="crm_enviar_cliente" class="crm-submit-btn">
                     Guardar y volver a enviar
                 </button>
 
-                <!-- Presupuesto generado -->
-            <?php elseif ($estado_actual === 'presupuesto_generado'): ?>
-                <p>El presupuesto ya está generado. ¿Deseas marcarlo como aceptado?</p>
-                <button type="submit"
-                    name="crm_marcar_presupuesto_aceptado"
-                    class="crm-submit-btn"
-                    style="background-color: green; color: #fff;">
-                    Marcar como Aceptado
-                </button>
-
-                <!-- Presupuesto aceptado -->
-            <?php elseif ($estado_actual === 'presupuesto_aceptado'): ?>
-                <p>El presupuesto ha sido aceptado. Puedes subir contratos o cambiar el estado.</p>
             <?php endif; ?>
 
-            <!-- Botón especial "Guardar como (select)" — por defecto oculto -->
+
+            <?php
+            /* -------- Mensajes finos al COMERCIAL según cada sector -------- */
+            if (current_user_can('comercial')) {
+                foreach ($estado_por_sector as $sec => $est) {
+
+
+
+                    if ($est === 'presupuesto_aceptado') {
+                        echo "<p class='info-sector'>Presupuesto de <strong>" . ucfirst($sec) .
+                            "</strong> aceptado ✓ &nbsp;•&nbsp; el administrador generará el contrato.</p>";
+                    }
+
+                    if ($est === 'contratos_generados') {
+                        echo "<p class='info-sector'>Contrato de <strong>" . ucfirst($sec) .
+                            "</strong> generado &nbsp;•&nbsp; pendiente de firma del cliente.</p>";
+                    }
+                    if ($est === 'contratos_firmados') {
+                        echo "<p class='info-sector'>
+                                    Contrato de <strong>" . ucfirst($sec) . "</strong> firmado ✓.
+                                </p>";
+                    }
+                }
+            }
+            ?>
+
             <?php if (current_user_can('crm_admin')): ?>
-                <button type="submit"
-                    name="crm_guardar_como_estado"
-                    id="admin-custom-button"
+                <button type="submit" name="crm_guardar_como_estado" id="admin-custom-button"
                     class="crm-submit-btn"
-                    style="display: none; margin-left: 10px; background-color: #666; color:#fff;">
-                    <!-- El texto se seteará dinámicamente por JS -->
+                    style="display:none;margin-left:10px;background:#666;color:#fff;">  Guardar como <?php echo ucfirst(str_replace('_',' ',$estado_actual)); ?>
                 </button>
             <?php endif; ?>
+
         </div>
+
+
 
 
         <?php if (isset($_GET['success'])): ?>
@@ -543,7 +670,21 @@ function crm_enviar_cliente_ajax()
 // Función principal para manejar la lógica AJAX
 function crm_handle_ajax_request($estado)
 {
+    /* ------------------------------------------------------------------ *
+ *  Normalizar nombres de campos (alias singular ↔ plural)            *
+ * ------------------------------------------------------------------ */
+    if (isset($_POST['factura'])            && !isset($_POST['facturas'])) {
+        $_POST['facturas']          = $_POST['factura'];
+    }
+    if (isset($_POST['presupuestos'])       && !isset($_POST['presupuesto'])) {
+        $_POST['presupuesto']       = $_POST['presupuestos'];
+    }
+    if (isset($_POST['contrato_firmado'])   && !isset($_POST['contratos_firmados'])) {
+        $_POST['contratos_firmados'] = $_POST['contrato_firmado'];
+    }
+
     global $wpdb;
+    $sectores = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
     $table_name = $wpdb->prefix . "crm_clients";
     error_log('Iniciando crm_handle_ajax_request. Estado: ' . $estado);
     error_log('$_POST: ' . print_r($_POST, true));
@@ -565,21 +706,26 @@ function crm_handle_ajax_request($estado)
     $facturas_existentes = is_array($facturas_existentes) ? $facturas_existentes : [];
     $facturas_nuevas = [];
 
-    if (isset($_FILES['factura']) && is_array($_FILES['factura']['name'])) {
-        foreach ($_FILES['factura']['name'] as $sector => $files) {
-            if (!is_array($files)) continue;
-
+    // *** Procesar Facturas ***
+    if (isset($_FILES['facturas']) && is_array($_FILES['facturas']['name'])) {
+        foreach ($_FILES['facturas']['name'] as $sector => $files) {
+            if (! is_array($files)) continue;
             foreach ($files as $key => $name) {
-                if ($_FILES['factura']['error'][$sector][$key] === UPLOAD_ERR_OK && !empty($_FILES['factura']['tmp_name'][$sector][$key])) {
-                    $upload = wp_handle_upload([
+                if (
+                    $_FILES['facturas']['error'][$sector][$key] === UPLOAD_ERR_OK
+                    && ! empty($_FILES['facturas']['tmp_name'][$sector][$key])
+                ) {
+                    // — saca el array a una variable —
+                    $file = [
                         'name'     => $name,
                         'type'     => $_FILES['facturas']['type'][$sector][$key],
                         'tmp_name' => $_FILES['facturas']['tmp_name'][$sector][$key],
                         'error'    => $_FILES['facturas']['error'][$sector][$key],
                         'size'     => $_FILES['facturas']['size'][$sector][$key],
-                    ], ['test_form' => false]);
-
-                    if (!isset($upload['error'])) {
+                    ];
+                    // — pásalo a wp_handle_upload() —
+                    $upload = wp_handle_upload($file, ['test_form' => false]);
+                    if (! isset($upload['error'])) {
                         $facturas_nuevas[$sector][] = $upload['url'];
                     } else {
                         error_log("Error al subir factura: " . $upload['error']);
@@ -591,6 +737,7 @@ function crm_handle_ajax_request($estado)
         }
     }
 
+
     foreach ($facturas_nuevas as $sector => $files) {
         if (!isset($facturas_existentes[$sector])) {
             $facturas_existentes[$sector] = [];
@@ -598,14 +745,19 @@ function crm_handle_ajax_request($estado)
         $facturas_existentes[$sector] = array_unique(array_merge($facturas_existentes[$sector], $files));
     }
 
-    if (!empty($_POST['factura'])) {
-        foreach ($_POST['factura'] as $sector => $files) {
+    // Recorremos TODOS los sectores posibles
+    foreach ($sectores as $sector) {
+        // Si en POST hay facturas para este sector
+        if (isset($_POST['facturas'][$sector])) {
             if (!isset($facturas_existentes[$sector])) {
                 $facturas_existentes[$sector] = [];
             }
-            $facturas_existentes[$sector] = array_unique(array_merge($facturas_existentes[$sector], $files));
+            $facturas_existentes[$sector] = array_unique(array_merge($facturas_existentes[$sector], $_POST['facturas'][$sector]));
         }
+        // Si NO viene nada en POST pero ya hay facturas guardadas, NO tocar ese sector
+        // (no hace falta hacer nada aquí, ya que $facturas_existentes conserva el valor)
     }
+
 
     // *** Procesar Presupuestos ***
     $presupuestos_existentes = isset($client_data['presupuesto']) ? maybe_unserialize($client_data['presupuesto']) : [];
@@ -618,13 +770,15 @@ function crm_handle_ajax_request($estado)
 
             foreach ($files as $key => $name) {
                 if ($_FILES['presupuesto']['error'][$sector][$key] === UPLOAD_ERR_OK && !empty($_FILES['presupuesto']['tmp_name'][$sector][$key])) {
-                    $upload = wp_handle_upload([
+                    $file = [
                         'name'     => $name,
                         'type'     => $_FILES['presupuesto']['type'][$sector][$key],
                         'tmp_name' => $_FILES['presupuesto']['tmp_name'][$sector][$key],
                         'error'    => $_FILES['presupuesto']['error'][$sector][$key],
                         'size'     => $_FILES['presupuesto']['size'][$sector][$key],
-                    ], ['test_form' => false]);
+                    ];
+                    $upload = wp_handle_upload($file, ['test_form' => false]);
+
 
                     if (!isset($upload['error'])) {
                         $presupuestos_nuevos[$sector][] = $upload['url'];
@@ -645,14 +799,19 @@ function crm_handle_ajax_request($estado)
         $presupuestos_existentes[$sector] = array_unique(array_merge($presupuestos_existentes[$sector], $files));
     }
 
-    if (!empty($_POST['presupuesto'])) {
-        foreach ($_POST['presupuesto'] as $sector => $files) {
+    foreach ($sectores as $sector) {
+        // Si en POST hay presupuestos para este sector
+        if (isset($_POST['presupuesto'][$sector])) {
             if (!isset($presupuestos_existentes[$sector])) {
                 $presupuestos_existentes[$sector] = [];
             }
-            $presupuestos_existentes[$sector] = array_unique(array_merge($presupuestos_existentes[$sector], $files));
+            $presupuestos_existentes[$sector] = array_unique(array_merge($presupuestos_existentes[$sector], $_POST['presupuesto'][$sector]));
         }
+        // Si NO viene nada en POST pero ya hay presupuestos guardados, NO tocar ese sector
+        // (no hace falta hacer nada aquí, ya que $presupuestos_existentes conserva el valor)
     }
+
+
 
 
     // *** Procesar Contratos Firmados ***
@@ -666,13 +825,17 @@ function crm_handle_ajax_request($estado)
 
             foreach ($files as $key => $name) {
                 if ($_FILES['contratos_firmados']['error'][$sector][$key] === UPLOAD_ERR_OK && !empty($_FILES['contratos_firmados']['tmp_name'][$sector][$key])) {
-                    $upload = wp_handle_upload([
+
+                    $file = [
                         'name'     => $name,
                         'type'     => $_FILES['contratos_firmados']['type'][$sector][$key],
                         'tmp_name' => $_FILES['contratos_firmados']['tmp_name'][$sector][$key],
                         'error'    => $_FILES['contratos_firmados']['error'][$sector][$key],
                         'size'     => $_FILES['contratos_firmados']['size'][$sector][$key],
-                    ], ['test_form' => false]);
+                    ];
+                    // Subir el archivo y manejar errores
+                    $upload = wp_handle_upload($file, ['test_form' => false]);
+
 
                     if (!isset($upload['error'])) {
                         $contratos_firmados_nuevos[$sector][] = $upload['url'];
@@ -693,104 +856,110 @@ function crm_handle_ajax_request($estado)
         $contratos_firmados_existentes[$sector] = array_unique(array_merge($contratos_firmados_existentes[$sector], $files));
     }
 
-    if (!empty($_POST['contratos_firmados'])) {
-        foreach ($_POST['contratos_firmados'] as $sector => $files) {
+    foreach ($sectores as $sector) {
+        // Si en POST hay contratos firmados para este sector
+        if (isset($_POST['contratos_firmados'][$sector])) {
             if (!isset($contratos_firmados_existentes[$sector])) {
                 $contratos_firmados_existentes[$sector] = [];
             }
-            $contratos_firmados_existentes[$sector] = array_unique(array_merge($contratos_firmados_existentes[$sector], $files));
+            $contratos_firmados_existentes[$sector] = array_unique(array_merge($contratos_firmados_existentes[$sector], $_POST['contratos_firmados'][$sector]));
         }
+        // Si NO viene nada en POST pero ya hay contratos guardados, NO tocar ese sector
+        // (no hace falta hacer nada aquí, ya que $contratos_firmados_existentes conserva el valor)
     }
 
 
     // *** Procesar Contratos Generados ***
-    $contratos_generados = isset($_POST['contratos_generados']) ? maybe_serialize($_POST['contratos_generados']) : '';
+    $contratos_generados = isset($client_data['contratos_generados'])
+        ? maybe_unserialize($client_data['contratos_generados'])
+        : [];
 
-    if (current_user_can('crm_admin') && isset($_POST['estado'])) {
-        $estado = sanitize_text_field($_POST['estado']);
-        error_log("Admin ha seleccionado en el <select> el estado: $estado");
-    }
-    // 1) Ver si el usuario es admin y marcó “forzar_estado”
-    if (
-        current_user_can('crm_admin')
-        && isset($_POST['forzar_estado'])           // si el checkbox está marcado
-        && $_POST['forzar_estado'] == '1'           // y su valor es '1'
-        && isset($_POST['estado'])                  // y existe el <select>
-    ) {
-        $estado = sanitize_text_field($_POST['estado']);
-        error_log("Admin ha forzado el estado manualmente a: $estado");
-    }
+    $contratos_generados = is_array($contratos_generados) ? $contratos_generados : [];
 
-    // 2) Ahora continuamos con el FLUJO:
-    // Determinar estado basado en flujo
-    if ($estado === 'enviado' && !empty($presupuestos_nuevos)) {
-        $estado = 'presupuesto_generado';
-    } elseif ($estado === 'presupuesto_generado' && isset($_POST['presupuesto_aceptado'])) {
 
-        $estado = 'presupuesto_aceptado';
-    } elseif ($estado === 'presupuesto_aceptado' && !empty($contratos_firmados_nuevos)) {
-        $estado = 'contratos_firmados';
+    /* ----------  CONTRATOS GENERADOS  ---------- */
+    /* (checkboxes solo envían los que están marcados) */
+    $contratos_generados = isset($_POST['contratos_generados'])
+        ? array_map('sanitize_text_field', (array) $_POST['contratos_generados'])
+        : [];
+
+    // ----- ¿Viene de “Enviar cliente”? y ¿Admin forzando estado? -----
+    $is_send_action = current_filter() === 'wp_ajax_crm_enviar_cliente_ajax';
+    $forzar        = current_user_can('crm_admin') && ! empty($_POST['forzar_estado']);
+
+    // ----- Carga valores previos de estado por sector -----
+    $estado_por_sector = [];
+    if (! empty($client_data['estado_por_sector'])) {
+        $tmp = maybe_unserialize($client_data['estado_por_sector']);
+        $estado_por_sector = is_array($tmp) ? $tmp : [];
     }
 
-    if (isset($_POST['crm_marcar_presupuesto_aceptado'])) {
-        // Sobrescribimos el $estado directamente
-        $estado = 'presupuesto_aceptado';
-        // error_log("Se ha forzado estado a presupuesto_aceptado por botón en el formulario.");
-    }
-    if (!isset($_POST['crm_marcar_presupuesto_aceptado'])) {
-        if ($estado === 'enviado' && !empty($presupuestos_nuevos)) {
-            $estado = 'presupuesto_generado';
-        } elseif ($estado === 'presupuesto_generado' && isset($_POST['presupuesto_aceptado'])) {
-            $estado = 'presupuesto_aceptado';
-        } elseif ($estado === 'presupuesto_aceptado' && !empty($contratos_firmados_nuevos)) {
-            $estado = 'contratos_firmados';
+    // helpers para el bucle
+    $sectores_a_enviar = (array) ($_POST['enviar_sector']        ?? []);
+    $contratos_gen     = (array) ($_POST['contratos_generados'] ?? []);
+
+    foreach ($sectores as $sector) {
+        if (empty($_POST['intereses']) || ! in_array($sector, $_POST['intereses'], true)) {
+            continue;
         }
+        $est = $estado_por_sector[$sector] ?? 'borrador';
+
+        // 1) SI VIENE DEL “Enviar sector” ➜ lo marcamos enviado
+        if (
+            $is_send_action && ! $forzar
+            && in_array($sector, $sectores_a_enviar, true)
+            && $est === 'borrador'
+        ) {
+            $est = 'enviado';
+        }
+
+        // 2) ADMIN forzando manualmente (sólo si checkeó el “forzar_estado”)
+        if (
+            current_user_can('crm_admin')
+            && ! empty($_POST['forzar_estado'])
+            && isset($_POST["estado_{$sector}"])
+        ) {
+            $estado_por_sector[$sector] = sanitize_text_field($_POST["estado_{$sector}"]);
+            continue;
+        }
+
+
+        // 3) Si tiene presupuesto → presupuesto_aceptado
+        if (
+            in_array($est, ['borrador', 'enviado'], true)
+            && (
+                ! empty($presupuestos_nuevos[$sector])
+                || ! empty($presupuestos_existentes[$sector])
+            )
+        ) {
+            $est = 'presupuesto_aceptado';
+        }
+
+        // Si admin marcó contratos generados…
+        if ($est === 'presupuesto_aceptado' && in_array($sector, $contratos_gen, true)) {
+            $est = 'contratos_generados';
+        }
+
+        // Si subió contrato firmado…
+        if ($est === 'contratos_generados' && ! empty($contratos_firmados_nuevos[$sector])) {
+            $est = 'contratos_firmados';
+        }
+
+        $estado_por_sector[$sector] = $est;
     }
-    // *** Lógica Basada en el Estado Actual ***
-    switch ($estado) {
-        case 'borrador':
-            // No se requiere validación adicional
-            error_log("Estado: Guardando como borrador.");
-            break;
 
-        case 'presupuesto_generado':
-            if (empty($presupuestos_existentes)) {
-                wp_send_json_error(['message' => 'No hay presupuestos subidos para generar el presupuesto.']);
-                exit;
-            }
-            error_log("Estado: Presupuesto generado.");
-            break;
-
-        case 'presupuesto_aceptado':
-            if (empty($presupuestos_existentes)) {
-                wp_send_json_error(['message' => 'No hay presupuestos subidos para aceptar.']);
-                exit;
-            }
-            error_log("Estado: Presupuesto aceptado.");
-            break;
-
-        case 'contratos_firmados':
-            if (empty($contratos_firmados_existentes)) {
-                wp_send_json_error(['message' => 'No hay contratos firmados subidos.']);
-                exit;
-            }
-            error_log("Estado: Contratos firmados.");
-            break;
-
-        case 'enviado':
-            if (empty($facturas_existentes)) {
-                wp_send_json_error(['message' => 'No hay facturas subidas para enviar el cliente.']);
-                exit;
-            }
-            error_log("Estado: Cliente enviado.");
-            break;
-
-        default:
-            // Manejar estados desconocidos
-            error_log("Estado desconocido: " . $estado);
-            wp_send_json_error(['message' => 'Estado desconocido.']);
-            exit;
+    // ——— Una vez terminado el bucle de sectores, calculas global ———
+    if ($is_send_action && ! $forzar) {
+        // Comercial ha pulsado “Enviar cliente” → global siempre “enviado”
+        $estado = 'enviado';
+    } elseif (current_user_can('crm_admin') && $forzar && isset($_POST['estado'])) {
+        // Admin con “forzar estado” → toma el <select name="estado">
+        $estado = sanitize_text_field($_POST['estado']);
+    } else {
+        // Flujo normal → mínimo de todos los sectores
+        $estado = crm_calcula_estado_global($estado_por_sector);
     }
+
 
     // Datos para guardar/actualizar
     $data = [
@@ -810,8 +979,9 @@ function crm_handle_ajax_request($estado)
         'facturas'             => maybe_serialize($facturas_existentes),
         'presupuesto'          => maybe_serialize($presupuestos_existentes),
         'contratos_firmados'   => maybe_serialize($contratos_firmados_existentes),
-        'contratos_generados'  => $contratos_generados,
+        'contratos_generados'  => maybe_serialize($contratos_generados),
         'estado'               => $estado,
+        'estado_por_sector'   => maybe_serialize($estado_por_sector),
         'editado_por'          => get_current_user_id(),
         'actualizado_en'       => current_time('mysql'),
     ];
@@ -819,6 +989,12 @@ function crm_handle_ajax_request($estado)
     if ($estado === 'enviado') {
         $data['enviado_por'] = get_current_user_id();
         $data['fecha_enviado'] = current_time('mysql');
+        /* ⬇️  Borra estas 4 líneas ⬇️ */
+        // if ($es_reenvio) {
+        //     $data['reenvios'] = intval($client_data['reenvios'] ?? 0) + 1;
+        // } else {
+        //     $data['reenvios'] = 0;
+        // }
     }
 
     if ($client_id) {
@@ -847,25 +1023,6 @@ function crm_handle_ajax_request($estado)
     ]);
 }
 
-/**
- * Marca el presupuesto como aceptado forzando el estado a 'presupuesto_aceptado',
- * y luego llama a la función principal crm_handle_ajax_request().
- */
-add_action('wp_ajax_crm_marcar_presupuesto_aceptado', 'crm_marcar_presupuesto_aceptado_ajax');
-
-function crm_marcar_presupuesto_aceptado_ajax() {
-    try {
-        // Forzamos el estado a 'presupuesto_aceptado'.
-        $estado = 'presupuesto_aceptado';
-        
-        // Llamamos a la lógica principal para procesar la solicitud,
-        // pasar archivos, guardar en BD, etc.
-        crm_handle_ajax_request($estado);
-
-    } catch (Exception $e) {
-        wp_send_json_error(['message' => $e->getMessage()]);
-    }
-}
 
 /**
  * Función genérica para subir archivos via AJAX.
@@ -1042,8 +1199,8 @@ function crm_lista_altas()
     // Obtener los datos de los clientes
     $wpdb->flush(); // Limpiar cualquier caché previa del objeto
     $clientes = $wpdb->get_results($wpdb->prepare("
-        SELECT id, fecha, cliente_nombre, empresa, email_cliente, estado, actualizado_en, facturas, presupuesto, 
-    contratos_firmados, intereses
+        SELECT id, fecha, cliente_nombre, empresa, direccion, poblacion, email_cliente, estado, actualizado_en, facturas, presupuesto, 
+    contratos_firmados, intereses, estado_por_sector, reenvios
         FROM $table_name
         WHERE user_id = %d
         ORDER BY actualizado_en DESC
@@ -1056,27 +1213,25 @@ function crm_lista_altas()
     // Construir la tabla en HTML
     ob_start();
 ?>
-    <table id="crm-lista-altas" class="crm-table material-design">
+    <table id="crm-lista-altas" class="crm-table material-design ">
         <thead>
             <tr>
                 <th>#</th>
                 <th>Fecha</th>
-                <th>Nombre</th>
-                <th>Empresa</th>
-                <th>Email</th>
+                <th>Cliente</th>
                 <th>Facturas</th>
-                <th>Presupuestos</th> <!-- Agregar la columna de presupuestos -->
-                <th>Contratos</th> <!-- Agregar la columna de contratos firmados -->
+                <th>Presupuestos</th>
+
                 <th>Intereses</th>
                 <th>Estado</th>
+                <th>Estado / Sector</th>
                 <th>Última Edición</th>
                 <th>Acciones</th>
             </tr>
         </thead>
-        <tbody>
-
-        </tbody>
+        <tbody></tbody>
     </table>
+
 
 <?php
     return ob_get_clean();
@@ -1112,7 +1267,7 @@ function crm_obtener_altas()
 
     $clientes = $wpdb->get_results($wpdb->prepare("
    SELECT id, fecha, cliente_nombre, empresa, email_cliente, estado, actualizado_en, 
-          facturas, presupuesto, contratos_firmados, contratos_generados, intereses
+          facturas, presupuesto, contratos_firmados, contratos_generados, intereses, estado_por_sector, reenvios
    FROM $table_name
    WHERE user_id = %d
    ORDER BY actualizado_en DESC
@@ -1121,14 +1276,30 @@ function crm_obtener_altas()
 
     if (!empty($clientes)) {
         foreach ($clientes as &$cliente) {
-            $cliente['facturas'] = maybe_unserialize($cliente['facturas']);
-            //$cliente['contratos'] = maybe_unserialize($cliente['contratos']);
-            $cliente['intereses'] = maybe_unserialize($cliente['intereses']);
-            // **AÑADE** la línea que faltaba:
-            $cliente['presupuesto'] = maybe_unserialize($cliente['presupuesto']);
-            $cliente['contratos_firmados'] = maybe_unserialize($cliente['contratos_firmados']);
-            $cliente['contratos_generados'] = maybe_unserialize($cliente['contratos_generados']);
+            // Siempre array
+            $cliente['facturas']           = is_array($cliente['facturas'])           ? $cliente['facturas']           : (empty($cliente['facturas']) ? [] : maybe_unserialize($cliente['facturas']));
+            $cliente['presupuesto']        = is_array($cliente['presupuesto'])        ? $cliente['presupuesto']        : (empty($cliente['presupuesto']) ? [] : maybe_unserialize($cliente['presupuesto']));
+            $cliente['contratos_firmados'] = is_array($cliente['contratos_firmados']) ? $cliente['contratos_firmados'] : (empty($cliente['contratos_firmados']) ? [] : maybe_unserialize($cliente['contratos_firmados']));
+            $cliente['contratos_generados'] = is_array($cliente['contratos_generados']) ? $cliente['contratos_generados'] : (empty($cliente['contratos_generados']) ? [] : maybe_unserialize($cliente['contratos_generados']));
+            $cliente['intereses']          = is_array($cliente['intereses'])          ? $cliente['intereses']          : (empty($cliente['intereses']) ? [] : maybe_unserialize($cliente['intereses']));
+
+            // Estado por sector: puede ser array, JSON, string, o vacío
+            $eps = $cliente['estado_por_sector'];
+            if (is_array($eps)) {
+                $cliente['estado_por_sector'] = $eps;
+            } elseif (is_string($eps) && !empty($eps)) {
+                $tmp = maybe_unserialize($eps);
+                if (is_array($tmp)) {
+                    $cliente['estado_por_sector'] = $tmp;
+                } else {
+                    $decoded = json_decode($eps, true);
+                    $cliente['estado_por_sector'] = is_array($decoded) ? $decoded : [];
+                }
+            } else {
+                $cliente['estado_por_sector'] = [];
+            }
         }
+
         wp_send_json_success([
             'clientes' => $clientes,
             'user_name' => $user_name  // Pasamos el nombre del usuario al frontend
@@ -1200,15 +1371,11 @@ function crm_todas_las_altas()
             <tr>
                 <th>#</th>
                 <th>Fecha</th>
-                <th>Nombre</th>
-                <th>Empresa</th>
-                <th>Email</th>
+                <th>Cliente</th>
                 <th>Comercial</th>
                 <th>Intereses</th>
                 <th>Estado</th>
-                <th>Presupuestos</th>
-                <th>Contratos Generados</th>
-                <th>Contratos Firmados</th>
+                <th>Documentos</th>
                 <th>Última Edición</th>
                 <th>Acciones</th>
             </tr>
@@ -1243,19 +1410,42 @@ function crm_obtener_todas_altas()
     $table_name = $wpdb->prefix . "crm_clients";
 
     $clientes = $wpdb->get_results("
-        SELECT c.id, c.fecha, c.user_id, c.cliente_nombre, c.empresa, c.intereses, c.email_cliente, c.presupuesto, c.contratos_generados, c.contratos_firmados, c.estado, c.actualizado_en, u.display_name AS comercial
+        SELECT c.id, c.fecha, c.user_id, c.cliente_nombre, c.empresa, c.direccion, c.poblacion, c.intereses, c.email_cliente, c.facturas, c.presupuesto, c.contratos_generados, c.contratos_firmados, c.estado, c.estado_por_sector, c.reenvios, c.actualizado_en, u.display_name AS comercial
         FROM $table_name c
         LEFT JOIN {$wpdb->users} u ON c.user_id = u.ID
         ORDER BY c.actualizado_en DESC
     ", ARRAY_A);
 
+    if (! empty($wpdb->last_error)) {
+        error_log('CRM – MySQL error: ' . $wpdb->last_error);
+    }
+
     if (!empty($clientes)) {
         foreach ($clientes as &$cliente) {
-            $cliente['presupuesto'] = maybe_unserialize($cliente['presupuesto']);
-            $cliente['contratos_generados'] = maybe_unserialize($cliente['contratos_generados']);
-            $cliente['contratos_firmados'] = maybe_unserialize($cliente['contratos_firmados']);
-            $cliente['intereses'] = maybe_unserialize($cliente['intereses']);
+            // Siempre array
+            $cliente['facturas']           = is_array($cliente['facturas'])           ? $cliente['facturas']           : (empty($cliente['facturas']) ? [] : maybe_unserialize($cliente['facturas']));
+            $cliente['presupuesto']        = is_array($cliente['presupuesto'])        ? $cliente['presupuesto']        : (empty($cliente['presupuesto']) ? [] : maybe_unserialize($cliente['presupuesto']));
+            $cliente['contratos_firmados'] = is_array($cliente['contratos_firmados']) ? $cliente['contratos_firmados'] : (empty($cliente['contratos_firmados']) ? [] : maybe_unserialize($cliente['contratos_firmados']));
+            $cliente['contratos_generados'] = is_array($cliente['contratos_generados']) ? $cliente['contratos_generados'] : (empty($cliente['contratos_generados']) ? [] : maybe_unserialize($cliente['contratos_generados']));
+            $cliente['intereses']          = is_array($cliente['intereses'])          ? $cliente['intereses']          : (empty($cliente['intereses']) ? [] : maybe_unserialize($cliente['intereses']));
+
+            // Estado por sector: puede ser array, JSON, string, o vacío
+            $eps = $cliente['estado_por_sector'];
+            if (is_array($eps)) {
+                $cliente['estado_por_sector'] = $eps;
+            } elseif (is_string($eps) && !empty($eps)) {
+                $tmp = maybe_unserialize($eps);
+                if (is_array($tmp)) {
+                    $cliente['estado_por_sector'] = $tmp;
+                } else {
+                    $decoded = json_decode($eps, true);
+                    $cliente['estado_por_sector'] = is_array($decoded) ? $decoded : [];
+                }
+            } else {
+                $cliente['estado_por_sector'] = [];
+            }
         }
+
         wp_send_json_success($clientes);
     } else {
         wp_send_json_error(['message' => 'No se encontraron clientes.']);
@@ -1310,6 +1500,8 @@ function process_uploaded_files($files, $existing_files = [])
 
         foreach ($file_group['name'] as $key => $name) {
             if (!empty($name) && $file_group['error'][$key] === UPLOAD_ERR_OK) {
+
+
                 $file = [
                     'name' => $name,
                     'type' => $file_group['type'][$key],

@@ -687,9 +687,9 @@ function crm_formulario_alta_cliente()
                 <div class="form-group half-width">
                     <select name="tipo" required>
                         <option value="" disabled <?php echo !isset($client_data['tipo']) || empty($client_data['tipo']) ? 'selected' : ''; ?>>Tipo</option>
-                        <option value="A" <?php echo isset($client_data['tipo']) && $client_data['tipo'] === 'A' ? 'selected' : ''; ?>>TIPO A</option>
-                        <option value="B" <?php echo isset($client_data['tipo']) && $client_data['tipo'] === 'B' ? 'selected' : ''; ?>>TIPO B</option>
-                        <option value="C" <?php echo isset($client_data['tipo']) && $client_data['tipo'] === 'C' ? 'selected' : ''; ?>>TIPO C</option>
+                        <option value="Residencial" <?php echo isset($client_data['tipo']) && $client_data['tipo'] === 'Residencial' ? 'selected' : ''; ?>>Residencial</option>
+                        <option value="Autónomo" <?php echo isset($client_data['tipo']) && $client_data['tipo'] === 'Autónomo' ? 'selected' : ''; ?>>Autónomo</option>
+                        <option value="Empresa" <?php echo isset($client_data['tipo']) && $client_data['tipo'] === 'Empresa' ? 'selected' : ''; ?>>Empresa</option>
                     </select>
                 </div>
                 <div class="form-group full-width">
@@ -1138,6 +1138,12 @@ function crm_handle_ajax_request($estado_inicial)
         }
     }
 
+    // Validación específica del teléfono
+    $telefono = sanitize_text_field($_POST['telefono']);
+    if (!empty($telefono) && !crm_validate_spanish_phone($telefono)) {
+        wp_send_json_error(['message' => 'El número de teléfono no es válido. Formato esperado para móviles: 6XX XXX XXX o 7XX XXX XXX. Para fijos: 9XX XXX XXX']);
+    }
+
     // Validación específica del email
     $email_cliente = sanitize_email($_POST['email_cliente']);
     if (!empty($email_cliente) && !is_email($email_cliente)) {
@@ -1152,12 +1158,13 @@ function crm_handle_ajax_request($estado_inicial)
         'cliente_nombre'            => sanitize_text_field($_POST['cliente_nombre']),
         'empresa'                   => sanitize_text_field($_POST['empresa']),
         'direccion'                 => sanitize_text_field($_POST['direccion']),
-        'telefono'                  => sanitize_text_field($_POST['telefono']),
+        'telefono'                  => $telefono,
         'email_cliente'             => $email_cliente,
         'poblacion'                 => sanitize_text_field($_POST['poblacion']),
+        'provincia'                 => sanitize_text_field($_POST['provincia']), // Agregar provincia que faltaba
         'area'                      => sanitize_text_field($_POST['area']),
         'tipo'                      => sanitize_text_field($_POST['tipo']),
-        'comentarios'               => sanitize_text_field($_POST['comentarios']),
+        'comentarios'               => sanitize_textarea_field($_POST['comentarios']), // Usar función específica para textarea
         'intereses' => maybe_serialize($intereses),
 
         'facturas'                  => maybe_serialize($facturas_existentes),
@@ -1564,6 +1571,11 @@ function crm_lista_altas()
                     d.action = 'crm_obtener_altas';
                     d.nonce = crmData.nonce;
                     d.user_id = crmData.user_id;
+                },
+                "error": function(xhr, error, code) {
+                    console.error('Error en AJAX DataTables:', error, code);
+                    console.error('Respuesta del servidor:', xhr.responseText);
+                    alert('Error al cargar los datos: ' + error);
                 }
             },
             "columns": [
@@ -1753,6 +1765,12 @@ function crm_obtener_altas()
    ORDER BY actualizado_en DESC
 ", $user_id), ARRAY_A);
 
+    // Debug logging
+    error_log("CRM Debug: Usuario $user_id solicitando datos. Encontrados " . count($clientes) . " registros");
+    if (empty($clientes)) {
+        error_log("CRM Debug: No se encontraron clientes para user_id $user_id");
+    }
+
 
     if (!empty($clientes)) {
         foreach ($clientes as &$cliente) {
@@ -1781,11 +1799,11 @@ function crm_obtener_altas()
         }
 
         wp_send_json_success([
-            'clientes' => $clientes,
-            'user_name' => $user_name  // Pasamos el nombre del usuario al frontend
+            'data' => $clientes,  // DataTables espera que los datos estén en 'data'
+            'user_name' => $user_name
         ]);
     } else {
-        wp_send_json_success(['clientes' => [], 'user_name' => $user_name]); // Enviar el nombre del usuario
+        wp_send_json_success(['data' => [], 'user_name' => $user_name]); // DataTables espera 'data' vacío
     }
 }
 

@@ -177,6 +177,20 @@ function showToast(msg, tipo, duration = 4000) {
         }
 
         for (let file of input.files) {
+            // Validación del lado cliente para tipos de archivo
+            const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+            if (!allowedTypes.includes(file.type)) {
+                showToast("Tipo de archivo no permitido. Solo se permiten JPEG, PNG y PDF.", "error");
+                continue;
+            }
+
+            // Validación de tamaño (10MB)
+            const maxSize = 10 * 1024 * 1024; // 10MB en bytes
+            if (file.size > maxSize) {
+                showToast("El archivo excede el tamaño permitido de 10 MB.", "error");
+                continue;
+            }
+
             const fd = new FormData();
             fd.append("file", file);
             fd.append("sector", sector);
@@ -199,11 +213,13 @@ function showToast(msg, tipo, duration = 4000) {
                         }" value="${json.data.url}">`;
                     container.insertBefore(div, input);
                     toggleCards();
+                    showToast("Archivo subido correctamente", "success");
                 } else {
-                    console.error(json.data.message);
+                    showToast(json.data.message || "Error al subir archivo", "error");
                 }
             } catch (err) {
                 console.error("Error AJAX:", err);
+                showToast("Error de conexión al subir archivo", "error");
             }
         }
 

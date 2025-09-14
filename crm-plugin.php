@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.8.7
+Version: 1.8.8
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.8.7');
+define('CRM_PLUGIN_VERSION', '1.8.8');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -1568,8 +1568,6 @@ function crm_lista_altas()
                         <th class="th-id">#</th>
                         <th class="th-fecha">Fecha</th>
                         <th class="th-cliente">Cliente</th>
-                        <th class="th-empresa">Empresa</th>
-                        <th class="th-contacto">Contacto</th>
                         <th class="th-intereses">Intereses</th>
                         <th class="th-estado">Estado/Sector</th>
                         <th class="th-updated">Actualizado</th>
@@ -1656,32 +1654,42 @@ function crm_lista_altas()
                 { 
                     "data": "cliente_nombre",
                     "render": function(data, type, row) {
-                        return '<strong>' + data + '</strong>';
-                    }
-                },
-                { 
-                    "data": "empresa",
-                    "render": function(data, type, row) {
-                        return data || '<em>Sin empresa</em>';
-                    }
-                },
-                { 
-                    "data": "email_cliente",
-                    "render": function(data, type, row) {
-                        if (data) {
-                            return '<a href="mailto:' + data + '" class="email-link">' + data + '</a>';
+                        let html = '<div class="cliente-info">';
+                        html += '<strong>' + data + '</strong>';
+                        if (row.empresa) {
+                            html += '<br><span class="empresa-name" style="color: #666; font-size: 13px;">' + row.empresa + '</span>';
                         }
-                        return '<em>Sin email</em>';
-                    }
+                        if (row.email_cliente) {
+                            html += '<br><a href="mailto:' + row.email_cliente + '" class="email-link" style="color: #007cba; font-size: 12px;">' + row.email_cliente + '</a>';
+                        }
+                        html += '</div>';
+                        return html;
+                    },
+                    "width": "250px"
                 },
                 { 
                     "data": "intereses",
                     "render": function(data, type, row) {
                         if (Array.isArray(data) && data.length > 0) {
-                            return data.slice(0, 2).join(', ') + (data.length > 2 ? '...' : '');
+                            let badges = '';
+                            const colors = {
+                                'energia': '#28a745',
+                                'alarmas': '#ffc107', 
+                                'telecomunicaciones': '#17a2b8',
+                                'teleco': '#17a2b8',
+                                'seguros': '#dc3545',
+                                'renovables': '#6f42c1'
+                            };
+                            data.slice(0, 3).forEach(function(interes) {
+                                const color = colors[interes.toLowerCase()] || '#6c757d';
+                                badges += '<span class="badge-interes" style="background-color: ' + color + '; color: white; padding: 2px 6px; border-radius: 3px; margin: 1px; font-size: 11px; display: inline-block;">' + interes + '</span> ';
+                            });
+                            if (data.length > 3) badges += '<span class="badge-interes" style="background-color: #6c757d; color: white; padding: 2px 6px; border-radius: 3px; margin: 1px; font-size: 11px;">+' + (data.length - 3) + '</span>';
+                            return badges;
                         }
-                        return '<em>Sin intereses</em>';
-                    }
+                        return '<em style="color: #999;">Sin intereses</em>';
+                    },
+                    "width": "150px"
                 },
                 { 
                     "data": "estado_por_sector",
@@ -1701,26 +1709,30 @@ function crm_lista_altas()
                     "data": "actualizado_en",
                     "render": function(data, type, row) {
                         if (type === 'display' || type === 'type') {
-                            const date = new Date(data);
-                            return date.toLocaleDateString('es-ES', {
-                                day: '2-digit',
-                                month: '2-digit'
-                            });
+                            if (data) {
+                                const date = new Date(data);
+                                const day = date.getDate().toString().padStart(2, '0');
+                                const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                                const hours = date.getHours().toString().padStart(2, '0');
+                                const minutes = date.getMinutes().toString().padStart(2, '0');
+                                return day + '/' + month + ' ' + hours + ':' + minutes + 'h';
+                            }
                         }
-                        return data;
-                    }
+                        return data || '-';
+                    },
+                    "width": "100px"
                 },
                 { 
                     "data": "id",
                     "orderable": false,
                     "className": "text-center",
                     "render": function(data, type, row) {
-                        const editUrl = window.location.origin + '/editar-cliente/?id=' + data;
+                        const editUrl = window.location.origin + '/editar-cliente/?client_id=' + data;
                         return '<div class="action-buttons">' +
-                               '<a href="' + editUrl + '" class="action-btn edit" title="Editar cliente">✏️</a>' +
-                               '<button class="action-btn delete" onclick="eliminarCliente(' + data + ')" title="Eliminar cliente">🗑️</button>' +
+                               '<a href="' + editUrl + '" class="action-btn edit" title="Editar cliente" style="background: #007cba; color: white; padding: 4px 8px; border-radius: 3px; text-decoration: none; font-size: 12px;">✏️</a>' +
                                '</div>';
-                    }
+                    },
+                    "width": "80px"
                 }
             ],
             "language": {
@@ -1729,9 +1741,9 @@ function crm_lista_altas()
             "pageLength": 15,
             "responsive": true,
             "dom": '<"top"fl>rt<"bottom"ip><"clear">',
-            "order": [[ 7, "desc" ]], // Ordenar por fecha actualizada
+            "order": [[ 5, "desc" ]], // Ordenar por fecha actualizada (nueva posición)
             "columnDefs": [
-                { "targets": [8], "orderable": false }
+                { "targets": [6], "orderable": false }  // Columna de acciones no ordenable
             ]
         });
 

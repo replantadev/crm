@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.8.6
+Version: 1.8.7
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.8.6');
+define('CRM_PLUGIN_VERSION', '1.8.7');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -1619,9 +1619,9 @@ function crm_lista_altas()
                 },
                 "dataSrc": function(json) {
                     console.log('DataTable - Respuesta AJAX recibida:', json);
-                    if (json.success && json.data) {
-                        console.log('DataTable - Datos encontrados:', json.data.length, 'registros');
-                        return json.data;
+                    if (json.success && json.data && json.data.data) {
+                        console.log('DataTable - Datos encontrados:', json.data.data.length, 'registros');
+                        return json.data.data;  // Acceder al array dentro de data.data
                     } else {
                         console.log('DataTable - No hay datos o error:', json);
                         return [];

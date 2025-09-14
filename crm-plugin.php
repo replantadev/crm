@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.8.2
+Version: 1.8.3
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.8.2');
+define('CRM_PLUGIN_VERSION', '1.8.3');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -989,8 +989,14 @@ function crm_handle_ajax_request($estado_inicial)
         ? (array) $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id=%d", $client_id), ARRAY_A)
         : [];
 
+    // Debug: Log incoming data
+    error_log("CRM Plugin - AJAX Request Data: " . print_r($_POST, true));
+    error_log("CRM Plugin - Is Update: " . ($is_update ? 'Yes' : 'No'));
+    error_log("CRM Plugin - Client ID: " . $client_id);
+
     // seguridad
     if (! wp_verify_nonce($_POST['crm_nonce'] ?? '', 'crm_alta_cliente_nonce')) {
+        error_log("CRM Plugin - Nonce verification failed");
         wp_send_json_error(['message' => 'Error de seguridad']);
     }
 
@@ -1211,12 +1217,25 @@ function crm_handle_ajax_request($estado_inicial)
     }
 
     if ($is_update) {
-        $wpdb->update($table, $data, ['id' => $client_id]);
+        $result = $wpdb->update($table, $data, ['id' => $client_id]);
+        if ($result === false) {
+            error_log("CRM Plugin - Error updating client {$client_id}: " . $wpdb->last_error);
+            wp_send_json_error(['message' => 'Error al actualizar cliente en la base de datos: ' . $wpdb->last_error]);
+        }
     } else {
         $data['creado_por'] = get_current_user_id();
         $data['creado_en']  = current_time('mysql');
-        $wpdb->insert($table, $data);
+        $result = $wpdb->insert($table, $data);
+        if ($result === false) {
+            error_log("CRM Plugin - Error inserting new client: " . $wpdb->last_error);
+            error_log("CRM Plugin - Data attempted to insert: " . print_r($data, true));
+            wp_send_json_error(['message' => 'Error al crear cliente en la base de datos: ' . $wpdb->last_error]);
+        }
         $client_id = $wpdb->insert_id;
+        if (!$client_id) {
+            error_log("CRM Plugin - Error: No insert_id returned");
+            wp_send_json_error(['message' => 'Error: No se pudo obtener el ID del cliente creado']);
+        }
     }
 
     // ========== NOTIFICACIONES POR EMAIL ==========
@@ -2515,21 +2534,86 @@ function crm_create_activity_log_table() {
 
 // Crear tabla al activar el plugin
 /**
+ * Crear tabla de clientes si no existe
+ */
+function crm_create_clients_table() {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'crm_clients';
+    
+    $charset_collate = $wpdb->get_charset_collate();
+    
+    $sql = "CREATE TABLE $table_name (
+        id int(11) NOT NULL AUTO_INCREMENT,
+        delegado varchar(255) NOT NULL,
+        user_id bigint(20) UNSIGNED NOT NULL,
+        email_comercial varchar(255) NOT NULL,
+        fecha datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        cliente_nombre varchar(255) NOT NULL,
+        empresa varchar(255) NOT NULL,
+        direccion varchar(255) DEFAULT NULL,
+        telefono varchar(15) DEFAULT NULL,
+        email_cliente varchar(255) DEFAULT NULL,
+        poblacion varchar(100) DEFAULT '',
+        provincia varchar(100) DEFAULT 'León',
+        area varchar(10) DEFAULT NULL,
+        tipo varchar(50) DEFAULT '',
+        comentarios text,
+        intereses longtext,
+        facturas longtext,
+        presupuesto longtext,
+        contratos longtext,
+        contratos_generados longtext,
+        contratos_firmados longtext,
+        firmado enum('energia', 'alarmas', 'teleco', 'seguros', 'ninguno') DEFAULT 'ninguno',
+        enviado_por bigint(20) UNSIGNED DEFAULT NULL,
+        fecha_enviado datetime DEFAULT NULL,
+        editado_por bigint(20) UNSIGNED DEFAULT NULL,
+        creado_por bigint(20) UNSIGNED NOT NULL,
+        creado_en datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        actualizado_en datetime DEFAULT NULL,
+        estado enum('borrador', 'enviado', 'pendiente_revision', 'presupuesto_aceptado', 'contratos_generados', 'contratos_firmados') NOT NULL DEFAULT 'enviado',
+        estado_por_sector longtext,
+        fecha_envio_por_sector text NOT NULL,
+        usuario_envio_por_sector text NOT NULL,
+        reenvios int(11) DEFAULT 0,
+        PRIMARY KEY (id),
+        KEY cliente_nombre (cliente_nombre),
+        KEY telefono (telefono),
+        KEY email_comercial (email_comercial),
+        KEY creado_por (creado_por),
+        KEY estado (estado)
+    ) $charset_collate;";
+    
+    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    dbDelta($sql);
+    
+    error_log("CRM: Tabla $table_name creada");
+}
+
+/**
  * Actualizar estructura de tabla de clientes
  */
 function crm_update_clients_table_structure() {
     global $wpdb;
     $table_name = $wpdb->prefix . 'crm_clients';
     
+    error_log("CRM: Iniciando migración de tabla $table_name - versión " . CRM_PLUGIN_VERSION);
+    
+    // Verificar si la tabla existe
+    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'");
+    if (!$table_exists) {
+        error_log("CRM: Tabla $table_name no existe, creando...");
+        crm_create_clients_table();
+        return;
+    }
+    
     // Verificar si la columna provincia existe
     $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $table_name LIKE 'provincia'");
     
     if (empty($column_exists)) {
         // Agregar columna provincia
-        $wpdb->query("ALTER TABLE $table_name ADD COLUMN provincia VARCHAR(100) DEFAULT 'León' AFTER poblacion");
-        
-        // Log de la migración
-        error_log("CRM: Columna 'provincia' agregada a la tabla $table_name");
+        $result = $wpdb->query("ALTER TABLE $table_name ADD COLUMN provincia VARCHAR(100) DEFAULT 'León' AFTER poblacion");
+        error_log("CRM: Agregando columna 'provincia' - Resultado: " . ($result !== false ? 'OK' : 'ERROR: ' . $wpdb->last_error));
     }
     
     // Verificar y actualizar la columna tipo si es ENUM con valores antiguos
@@ -2537,35 +2621,44 @@ function crm_update_clients_table_structure() {
     
     if (!empty($tipo_column)) {
         $column_definition = $tipo_column[0]->Type;
+        error_log("CRM: Definición actual de columna 'tipo': " . $column_definition);
         
         // Si la columna tipo es ENUM con valores A, B, C, cambiarla a VARCHAR
         if (strpos($column_definition, "enum('A','B','C')") !== false || 
             strpos($column_definition, "enum('A', 'B', 'C')") !== false) {
             
+            error_log("CRM: Detectada columna tipo como ENUM con valores A,B,C - Iniciando migración");
+            
             // Primero, actualizar los valores existentes
-            $wpdb->query("UPDATE $table_name SET tipo = 'Residencial' WHERE tipo = 'A'");
-            $wpdb->query("UPDATE $table_name SET tipo = 'Autónomo' WHERE tipo = 'B'");
-            $wpdb->query("UPDATE $table_name SET tipo = 'Empresa' WHERE tipo = 'C'");
+            $update_a = $wpdb->query("UPDATE $table_name SET tipo = 'Residencial' WHERE tipo = 'A'");
+            $update_b = $wpdb->query("UPDATE $table_name SET tipo = 'Autónomo' WHERE tipo = 'B'");
+            $update_c = $wpdb->query("UPDATE $table_name SET tipo = 'Empresa' WHERE tipo = 'C'");
+            
+            error_log("CRM: Valores actualizados - A→Residencial: $update_a, B→Autónomo: $update_b, C→Empresa: $update_c");
             
             // Cambiar la columna a VARCHAR
-            $wpdb->query("ALTER TABLE $table_name MODIFY COLUMN tipo VARCHAR(50) DEFAULT ''");
+            $alter_result = $wpdb->query("ALTER TABLE $table_name MODIFY COLUMN tipo VARCHAR(50) DEFAULT ''");
+            error_log("CRM: Cambio de ENUM a VARCHAR - Resultado: " . ($alter_result !== false ? 'OK' : 'ERROR: ' . $wpdb->last_error));
             
-            error_log("CRM: Columna 'tipo' migrada de ENUM a VARCHAR y valores actualizados");
+            if ($alter_result !== false) {
+                error_log("CRM: Migración de columna 'tipo' completada exitosamente");
+            }
+        } else {
+            error_log("CRM: Columna 'tipo' ya está en el formato correcto: " . $column_definition);
         }
+    } else {
+        error_log("CRM: Columna 'tipo' no encontrada, agregando...");
+        $wpdb->query("ALTER TABLE $table_name ADD COLUMN tipo VARCHAR(50) DEFAULT ''");
     }
     
     // Verificar otras columnas que podrían faltar
     $required_columns = [
         'poblacion' => "VARCHAR(100) DEFAULT ''",
         'provincia' => "VARCHAR(100) DEFAULT 'León'",
-        'tipo' => "VARCHAR(50) DEFAULT ''",
         'comentarios' => "TEXT"
     ];
     
     foreach ($required_columns as $column => $definition) {
-        // Solo agregar si no existe (la columna tipo ya la manejamos arriba)
-        if ($column === 'tipo') continue;
-        
         $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $table_name LIKE '$column'");
         
         if (empty($column_exists)) {
@@ -2573,6 +2666,8 @@ function crm_update_clients_table_structure() {
             error_log("CRM: Columna '$column' agregada a la tabla $table_name");
         }
     }
+    
+    error_log("CRM: Migración de tabla completada");
 }
 
 function crm_plugin_activation() {

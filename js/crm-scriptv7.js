@@ -5,6 +5,72 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
     }
 
+    // ————— Validación de provincia y población —————
+    const provinciaSelect = document.getElementById('provincia');
+    const poblacionInput = document.getElementById('poblacion');
+    
+    if (provinciaSelect) {
+        provinciaSelect.addEventListener('change', function() {
+            validateProvincia(this);
+            // Limpiar población cuando cambie la provincia
+            if (poblacionInput) {
+                poblacionInput.value = '';
+                poblacionInput.classList.remove('valid', 'invalid');
+            }
+        });
+    }
+    
+    if (poblacionInput) {
+        poblacionInput.addEventListener('blur', function() {
+            validatePoblacion(this, provinciaSelect?.value);
+        });
+        
+        poblacionInput.addEventListener('input', function() {
+            // Quitar estado de error mientras escribe
+            this.classList.remove('invalid');
+        });
+    }
+    
+    function validateProvincia(select) {
+        const provincia = select.value;
+        if (!provincia) {
+            select.classList.remove('valid', 'invalid');
+            return false;
+        }
+        
+        // Verificar si es una provincia válida usando el sistema de municipios
+        if (window.CRM_Municipios && window.CRM_Municipios.esProvinciaValida(provincia)) {
+            select.classList.add('valid');
+            select.classList.remove('invalid');
+            return true;
+        } else {
+            select.classList.add('invalid');
+            select.classList.remove('valid');
+            return false;
+        }
+    }
+    
+    function validatePoblacion(input, provincia) {
+        const poblacion = input.value.trim();
+        if (!poblacion) {
+            input.classList.remove('valid', 'invalid');
+            return false;
+        }
+        
+        // Validación básica de formato
+        const isValidFormat = /^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\s\-'\.]+$/.test(poblacion) && poblacion.length >= 2;
+        
+        if (isValidFormat) {
+            input.classList.add('valid');
+            input.classList.remove('invalid');
+            return true;
+        } else {
+            input.classList.add('invalid');
+            input.classList.remove('valid');
+            return false;
+        }
+    }
+
     // ————— Botones de flujo normal —————
     const saveButton = form.querySelector("button[name='crm_guardar_cliente']");
     let sendButton = form.querySelector("button[name='crm_enviar_cliente']");

@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.7.6
+Version: 1.7.7
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.7.6');
+define('CRM_PLUGIN_VERSION', '1.7.7');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -214,28 +214,86 @@ function crm_get_estado_label($estado) {
 }
 
 /**
+ * Obtiene las 50 provincias oficiales de España
+ */
+function crm_get_provincias_espana() {
+    return [
+        'Álava', 'Albacete', 'Alicante', 'Almería', 'Asturias', 'Ávila', 'Badajoz', 'Barcelona',
+        'Burgos', 'Cáceres', 'Cádiz', 'Cantabria', 'Castellón', 'Ciudad Real', 'Córdoba', 'Cuenca',
+        'Girona', 'Granada', 'Guadalajara', 'Guipúzcoa', 'Huelva', 'Huesca', 'Islas Baleares', 'Jaén',
+        'La Coruña', 'La Rioja', 'Las Palmas', 'León', 'Lleida', 'Lugo', 'Madrid', 'Málaga',
+        'Murcia', 'Navarra', 'Orense', 'Palencia', 'Pontevedra', 'Salamanca', 'Santa Cruz de Tenerife',
+        'Segovia', 'Sevilla', 'Soria', 'Tarragona', 'Teruel', 'Toledo', 'Valencia', 'Valladolid',
+        'Vizcaya', 'Zamora', 'Zaragoza'
+    ];
+}
+
+/**
+ * Valida si una provincia es válida
+ */
+function crm_validate_provincia($provincia) {
+    $provincias_validas = crm_get_provincias_espana();
+    return in_array($provincia, $provincias_validas, true);
+}
+
+/**
+ * Valida población según la provincia (básico)
+ */
+function crm_validate_poblacion($poblacion, $provincia = null) {
+    // Validación básica: no vacío, longitud razonable, caracteres válidos
+    if (empty($poblacion) || strlen($poblacion) < 2 || strlen($poblacion) > 100) {
+        return false;
+    }
+    
+    // Solo caracteres alfanuméricos, espacios, guiones, apostrofes y acentos
+    if (!preg_match('/^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\s\-\'\.]+$/', $poblacion)) {
+        return false;
+    }
+    
+/**
+ * Obtiene las 50 provincias oficiales de España
+ */
+function crm_get_provincias_espana() {
+    return [
+        'Álava', 'Albacete', 'Alicante', 'Almería', 'Asturias', 'Ávila', 'Badajoz', 'Barcelona',
+        'Burgos', 'Cáceres', 'Cádiz', 'Cantabria', 'Castellón', 'Ciudad Real', 'Córdoba', 'Cuenca',
+        'Girona', 'Granada', 'Guadalajara', 'Guipúzcoa', 'Huelva', 'Huesca', 'Islas Baleares', 'Jaén',
+        'La Coruña', 'La Rioja', 'Las Palmas', 'León', 'Lleida', 'Lugo', 'Madrid', 'Málaga',
+        'Murcia', 'Navarra', 'Orense', 'Palencia', 'Pontevedra', 'Salamanca', 'Santa Cruz de Tenerife',
+        'Segovia', 'Sevilla', 'Soria', 'Tarragona', 'Teruel', 'Toledo', 'Valencia', 'Valladolid',
+        'Vizcaya', 'Zamora', 'Zaragoza'
+    ];
+}
+
+/**
+ * Valida si una provincia es válida
+ */
+function crm_validate_provincia($provincia) {
+    $provincias_validas = crm_get_provincias_espana();
+    return in_array($provincia, $provincias_validas, true);
+}
+
+/**
+ * Valida población según la provincia (básico)
+ */
+function crm_validate_poblacion($poblacion, $provincia = null) {
+    // Validación básica: no vacío, longitud razonable, caracteres válidos
+    if (empty($poblacion) || strlen($poblacion) < 2 || strlen($poblacion) > 100) {
+        return false;
+    }
+    
+    // Solo caracteres alfanuméricos, espacios, guiones, apostrofes y acentos
+    if (!preg_match('/^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\s\-\'\.]+$/', $poblacion)) {
+        return false;
+    }
+    
+    return true;
+}
+
+/**
  * Convierte nombres de acciones técnicos a nombres legibles
  */
 function crm_get_action_label($action) {
-    $labels = [
-        'cliente_creado' => 'Cliente Creado',
-        'cliente_actualizado' => 'Cliente Actualizado',
-        'cliente_eliminado' => 'Cliente Eliminado',
-        'archivo_subido' => 'Archivo Subido',
-        'archivo_eliminado' => 'Archivo Eliminado',
-        'sectores_enviados' => 'Sectores Enviados',
-        'test_email_enviado' => 'Test Email Enviado',
-        'test_email_error' => 'Error Test Email',
-        'backup_created' => 'Backup Creado',
-        'database_optimized' => 'BD Optimizada',
-        'logs_prueba_generados' => 'Logs de Prueba',
-        'panel_consultado' => 'Panel Consultado',
-        'sistema_inicializado' => 'Sistema Iniciado',
-        'debug_sector_save' => 'Debug Guardado'
-    ];
-    
-    return $labels[$action] ?? ucfirst(str_replace('_', ' ', $action));
-}
 
 /**
  * Validador de teléfono español (fijo y móvil)
@@ -347,7 +405,8 @@ function crm_formulario_alta_cliente()
     $estado_por_sector   = is_array($estado_por_sector)  ? $estado_por_sector  : [];
 
     // Encolar el script JavaScript y localizar datos
-    wp_enqueue_script('crm-scriptv2', CRM_PLUGIN_URL . 'js/crm-scriptv7.js', array('jquery'), CRM_PLUGIN_VERSION, true);
+    wp_enqueue_script('crm-municipios', CRM_PLUGIN_URL . 'js/municipios-spain.js', array(), CRM_PLUGIN_VERSION, true);
+    wp_enqueue_script('crm-scriptv2', CRM_PLUGIN_URL . 'js/crm-scriptv7.js', array('jquery', 'crm-municipios'), CRM_PLUGIN_VERSION, true);
     wp_localize_script('crm-scriptv2', 'crmData', array(
         'ajaxurl' => admin_url('admin-ajax.php'),
         'nonce'   => wp_create_nonce('crm_alta_cliente_nonce'),
@@ -450,22 +509,28 @@ function crm_formulario_alta_cliente()
         }
         
         function searchMunicipalities(query, provincia) {
-            // Lista estática de municipios de León para demo
-            const leonMunicipalities = [
-                'León', 'Ponferrada', 'San Andrés del Rabanedo', 'Villaquilambre', 'Astorga',
-                'La Bañeza', 'Valencia de Don Juan', 'Sahagún', 'Villablino', 'Bembibre',
-                'Cacabelos', 'Toral de los Guzmanes', 'Mansilla de las Mulas', 'Boñar',
-                'Riaño', 'Puente de Domingo Flórez', 'Villafranca del Bierzo', 'Cistierna',
-                'La Robla', 'Santa María del Monte de Cea', 'Gradefes', 'Carrizo',
-                'Benavides', 'Quintana del Castillo', 'Santas Martas', 'Chozas de Abajo',
-                'Valverde de la Virgen', 'Cuadros', 'Sariegos', 'Carrocera'
-            ];
-            
-            const filtered = leonMunicipalities.filter(municipality => 
-                municipality.toLowerCase().includes(query.toLowerCase())
-            ).slice(0, 10);
-            
-            showSuggestions(filtered);
+            // Usar el sistema robusto de municipios
+            if (window.CRM_Municipios) {
+                const municipalities = window.CRM_Municipios.buscarMunicipios(query, provincia);
+                showSuggestions(municipalities);
+            } else {
+                // Fallback: sistema básico para León si no está cargado el sistema completo
+                const leonMunicipalities = [
+                    'León', 'Ponferrada', 'San Andrés del Rabanedo', 'Villaquilambre', 'Astorga',
+                    'La Bañeza', 'Valencia de Don Juan', 'Sahagún', 'Villablino', 'Bembibre',
+                    'Cacabelos', 'Toral de los Guzmanes', 'Mansilla de las Mulas', 'Boñar'
+                ];
+                
+                if (provincia === 'León') {
+                    const filtered = leonMunicipalities.filter(municipality => 
+                        municipality.toLowerCase().includes(query.toLowerCase())
+                    ).slice(0, 10);
+                    showSuggestions(filtered);
+                } else {
+                    // Para otras provincias, permitir entrada libre
+                    hideSuggestions();
+                }
+            }
         }
         
         function showSuggestions(suggestions) {
@@ -616,60 +681,28 @@ function crm_formulario_alta_cliente()
                 </div>
                 <div class="form-group half-width">
                     <select name="provincia" id="provincia" required class="form-select">
-                        <option value="" disabled>Seleccionar Provincia</option>
-                        <option value="León" <?php echo isset($client_data['provincia']) && $client_data['provincia'] === 'León' ? 'selected' : (!isset($client_data['provincia']) ? 'selected' : ''); ?>>León</option>
-                        <option value="Madrid">Madrid</option>
-                        <option value="Barcelona">Barcelona</option>
-                        <option value="Valencia">Valencia</option>
-                        <option value="Sevilla">Sevilla</option>
-                        <option value="Zaragoza">Zaragoza</option>
-                        <option value="Málaga">Málaga</option>
-                        <option value="Murcia">Murcia</option>
-                        <option value="Palma">Palma</option>
-                        <option value="Las Palmas">Las Palmas</option>
-                        <option value="Bilbao">Bilbao</option>
-                        <option value="Alicante">Alicante</option>
-                        <option value="Córdoba">Córdoba</option>
-                        <option value="Valladolid">Valladolid</option>
-                        <option value="Vigo">Vigo</option>
-                        <option value="Gijón">Gijón</option>
-                        <option value="Hospitalet">Hospitalet</option>
-                        <option value="Coruña">Coruña</option>
-                        <option value="Vitoria">Vitoria</option>
-                        <option value="Granada">Granada</option>
-                        <option value="Elche">Elche</option>
-                        <option value="Oviedo">Oviedo</option>
-                        <option value="Badalona">Badalona</option>
-                        <option value="Cartagena">Cartagena</option>
-                        <option value="Terrassa">Terrassa</option>
-                        <option value="Jerez">Jerez</option>
-                        <option value="Sabadell">Sabadell</option>
-                        <option value="Móstoles">Móstoles</option>
-                        <option value="Alcalá de Henares">Alcalá de Henares</option>
-                        <option value="Pamplona">Pamplona</option>
-                        <option value="Fuenlabrada">Fuenlabrada</option>
-                        <option value="Almería">Almería</option>
-                        <option value="Leganés">Leganés</option>
-                        <option value="Santander">Santander</option>
-                        <option value="Burgos">Burgos</option>
-                        <option value="Castellón">Castellón</option>
-                        <option value="Getafe">Getafe</option>
-                        <option value="Alcorcón">Alcorcón</option>
-                        <option value="Albacete">Albacete</option>
-                        <option value="Logroño">Logroño</option>
-                        <option value="Badajoz">Badajoz</option>
-                        <option value="Salamanca">Salamanca</option>
-                        <option value="Huelva">Huelva</option>
-                        <option value="Marbella">Marbella</option>
-                        <option value="Tarragona">Tarragona</option>
-                        <option value="Lleida">Lleida</option>
-                        <option value="Jaén">Jaén</option>
-                        <option value="Ourense">Ourense</option>
-                        <option value="Reus">Reus</option>
-                        <option value="Torrelavega">Torrelavega</option>
-                        <option value="Elda">Elda</option>
-                        <option value="Mérida">Mérida</option>
+                        <option value="" disabled <?php echo !isset($client_data['provincia']) || empty($client_data['provincia']) ? 'selected' : ''; ?>>Seleccionar Provincia</option>
+                        <?php
+                        // Lista oficial de las 50 provincias de España ordenadas alfabéticamente
+                        $provincias_espana = [
+                            'Álava', 'Albacete', 'Alicante', 'Almería', 'Asturias', 'Ávila', 'Badajoz', 'Barcelona',
+                            'Burgos', 'Cáceres', 'Cádiz', 'Cantabria', 'Castellón', 'Ciudad Real', 'Córdoba', 'Cuenca',
+                            'Girona', 'Granada', 'Guadalajara', 'Guipúzcoa', 'Huelva', 'Huesca', 'Islas Baleares', 'Jaén',
+                            'La Coruña', 'La Rioja', 'Las Palmas', 'León', 'Lleida', 'Lugo', 'Madrid', 'Málaga',
+                            'Murcia', 'Navarra', 'Orense', 'Palencia', 'Pontevedra', 'Salamanca', 'Santa Cruz de Tenerife',
+                            'Segovia', 'Sevilla', 'Soria', 'Tarragona', 'Teruel', 'Toledo', 'Valencia', 'Valladolid',
+                            'Vizcaya', 'Zamora', 'Zaragoza'
+                        ];
+                        
+                        $provincia_actual = $client_data['provincia'] ?? 'León'; // León por defecto
+                        
+                        foreach ($provincias_espana as $provincia) {
+                            $selected = ($provincia_actual === $provincia) ? 'selected' : '';
+                            echo "<option value='" . esc_attr($provincia) . "' $selected>" . esc_html($provincia) . "</option>";
+                        }
+                        ?>
                     </select>
+                    <small class="province-help">Seleccione la provincia oficial</small>
                 </div>
                 <div class="form-group half-width">
                     <div class="autocomplete-container">
@@ -1150,6 +1183,18 @@ function crm_handle_ajax_request($estado_inicial)
         wp_send_json_error(['message' => 'El email del cliente no tiene un formato válido. Por favor, ingrese un email correcto (ejemplo: usuario@dominio.com)']);
     }
 
+    // Validación específica de la provincia
+    $provincia = sanitize_text_field($_POST['provincia']);
+    if (!empty($provincia) && !crm_validate_provincia($provincia)) {
+        wp_send_json_error(['message' => 'La provincia seleccionada no es válida. Por favor, seleccione una provincia oficial de España.']);
+    }
+
+    // Validación específica de la población
+    $poblacion = sanitize_text_field($_POST['poblacion']);
+    if (!empty($poblacion) && !crm_validate_poblacion($poblacion, $provincia)) {
+        wp_send_json_error(['message' => 'El nombre de la población no es válido. Use solo letras, espacios y guiones. Mínimo 2 caracteres.']);
+    }
+
     // preparar array de guardado
     $data = [
         'delegado'                  => sanitize_text_field($_POST['delegado']),
@@ -1160,8 +1205,8 @@ function crm_handle_ajax_request($estado_inicial)
         'direccion'                 => sanitize_text_field($_POST['direccion']),
         'telefono'                  => $telefono,
         'email_cliente'             => $email_cliente,
-        'poblacion'                 => sanitize_text_field($_POST['poblacion']),
-        'provincia'                 => sanitize_text_field($_POST['provincia']), // Agregar provincia que faltaba
+        'poblacion'                 => $poblacion,
+        'provincia'                 => $provincia, // Usar variable validada
         'area'                      => sanitize_text_field($_POST['area']),
         'tipo'                      => sanitize_text_field($_POST['tipo']),
         'comentarios'               => sanitize_textarea_field($_POST['comentarios']), // Usar función específica para textarea

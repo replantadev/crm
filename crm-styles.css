@@ -347,6 +347,48 @@ input[type="tel"].invalid {
     }
 }
 
+/* Validación visual de campos provincia/población */
+.form-select.valid, .form-input-autocomplete.valid {
+    border-color: #10b981;
+    background: rgba(16, 185, 129, 0.05);
+}
+
+.form-select.invalid, .form-input-autocomplete.invalid {
+    border-color: #ef4444;
+    background: rgba(239, 68, 68, 0.05);
+}
+
+.province-help, .population-help {
+    display: block;
+    margin-top: 8px;
+    font-size: 13px;
+    color: rgba(15, 23, 42, 0.6);
+    line-height: 1.4;
+}
+
+.province-help.error, .population-help.error {
+    color: #ef4444;
+    font-weight: 500;
+}
+
+/* Indicador de carga para municipios */
+.autocomplete-loading {
+    padding: 16px 20px;
+    text-align: center;
+    color: rgba(15, 23, 42, 0.6);
+    font-style: italic;
+}
+
+.autocomplete-loading:before {
+    content: "🔍 ";
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
 /* === BOTONES ENERGITEL === */
 
 .btn-group {

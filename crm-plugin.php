@@ -1,9 +1,20 @@
 <?php
 /*
 Plugin Name: CRM Básico
-Description: Plugin para gestionar clientes con roles de comercial y administrador CRM.
-Version: 1.6.1
+Plugin URI: https://github.com/replantadev/crm/
+Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
+Version: 1.6.2
 Author: Luis Javier
+Author URI: https://github.com/replantadev
+Update URI: https://github.com/replantadev/crm/
+Requires at least: 5.0
+Tested up to: 6.3
+Requires PHP: 7.4
+License: GPL v2 or later
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
+Text Domain: crm-basico
+Domain Path: /languages
+Network: false
 */
 
 // Evitar acceso directo
@@ -12,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.6.1');
+define('CRM_PLUGIN_VERSION', '1.6.2');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));

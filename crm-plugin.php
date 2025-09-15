@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.9.0
+Version: 1.9.1
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.9.0');
+define('CRM_PLUGIN_VERSION', '1.9.1');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -404,7 +404,14 @@ function crm_formulario_alta_cliente()
             <div class="crm-header-main">
                 <div class="crm-header-left">
                     <img src="<?php echo get_site_icon_url(); ?>" alt="Logo" class="crm-logo">
-                    <span class="crm-title">Energitel CRM - Alta de Cliente</span>
+                    <span class="crm-title">
+                        Energitel CRM - 
+                        <?php if($client_id): ?>
+                            Editando: <span style="color: #007cba; font-weight: 600;"><?php echo esc_html($client_data['cliente_nombre'] ?? 'Cliente'); ?></span>
+                        <?php else: ?>
+                            Alta de Cliente
+                        <?php endif; ?>
+                    </span>
                 </div>
                 
                 <div class="crm-header-right">
@@ -416,7 +423,13 @@ function crm_formulario_alta_cliente()
                     <!-- Solo para comerciales - información condensada -->
                     <?php if(!current_user_can('crm_admin')): ?>
                         <div class="crm-header-comercial-info">
-                            <span class="comercial-asignado">👤 <?php echo esc_html(wp_get_current_user()->display_name); ?></span>
+                            <span class="comercial-asignado">👤 <?php 
+                                if($client_id && isset($client_data['delegado'])) {
+                                    echo esc_html($client_data['delegado']);
+                                } else {
+                                    echo esc_html(wp_get_current_user()->display_name);
+                                }
+                            ?></span>
                             <?php if($estado_actual === 'borrador'): ?>
                                 <span class="borrador-info">📝 Borrador</span>
                             <?php endif; ?>
@@ -1941,28 +1954,6 @@ function crm_editar_cliente()
     // Reutilizamos el formulario de alta cliente con los datos del cliente cargados
     ob_start();
 ?>
-    <?php /* Cabecera bonita condensada unificada */ ?>
-    <div class="crm-form-container">
-        <div class="crm-header">
-            <div class="crm-header-main">
-                <div class="crm-header-left">
-                    <img src="<?php echo get_site_icon_url(); ?>" alt="Logo" class="crm-logo">
-                    <span class="crm-title">Energitel CRM - Editando: <span style="color: #007cba; font-weight: 600;"><?php echo esc_html($client_data['cliente_nombre']); ?></span></span>
-                </div>
-                
-                <div class="crm-header-right">
-                    <span class="estado <?php echo $estado_actual; ?>"><?php echo crm_get_estado_label($estado_actual); ?></span>
-                    
-                    <!-- Solo para comerciales - información condensada -->
-                    <?php if(!current_user_can('crm_admin')): ?>
-                        <div class="crm-header-comercial-info">
-                            <span class="comercial-asignado">👤 <?php echo esc_html($client_data['delegado'] ?? wp_get_current_user()->display_name); ?></span>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-    </div>
     <?php echo do_shortcode('[crm_alta_cliente]'); ?>
 <?php
     return ob_get_clean();

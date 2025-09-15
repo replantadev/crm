@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.10.1
+Version: 1.11.0
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/

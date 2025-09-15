@@ -32,10 +32,31 @@ function crm_clientes_por_interes_widget()
     ob_start();
     ?>
 
-    <div class="widget clientes-por-interes">
-      <h3>Clientes por Interés</h3>
-      <canvas id="chart-clientes-interes"></canvas>
+    <div class="crm-widget-compact">
+        <div class="widget-header-compact">
+            <h3 class="widget-title-compact">Clientes por Interés</h3>
+            <div class="widget-stats-compact">
+                <span class="total-count"><?php echo array_sum($data); ?> total</span>
+            </div>
+        </div>
+        
+        <div class="widget-content-compact">
+            <div class="chart-container-compact">
+                <canvas id="chart-clientes-interes"></canvas>
+            </div>
+            
+            <div class="chart-legend-compact">
+                <?php foreach ($labels as $i => $label): ?>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: <?php echo $colors[$i]; ?>"></div>
+                        <span class="legend-label"><?php echo $label; ?></span>
+                        <span class="legend-value"><?php echo $data[$i]; ?></span>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
     </div>
+    
     <script>
     document.addEventListener("DOMContentLoaded", () => {
       const ctx = document.getElementById('chart-clientes-interes').getContext('2d');
@@ -45,12 +66,16 @@ function crm_clientes_por_interes_widget()
           labels: <?php echo json_encode($labels); ?>,
           datasets: [{
             data: <?php echo json_encode($data); ?>,
-            backgroundColor: <?php echo json_encode($colors); ?>
+            backgroundColor: <?php echo json_encode($colors); ?>,
+            borderWidth: 0,
+            cutout: '65%'
           }]
         },
         options: {
           responsive: true,
+          maintainAspectRatio: false,
           plugins: {
+            legend: { display: false },
             tooltip: {
               callbacks: {
                 label: ctx => `${ctx.label}: ${ctx.formattedValue}`
@@ -92,91 +117,156 @@ function crm_admin_panel_widget() {
         'log_retention_days' => 30
     ]);
     
+    
+    // Obtener estadísticas del sistema
+    global $wpdb;
+    $clients_table = $wpdb->prefix . 'crm_clients';
+    $log_table = $wpdb->prefix . 'crm_activity_log';
+    
+    $stats = [
+        'total_clients' => $wpdb->get_var("SELECT COUNT(*) FROM $clients_table"),
+        'clients_today' => $wpdb->get_var("SELECT COUNT(*) FROM $clients_table WHERE DATE(creado_en) = CURDATE()"),
+        'emails_sent' => $wpdb->get_var("SELECT COUNT(*) FROM $log_table WHERE action_type = 'email_enviado'"),
+        'active_comercials' => $wpdb->get_var("SELECT COUNT(DISTINCT user_id) FROM $clients_table")
+    ];
+
     ob_start();
     ?>
+
+    <div class="crm-widget-compact admin-panel-compact">
+        <div class="widget-header-compact">
+            <h3 class="widget-title-compact">Panel de Control CRM</h3>
+            <div class="widget-stats-compact">
+                <span class="total-count"><?php echo $stats['total_clients']; ?> clientes</span>
+            </div>
+        </div>
+        
+        <div class="widget-content-compact">
+            <!-- Estadísticas Principales -->
+            <div class="stats-row-compact">
+                <div class="stat-item-compact">
+                    <div class="stat-value"><?php echo $stats['total_clients']; ?></div>
+                    <div class="stat-label">Total Clientes</div>
+                </div>
+                <div class="stat-item-compact">
+                    <div class="stat-value"><?php echo $stats['clients_today']; ?></div>
+                    <div class="stat-label">Hoy</div>
+                </div>
+                <div class="stat-item-compact">
+                    <div class="stat-value"><?php echo $stats['emails_sent']; ?></div>
+                    <div class="stat-label">Emails</div>
+                </div>
+                <div class="stat-item-compact">
+                    <div class="stat-value"><?php echo $stats['active_comercials']; ?></div>
+                    <div class="stat-label">Comerciales</div>
+                </div>
+            </div>
+            
+            <!-- Configuraciones Rápidas -->
+            <div class="admin-quick-settings">
+                <form method="post" style="margin: 0;">
+                    <?php wp_nonce_field('crm_admin_settings', 'crm_nonce'); ?>
+                    <div class="settings-row-compact">
+                        <label class="setting-toggle">
+                            <input type="checkbox" name="admin_notifications" <?php checked($settings['admin_notifications']); ?>>
+                            <span class="toggle-label">Notificaciones Admin</span>
+                        </label>
+                        <label class="setting-toggle">
+                            <input type="checkbox" name="comercial_notifications" <?php checked($settings['comercial_notifications']); ?>>
+                            <span class="toggle-label">Notificaciones Comercial</span>
+                        </label>
+                        <label class="setting-toggle">
+                            <input type="checkbox" name="test_mode" <?php checked($settings['test_mode']); ?>>
+                            <span class="toggle-label">Modo Prueba</span>
+                        </label>
+                    </div>
+                    <div class="admin-actions">
+                        <button type="submit" name="update_crm_settings" class="btn-compact btn-primary">Guardar</button>
+                        <button type="button" id="test-email-btn" class="btn-compact">Test Email</button>
+                        <button type="button" id="clean-logs-btn" class="btn-compact btn-danger">Limpiar Logs</button>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Herramientas Rápidas -->
+            <div class="admin-tools-grid">
+                <a href="/todas-las-altas-de-cliente/" class="tool-link">Ver Clientes</a>
+                <a href="/resumen/" class="tool-link">Resumen</a>
+                <button type="button" id="export-data-btn" class="tool-link">Exportar</button>
+                <button type="button" id="system-info-btn" class="tool-link">Info Sistema</button>
+            </div>
+        </div>
+    </div>
     
-    <style>
-    .crm-admin-panel {
-        max-width: 1400px;
-        margin: 20px auto;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-        background: linear-gradient(135deg, rgb(15, 23, 42) 0%, rgb(30, 41, 59) 100%);
-        border-radius: 16px;
-        padding: 30px;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    }
-    
-    .crm-admin-panel h2 {
-        color: white;
-        font-size: 32px;
-        font-weight: 700;
-        margin: 0 0 30px 0;
-        text-align: center;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-    }
-    
-    .crm-panel-section {
-        background: rgba(255, 255, 255, 0.98);
-        border: none;
-        border-radius: 12px;
-        padding: 24px;
-        margin-bottom: 24px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        backdrop-filter: blur(10px);
-        transition: all 0.3s ease;
-    }
-    
-    .crm-panel-section:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    }
-    
-    .crm-panel-section h3 {
-        margin-top: 0;
-        color: rgb(15, 23, 42);
-        border-bottom: 3px solid rgb(59, 130, 246);
-        padding-bottom: 12px;
-        font-size: 20px;
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    
-    .crm-settings-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 20px;
-        margin-top: 24px;
-    }
-    
-    .crm-setting-item {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 16px 20px;
-        background: linear-gradient(135deg, rgb(248, 250, 252) 0%, rgb(241, 245, 249) 100%);
-        border-radius: 8px;
-        border: 1px solid rgb(226, 232, 240);
-        transition: all 0.2s ease;
-    }
-    
-    .crm-setting-item:hover {
-        background: linear-gradient(135deg, rgb(241, 245, 249) 0%, rgb(226, 232, 240) 100%);
-        border-color: rgb(59, 130, 246);
-    }
-    
-    .crm-setting-item input[type="checkbox"] {
-        width: 18px;
-        height: 18px;
-        accent-color: rgb(59, 130, 246);
-        cursor: pointer;
-    }
-    
-    .crm-setting-item input[type="number"] {
-        padding: 8px 12px;
-        border: 1px solid rgb(203, 213, 225);
-        border-radius: 6px;
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Test de email
+        document.getElementById('test-email-btn')?.addEventListener('click', function() {
+            const btn = this;
+            btn.disabled = true;
+            btn.textContent = 'Enviando...';
+            
+            fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    action: 'crm_test_email',
+                    nonce: '<?php echo wp_create_nonce('crm_obtener_clientes_nonce'); ?>'
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                alert(data.success ? 'Email enviado correctamente' : 'Error al enviar email');
+                btn.disabled = false;
+                btn.textContent = 'Test Email';
+            })
+            .catch(e => {
+                alert('Error: ' + e.message);
+                btn.disabled = false;
+                btn.textContent = 'Test Email';
+            });
+        });
+        
+        // Limpiar logs
+        document.getElementById('clean-logs-btn')?.addEventListener('click', function() {
+            if (!confirm('¿Eliminar logs antiguos?')) return;
+            
+            const btn = this;
+            btn.disabled = true;
+            btn.textContent = 'Limpiando...';
+            
+            fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    action: 'crm_clean_logs',
+                    nonce: '<?php echo wp_create_nonce('crm_obtener_clientes_nonce'); ?>'
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                alert(data.success ? 'Logs eliminados correctamente' : 'Error al eliminar logs');
+                if (data.success) setTimeout(() => location.reload(), 1000);
+                btn.disabled = false;
+                btn.textContent = 'Limpiar Logs';
+            });
+        });
+        
+        // Exportar datos
+        document.getElementById('export-data-btn')?.addEventListener('click', function() {
+            window.open('<?php echo admin_url('admin-ajax.php'); ?>?action=crm_export_data&nonce=<?php echo wp_create_nonce('crm_obtener_clientes_nonce'); ?>', '_blank');
+        });
+        
+        // Info del sistema
+        document.getElementById('system-info-btn')?.addEventListener('click', function() {
+            alert('WordPress: <?php echo get_bloginfo('version'); ?>\nPHP: <?php echo PHP_VERSION; ?>\nMemoria: <?php echo ini_get('memory_limit'); ?>');
+        });
+    });
+    </script>
+
+    <?php
+    return ob_get_clean();
+}
         width: 80px;
         font-size: 14px;
         transition: border-color 0.2s ease;
@@ -1410,40 +1500,44 @@ function crm_clientes_recientes_widget()
     }
 
     ob_start(); ?>
-    <div class="widget clientes-recientes">
-      <h3>Clientes Recientes</h3>
-      <table id="dt-clientes-recientes" class="display">
-        <thead>
-          <tr>
-            <th>Cliente</th><th>Empresa</th><th>Estado</th><th>Fecha Alta</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php foreach ($rows as $r): ?>
-            <tr>
-              <td><?php echo esc_html($r['cliente_nombre']); ?></td>
-              <td><?php echo esc_html($r['empresa']); ?></td>
-              <td><span class="crm-badge estado-<?php echo esc_attr($r['estado']); ?>">
-                <?php echo crm_get_estado_label($r['estado']); ?>
-              </span></td>
-              <td><?php echo date_i18n('d/m/Y H:i', strtotime($r['creado_en'])); ?></td>
-            </tr>
-          <?php endforeach; ?>
-        </tbody>
-      </table>
+    
+    <div class="crm-widget-compact">
+        <div class="widget-header-compact">
+            <h3 class="widget-title-compact">Clientes Recientes</h3>
+            <div class="widget-stats-compact">
+                <span class="total-count"><?php echo count($rows); ?> recientes</span>
+            </div>
+        </div>
+        
+        <div class="widget-content-compact">
+            <div class="table-responsive-compact">
+                <table class="crm-table-compact">
+                    <thead>
+                        <tr>
+                            <th>Cliente</th>
+                            <th>Empresa</th>
+                            <th>Estado</th>
+                            <th>Fecha</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($rows as $r): ?>
+                        <tr>
+                            <td class="client-name-cell"><?php echo esc_html($r['cliente_nombre']); ?></td>
+                            <td class="company-cell"><?php echo esc_html($r['empresa']); ?></td>
+                            <td>
+                                <span class="status-badge status-<?php echo esc_attr($r['estado']); ?>">
+                                    <?php echo crm_get_estado_label($r['estado']); ?>
+                                </span>
+                            </td>
+                            <td class="date-cell"><?php echo date_i18n('d/m', strtotime($r['creado_en'])); ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
-    <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      jQuery('#dt-clientes-recientes').DataTable({
-        paging:   false,
-        searching:false,
-        info:     false,
-        ordering: true,
-        order: [[3,'desc']],
-        language: { url: "https://cdn.datatables.net/plug-ins/1.13.4/i18n/es-ES.json" }
-      });
-    });
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -1498,10 +1592,35 @@ function crm_clientes_por_estado_widget()
 
     ob_start();
     ?>
-    <div class="widget clientes-por-estado">
-      <h3>Clientes por Estado (sectorial)</h3>
-      <canvas id="chart-clientes-estado"></canvas>
+    
+    <div class="crm-widget-compact">
+        <div class="widget-header-compact">
+            <h3 class="widget-title-compact">Clientes por Estado</h3>
+            <div class="widget-stats-compact">
+                <span class="total-count"><?php echo array_sum(array_map('array_sum', $matrix)); ?> total</span>
+            </div>
+        </div>
+        
+        <div class="widget-content-compact">
+            <div class="chart-container-compact">
+                <canvas id="chart-clientes-estado"></canvas>
+            </div>
+            
+            <div class="chart-summary-compact">
+                <?php foreach ($estados as $i => $estado): ?>
+                    <?php $total_estado = array_sum($matrix[$estado]); ?>
+                    <?php if ($total_estado > 0): ?>
+                    <div class="summary-item">
+                        <div class="summary-color" style="background-color: <?php echo crm_get_estados_sector()[$estado]['color']; ?>"></div>
+                        <span class="summary-label"><?php echo crm_get_estados_sector()[$estado]['label']; ?></span>
+                        <span class="summary-value"><?php echo $total_estado; ?></span>
+                    </div>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+            </div>
+        </div>
     </div>
+    
     <script>
     document.addEventListener("DOMContentLoaded", () => {
       const ctx = document.getElementById('chart-clientes-estado').getContext('2d');
@@ -1513,9 +1632,20 @@ function crm_clientes_por_estado_widget()
         },
         options: {
           responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
           scales: {
-            x: { stacked: true },
-            y: { stacked: true, beginAtZero: true }
+            x: { 
+              stacked: true,
+              grid: { display: false }
+            },
+            y: { 
+              stacked: true, 
+              beginAtZero: true,
+              grid: { color: '#f3f4f6' }
+            }
           }
         }
       });

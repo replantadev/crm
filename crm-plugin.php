@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.8.8
+Version: 1.8.9
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.8.8');
+define('CRM_PLUGIN_VERSION', '1.8.9');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -1917,10 +1917,21 @@ function crm_editar_cliente()
 
 
 
+    // Obtener el estado actual del cliente
+    $estado_actual = !empty($client_data['estado']) ? $client_data['estado'] : 'borrador';
+    
     // Reutilizamos el formulario de alta cliente con los datos del cliente cargados
     ob_start();
 ?>
-    <h2>Editar Cliente: <?php echo esc_html($client_data['cliente_nombre']); ?></h2>
+    <?php /* Cabecera bonita condensada */ ?>
+    <div class="crm-form-container">
+        <div class="crm-header" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0;">
+            <span style="display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 500;">
+                <img src="<?php echo get_site_icon_url(); ?>" alt="Logo" class="crm-logo" style="height: 28px; width: 28px; margin-right: 6px;"> Energitel CRM - Editando: <span style="color: #007cba; font-weight: 600;"> <?php echo esc_html($client_data['cliente_nombre']); ?> </span>
+            </span>
+            <span class="estado <?php echo $estado_actual; ?>" style="font-size: 13px; padding: 2px 8px; border-radius: 4px; background: #f2f2f2; color: #333; margin-left: 10px;"> <?php echo crm_get_estado_label($estado_actual); ?> </span>
+        </div>
+    </div>
     <?php echo do_shortcode('[crm_alta_cliente]'); ?>
 <?php
     return ob_get_clean();

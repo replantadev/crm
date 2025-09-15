@@ -1570,51 +1570,39 @@ function crm_rendimiento_comercial_widget()
 
     // vuelco en HTML
     ob_start(); ?>
-    <div class="crm-dashboard-rendimiento">
-        <div class="crm-dashboard-header">
-            <h2 class="dashboard-title">
-                <span class="dashboard-icon">📊</span>
+    <div class="crm-dashboard-compact">
+        <div class="dashboard-header-compact">
+            <h3 class="dashboard-title-compact">
                 <?php echo current_user_can('crm_admin') ? 'Rendimiento General' : 'Mi Rendimiento'; ?>
-            </h2>
-            <p class="dashboard-subtitle">Vista general del estado de clientes</p>
+            </h3>
         </div>
 
-        <div class="crm-stats-grid">
+        <div class="stats-row-compact">
             <?php 
-            $icons = [
-                'borrador' => '📝',
-                'presupuesto_aceptado' => '✅', 
-                'contratos_generados' => '📋',
-                'contratos_firmados' => '🎉'
+            $labels = [
+                'borrador' => 'Borrador',
+                'presupuesto_aceptado' => 'Presup. Aceptado', 
+                'contratos_generados' => 'Contratos Gen.',
+                'contratos_firmados' => 'Contratos Firm.'
             ];
             
-            foreach ($totales as $label => $count): 
-                $percentage = array_sum($totales) > 0 ? round(($count / array_sum($totales)) * 100, 1) : 0;
+            $total = array_sum($totales);
+            
+            foreach ($totales as $key => $count): 
+                $percentage = $total > 0 ? round(($count / $total) * 100, 1) : 0;
             ?>
-                <div class="crm-stat-card estado-<?php echo $label; ?>">
-                    <div class="stat-header">
-                        <span class="stat-icon"><?php echo $icons[$label]; ?></span>
-                        <span class="stat-label"><?php echo crm_get_estado_label($label); ?></span>
-                    </div>
-                    <div class="stat-number"><?php echo $count; ?></div>
-                    <div class="stat-percentage"><?php echo $percentage; ?>%</div>
-                    <div class="stat-progress">
-                        <div class="stat-bar" style="width: <?php echo $percentage; ?>%"></div>
-                    </div>
+                <div class="stat-compact estado-<?php echo $key; ?>">
+                    <div class="stat-label-compact"><?php echo $labels[$key]; ?></div>
+                    <div class="stat-value-compact"><?php echo $count; ?></div>
+                    <div class="stat-percent-compact"><?php echo $percentage; ?>%</div>
                 </div>
             <?php endforeach; ?>
         </div>
 
         <?php if (current_user_can('crm_admin')): ?>
-            <div class="crm-dashboard-actions">
-                <a href="/resumen" class="crm-action-btn primary">
-                    <span class="btn-icon">👥</span>
-                    Ver Resumen de Comerciales
-                </a>
-                <a href="/panel-de-control" class="crm-action-btn secondary">
-                    <span class="btn-icon">⚙️</span>
-                    Control y Registro
-                </a>
+            <div class="dashboard-actions-compact">
+                <a href="/resumen" class="action-link-compact">Ver Resumen de Comerciales</a>
+                <a href="/panel-de-control" class="action-link-compact">Control y Registro</a>
             </div>
         <?php endif; ?>
     </div>

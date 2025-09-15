@@ -351,34 +351,34 @@ document.addEventListener("DOMContentLoaded", function () {
     function formatDocumentosMinimal(presupuestos, contratosGenerados, contratosFirmados) {
         const docs = [];
         
-        // Presupuestos - icono 📄
+        // Presupuestos
         if (presupuestos) {
             let countPresup = 0;
             Object.entries(presupuestos).forEach(([sector, files]) => {
                 countPresup += files.length;
             });
             if (countPresup > 0) {
-                docs.push(`<span class="doc-badge presup" title="${countPresup} presupuesto(s)">📄 ${countPresup}</span>`);
+                docs.push(`<span class="doc-badge presup" title="${countPresup} presupuesto(s)">P ${countPresup}</span>`);
             }
         }
         
-        // Contratos generados - icono 📋
+        // Contratos generados
         if (contratosGenerados && contratosGenerados.length > 0) {
-            docs.push(`<span class="doc-badge contratos-gen" title="${contratosGenerados.length} contrato(s) generado(s)">📋 ${contratosGenerados.length}</span>`);
+            docs.push(`<span class="doc-badge contratos-gen" title="${contratosGenerados.length} contrato(s) generado(s)">CG ${contratosGenerados.length}</span>`);
         }
         
-        // Contratos firmados - icono ✅
+        // Contratos firmados
         if (contratosFirmados) {
             let countFirmados = 0;
             Object.entries(contratosFirmados).forEach(([sector, files]) => {
                 countFirmados += files.length;
             });
             if (countFirmados > 0) {
-                docs.push(`<span class="doc-badge firmados" title="${countFirmados} contrato(s) firmado(s)">✅ ${countFirmados}</span>`);
+                docs.push(`<span class="doc-badge firmados" title="${countFirmados} contrato(s) firmado(s)">CF ${countFirmados}</span>`);
             }
         }
         
-        return docs.length > 0 ? docs.join(' ') : "<span class='no-docs'>📭</span>";
+        return docs.length > 0 ? docs.join(' ') : "<span class='no-docs'>—</span>";
     }
 
     function formatPresupuestos(presupuestos) {

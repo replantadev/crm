@@ -87,7 +87,7 @@ document.addEventListener("DOMContentLoaded", function () {
           </td>
 
           <td>${formatEstadoPorSector(c.estado_por_sector)}</td>
-          <td>${documentosMatrix(c)}</td>
+          <td>${formatDocumentosMinimal(c.presupuestos, c.contratos_generados, c.contratos_firmados)}</td>
           <td data-order="${c.actualizado_en}">${formatDate(c.actualizado_en)}</td>
            <td class="accion">
                                 <a href="/editar-cliente/?client_id=${c.id}"
@@ -346,6 +346,40 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
 
+
+    // Función unificada para mostrar todos los documentos de forma minimalista
+    function formatDocumentosMinimal(presupuestos, contratosGenerados, contratosFirmados) {
+        const docs = [];
+        
+        // Presupuestos - icono 📄
+        if (presupuestos) {
+            let countPresup = 0;
+            Object.entries(presupuestos).forEach(([sector, files]) => {
+                countPresup += files.length;
+            });
+            if (countPresup > 0) {
+                docs.push(`<span class="doc-badge presup" title="${countPresup} presupuesto(s)">📄 ${countPresup}</span>`);
+            }
+        }
+        
+        // Contratos generados - icono 📋
+        if (contratosGenerados && contratosGenerados.length > 0) {
+            docs.push(`<span class="doc-badge contratos-gen" title="${contratosGenerados.length} contrato(s) generado(s)">📋 ${contratosGenerados.length}</span>`);
+        }
+        
+        // Contratos firmados - icono ✅
+        if (contratosFirmados) {
+            let countFirmados = 0;
+            Object.entries(contratosFirmados).forEach(([sector, files]) => {
+                countFirmados += files.length;
+            });
+            if (countFirmados > 0) {
+                docs.push(`<span class="doc-badge firmados" title="${countFirmados} contrato(s) firmado(s)">✅ ${countFirmados}</span>`);
+            }
+        }
+        
+        return docs.length > 0 ? docs.join(' ') : "<span class='no-docs'>📭</span>";
+    }
 
     function formatPresupuestos(presupuestos) {
         if (!presupuestos) return "<span class='no-data'>-</span>";

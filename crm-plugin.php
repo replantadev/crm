@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.9.1
+Version: 1.10.0
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.9.1');
+define('CRM_PLUGIN_VERSION', '1.10.0');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -1969,24 +1969,33 @@ function crm_todas_las_altas()
 
     ob_start();
 ?>
-    <table id="crm-todas-las-altas" class="crm-table material-design">
-        <thead>
-            <tr>
-                <th>#</th>
-                <th>Fecha</th>
-                <th>Cliente</th>
-                <th>Comercial</th>
+    <div class="crm-table-container">
+        <div class="crm-table-header">
+            <h2 class="table-title">
+                <span class="table-icon">📋</span>
+                Todas las Altas de Clientes
+            </h2>
+            <p class="table-subtitle">Gestión completa del equipo comercial</p>
+        </div>
 
-                <th>Estado</th>
-                <th>Documentos</th>
-                <th>Última Edición</th>
-                <th>Acciones</th>
-            </tr>
-        </thead>
-        <tbody>
-            <!-- Los datos serán añadidos dinámicamente por AJAX -->
-        </tbody>
-    </table>
+        <table id="crm-todas-las-altas" class="crm-table modern-admin">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>📅 Fecha</th>
+                    <th>👤 Cliente</th>
+                    <th>🏢 Comercial</th>
+                    <th>📊 Estado</th>
+                    <th>📁 Docs</th>
+                    <th>⏰ Última Edición</th>
+                    <th>⚡ Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Los datos serán añadidos dinámicamente por AJAX -->
+            </tbody>
+        </table>
+    </div>
 
 <?php
     return ob_get_clean();

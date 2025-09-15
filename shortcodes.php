@@ -1570,20 +1570,53 @@ function crm_rendimiento_comercial_widget()
 
     // vuelco en HTML
     ob_start(); ?>
-    <div class="widget rendimiento-comercial">
-        <h3><?php echo current_user_can('crm_admin') ? 'Rendimiento General' : 'Mi rendimiento'; ?></h3>
-        <ul>
-            <?php foreach ($totales as $label => $count): ?>
-                <li>
-                    <strong><?php echo crm_get_estado_label($label); ?>:</strong>
-                    <?php echo $count; ?>
-                </li>
+    <div class="crm-dashboard-rendimiento">
+        <div class="crm-dashboard-header">
+            <h2 class="dashboard-title">
+                <span class="dashboard-icon">📊</span>
+                <?php echo current_user_can('crm_admin') ? 'Rendimiento General' : 'Mi Rendimiento'; ?>
+            </h2>
+            <p class="dashboard-subtitle">Vista general del estado de clientes</p>
+        </div>
+
+        <div class="crm-stats-grid">
+            <?php 
+            $icons = [
+                'borrador' => '📝',
+                'presupuesto_aceptado' => '✅', 
+                'contratos_generados' => '📋',
+                'contratos_firmados' => '🎉'
+            ];
+            
+            foreach ($totales as $label => $count): 
+                $percentage = array_sum($totales) > 0 ? round(($count / array_sum($totales)) * 100, 1) : 0;
+            ?>
+                <div class="crm-stat-card estado-<?php echo $label; ?>">
+                    <div class="stat-header">
+                        <span class="stat-icon"><?php echo $icons[$label]; ?></span>
+                        <span class="stat-label"><?php echo crm_get_estado_label($label); ?></span>
+                    </div>
+                    <div class="stat-number"><?php echo $count; ?></div>
+                    <div class="stat-percentage"><?php echo $percentage; ?>%</div>
+                    <div class="stat-progress">
+                        <div class="stat-bar" style="width: <?php echo $percentage; ?>%"></div>
+                    </div>
+                </div>
             <?php endforeach; ?>
-            <?php if (current_user_can('crm_admin')): ?>
-                <li><a href="/resumen">Ver Resumen de Comerciales</a></li>
-                <li><a href="/panel-de-control">Control y registro</a></li>
-            <?php endif; ?>
-        </ul>
+        </div>
+
+        <?php if (current_user_can('crm_admin')): ?>
+            <div class="crm-dashboard-actions">
+                <a href="/resumen" class="crm-action-btn primary">
+                    <span class="btn-icon">👥</span>
+                    Ver Resumen de Comerciales
+                </a>
+                <a href="/panel-de-control" class="crm-action-btn secondary">
+                    <span class="btn-icon">⚙️</span>
+                    Control y Registro
+                </a>
+            </div>
+        <?php endif; ?>
     </div>
 <?php
     return ob_get_clean();

@@ -9,7 +9,7 @@
     padding: 0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
     background: linear-gradient(135deg, rgb(15, 23, 42) 0%, rgb(30, 41, 59) 100%);
-    min-height: 100vh;
+    
 }
 
 /* === UI OPTIMIZADA PARA IPAD === */
@@ -18,12 +18,110 @@
 .crm-header {
     background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(20px);
-    padding: 16px 24px; /* Reducido de 24px 32px */
+    padding: 12px 24px; /* Más condensado */
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
     position: sticky;
     top: 0;
     z-index: 100;
     border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.crm-header-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.crm-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.crm-title {
+    color: rgb(15, 23, 42);
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.crm-header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.crm-header-comercial-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.comercial-asignado {
+    background: rgba(0, 124, 186, 0.1);
+    color: #007cba;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.borrador-info {
+    background: rgba(255, 193, 7, 0.1);
+    color: #ffc107;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.crm-header-badges {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(15, 23, 42, 0.05);
+}
+
+.crm-header-badges .crm-badges-estado {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+/* Responsive para móviles */
+@media (max-width: 768px) {
+    .crm-header {
+        padding: 8px 16px;
+    }
+    
+    .crm-header-main {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    
+    .crm-header-left {
+        justify-content: center;
+    }
+    
+    .crm-title {
+        font-size: 16px;
+        text-align: center;
+    }
+    
+    .crm-header-right {
+        justify-content: center;
+    }
+    
+    .crm-header-comercial-info {
+        justify-content: center;
+    }
+    
+    .crm-header-badges {
+        margin-top: 6px;
+        padding-top: 6px;
+    }
 }
 
 .crm-header h2 {
@@ -40,9 +138,9 @@
 }
 
 .crm-logo {
-    width: 24px; /* Reducido de 32px */
-    height: 24px; /* Reducido de 32px */
-    border-radius: 6px;
+    width: 20px; /* Más pequeño */
+    height: 20px; /* Más pequeño */
+    border-radius: 4px;
     vertical-align: middle;
 }
 

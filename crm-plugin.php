@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.8.9
+Version: 1.9.0
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.8.9');
+define('CRM_PLUGIN_VERSION', '1.9.0');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -401,12 +401,37 @@ function crm_formulario_alta_cliente()
 
     <div class="crm-form-container">
         <div class="crm-header">
-            <h2><img src="<?php echo get_site_icon_url(); ?>" alt="Logo" class="crm-logo"> Energitel CRM - Alta de Cliente</h2>
+            <div class="crm-header-main">
+                <div class="crm-header-left">
+                    <img src="<?php echo get_site_icon_url(); ?>" alt="Logo" class="crm-logo">
+                    <span class="crm-title">Energitel CRM - Alta de Cliente</span>
+                </div>
+                
+                <div class="crm-header-right">
+                    <!-- Estado principal -->
+                    <?php if($client_id): ?>
+                        <span class="estado <?php echo $estado_actual; ?>"><?php echo crm_get_estado_label($estado_actual); ?></span>
+                    <?php endif; ?>
+                    
+                    <!-- Solo para comerciales - información condensada -->
+                    <?php if(!current_user_can('crm_admin')): ?>
+                        <div class="crm-header-comercial-info">
+                            <span class="comercial-asignado">👤 <?php echo esc_html(wp_get_current_user()->display_name); ?></span>
+                            <?php if($estado_actual === 'borrador'): ?>
+                                <span class="borrador-info">📝 Borrador</span>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
             
-            <!-- Estado actual -->
-            <?php if($client_id): ?>
-                <div style="text-align: center; margin-top: 16px;">
-                    <span class="estado <?php echo $estado_actual; ?>"><?php echo crm_get_estado_label($estado_actual); ?></span>
+            <!-- Badges de estado por sector - solo para comerciales -->
+            <?php if(!current_user_can('crm_admin') && $client_id): ?>
+                <div class="crm-header-badges">
+                    <?php
+                    $sectores = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
+                    echo crm_render_estado_badges($estado_por_sector, $sectores);
+                    ?>
                 </div>
             <?php endif; ?>
         </div>
@@ -572,12 +597,11 @@ function crm_formulario_alta_cliente()
         <input type="hidden" name="client_id" value="<?php echo esc_attr($client_id); ?>">
         <input type="hidden" name="estado_formulario" id="estado_formulario" value="<?php echo esc_attr($estado_actual); ?>">
 
-        <!-- Datos del Comercial -->
+        <!-- Datos del Comercial - Solo visible para administradores -->
+        <?php if(current_user_can('crm_admin')): ?>
         <div class="crm-section inicio">
             <div class="half-width">
-                <?php if (current_user_can('crm_admin')): ?>
-                    <p><a class="atras" href="/todas-las-altas-de-cliente/"> ⬅️Regresar Atrás</a></p>
-                <?php endif; ?>
+                <p><a class="atras" href="/todas-las-altas-de-cliente/"> ⬅️Regresar Atrás</a></p>
                 <p>Estado: <strong class="estado <?php echo $estado_actual; ?>"><?php echo crm_get_estado_label($estado_actual); ?></strong></p>
                 <?php if ($estado_actual === 'borrador'): ?>
                     <p><small>Este cliente está guardado como borrador. Aún no se ha enviado para revisión.</small></p>
@@ -591,41 +615,35 @@ function crm_formulario_alta_cliente()
                 ?>
             </div>
             <div class="half-width">
-                <?php if (current_user_can('crm_admin')): ?>
-                    <label for="delegado">Comercial Asignado:</label>
-                    <select name="delegado" id="delegado">
-                        <?php
-                        // Obtener todos los usuarios con el rol "comercial"
-                        $comerciales = get_users(['role' => 'comercial']);
-                        foreach ($comerciales as $comercial) {
-                            $selected = (isset($client_data['delegado']) && $client_data['delegado'] === $comercial->display_name) ? 'selected' : '';
-                            echo "<option value='" . esc_attr($comercial->display_name) . "' $selected>" . esc_html($comercial->display_name) . " (" . esc_html($comercial->user_email) . ")</option>";
-                        }
-                        ?>
-                    </select>
-                    <input type="hidden" name="email_comercial" id="email_comercial" value="<?php echo esc_attr($client_data['email_comercial'] ?? ''); ?>">
-                <?php else: ?>
-                    <small>El cliente está asignado a <?php echo esc_html($client_data['delegado'] ?? wp_get_current_user()->display_name); ?> (<?php echo esc_html($client_data['email_comercial'] ?? wp_get_current_user()->user_email); ?>)</small>
-                    <input type="hidden" name="delegado" value="<?php echo esc_attr(isset($client_data['delegado']) ? $client_data['delegado'] : wp_get_current_user()->display_name); ?>">
-                    <input type="hidden" name="email_comercial" value="<?php echo esc_attr(isset($client_data['email_comercial']) ? $client_data['email_comercial'] : wp_get_current_user()->user_email); ?>">
-                <?php endif; ?>
-                <?php if (current_user_can('crm_admin')): ?>
+                <label for="delegado">Comercial Asignado:</label>
+                <select name="delegado" id="delegado">
+                    <?php
+                    // Obtener todos los usuarios con el rol "comercial"
+                    $comerciales = get_users(['role' => 'comercial']);
+                    foreach ($comerciales as $comercial) {
+                        $selected = (isset($client_data['delegado']) && $client_data['delegado'] === $comercial->display_name) ? 'selected' : '';
+                        echo "<option value='" . esc_attr($comercial->display_name) . "' $selected>" . esc_html($comercial->display_name) . " (" . esc_html($comercial->user_email) . ")</option>";
+                    }
+                    ?>
+                </select>
+                <input type="hidden" name="email_comercial" id="email_comercial" value="<?php echo esc_attr($client_data['email_comercial'] ?? ''); ?>">
 
-                    <label for="estado">Estado global:</label>
-                    <select name="estado" id="estado">
-                        <option value="" disabled <?php selected($estado_actual, ''); ?>>Selecciona un estado</option>
-                        <?php foreach (crm_get_estados_sector() as $val => $arr): ?>
-                            <option value="<?php echo esc_attr($val) ?>" <?php selected($estado_actual, $val) ?>>
-                                <?php echo esc_html($arr['label']) ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-
-                <?php endif; ?>
-
-
+                <label for="estado">Estado global:</label>
+                <select name="estado" id="estado">
+                    <option value="" disabled <?php selected($estado_actual, ''); ?>>Selecciona un estado</option>
+                    <?php foreach (crm_get_estados_sector() as $val => $arr): ?>
+                        <option value="<?php echo esc_attr($val) ?>" <?php selected($estado_actual, $val) ?>>
+                            <?php echo esc_html($arr['label']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
             </div>
         </div>
+        <?php else: ?>
+        <!-- Para comerciales: campos ocultos con sus datos -->
+        <input type="hidden" name="delegado" value="<?php echo esc_attr(isset($client_data['delegado']) ? $client_data['delegado'] : wp_get_current_user()->display_name); ?>">
+        <input type="hidden" name="email_comercial" value="<?php echo esc_attr(isset($client_data['email_comercial']) ? $client_data['email_comercial'] : wp_get_current_user()->user_email); ?>">
+        <?php endif; ?>
 
         <!-- Datos del Cliente -->
         <div class="crm-section datos">
@@ -1923,13 +1941,26 @@ function crm_editar_cliente()
     // Reutilizamos el formulario de alta cliente con los datos del cliente cargados
     ob_start();
 ?>
-    <?php /* Cabecera bonita condensada */ ?>
+    <?php /* Cabecera bonita condensada unificada */ ?>
     <div class="crm-form-container">
-        <div class="crm-header" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0;">
-            <span style="display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 500;">
-                <img src="<?php echo get_site_icon_url(); ?>" alt="Logo" class="crm-logo" style="height: 28px; width: 28px; margin-right: 6px;"> Energitel CRM - Editando: <span style="color: #007cba; font-weight: 600;"> <?php echo esc_html($client_data['cliente_nombre']); ?> </span>
-            </span>
-            <span class="estado <?php echo $estado_actual; ?>" style="font-size: 13px; padding: 2px 8px; border-radius: 4px; background: #f2f2f2; color: #333; margin-left: 10px;"> <?php echo crm_get_estado_label($estado_actual); ?> </span>
+        <div class="crm-header">
+            <div class="crm-header-main">
+                <div class="crm-header-left">
+                    <img src="<?php echo get_site_icon_url(); ?>" alt="Logo" class="crm-logo">
+                    <span class="crm-title">Energitel CRM - Editando: <span style="color: #007cba; font-weight: 600;"><?php echo esc_html($client_data['cliente_nombre']); ?></span></span>
+                </div>
+                
+                <div class="crm-header-right">
+                    <span class="estado <?php echo $estado_actual; ?>"><?php echo crm_get_estado_label($estado_actual); ?></span>
+                    
+                    <!-- Solo para comerciales - información condensada -->
+                    <?php if(!current_user_can('crm_admin')): ?>
+                        <div class="crm-header-comercial-info">
+                            <span class="comercial-asignado">👤 <?php echo esc_html($client_data['delegado'] ?? wp_get_current_user()->display_name); ?></span>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
         </div>
     </div>
     <?php echo do_shortcode('[crm_alta_cliente]'); ?>

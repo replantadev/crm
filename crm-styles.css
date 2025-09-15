@@ -3566,3 +3566,109 @@ button.aceptar-presupuesto{background:#25C685;color:#fff;font-size:12px;margin:4
         grid-template-columns: repeat(2, 1fr);
     }
 }
+
+/* === WIDGET RENDIMIENTO COMERCIAL COMPACT === */
+.stats-grid-compact {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.stat-item-compact {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.stat-item-compact:hover {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+}
+
+.stat-item-compact .stat-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #6b7280;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-item-compact .stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 2px;
+}
+
+.stat-item-compact .stat-percent {
+    font-size: 11px;
+    font-weight: 500;
+    color: #9ca3af;
+}
+
+/* Estados específicos */
+.stat-item-compact.estado-borrador {
+    border-left: 4px solid #f59e0b;
+}
+
+.stat-item-compact.estado-presupuesto_aceptado {
+    border-left: 4px solid #3b82f6;
+}
+
+.stat-item-compact.estado-contratos_generados {
+    border-left: 4px solid #8b5cf6;
+}
+
+.stat-item-compact.estado-contratos_firmados {
+    border-left: 4px solid #10b981;
+}
+
+.widget-actions-compact {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+}
+
+.action-link-compact {
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 16px;
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    color: #374151;
+    transition: all 0.2s ease;
+}
+
+.action-link-compact:hover {
+    background: #e5e7eb;
+    color: #1f2937;
+    text-decoration: none;
+}
+
+/* Responsive para rendimiento */
+@media (max-width: 768px) {
+    .stats-grid-compact {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+    
+    .widget-actions-compact {
+        flex-direction: column;
+    }
+    
+    .stat-item-compact .stat-value {
+        font-size: 20px;
+    }
+}

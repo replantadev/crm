@@ -110,6 +110,16 @@ function crm_enqueue_styles()
         (is_admin() && current_user_can('crm_admin'))) {
         wp_enqueue_style('crm-offline-styles', CRM_PLUGIN_URL . 'css/crm-offline-styles.css', ['crm-styles'], CRM_PLUGIN_VERSION);
     }
+    
+    // Cargar estilos para documentación en páginas que contengan los shortcodes de guías
+    global $post;
+    if (is_a($post, 'WP_Post') && (has_shortcode($post->post_content, 'crm_guia_comerciales') || 
+        has_shortcode($post->post_content, 'crm_guia_admin'))) {
+        wp_enqueue_style('crm-docs-styles', CRM_PLUGIN_URL . 'css/crm-docs-styles.css', [], CRM_PLUGIN_VERSION);
+        
+        // Añadir Google Fonts para mejor tipografía
+        wp_enqueue_style('crm-google-fonts', 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap', [], null);
+    }
 }
 add_action('wp_enqueue_scripts', 'crm_enqueue_scripts');
 

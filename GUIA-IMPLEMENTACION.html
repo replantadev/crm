@@ -1,0 +1,108 @@
+<!-- GUÍA PARA CREAR PÁGINAS DE DOCUMENTACIÓN EN WORDPRESS CON ASTRA -->
+
+<!-- 
+=== CÓMO USAR LAS GUÍAS DE CRM ===
+
+1. En WordPress Admin, ve a Páginas > Añadir nueva
+2. Título de la página: "Guía para Comerciales" o "Guía para Administradores"
+3. En el editor, cambia a "Texto" (no Visual)
+4. Copia uno de los shortcodes de abajo según el tipo de guía
+5. Publica la página
+6. Los estilos se cargarán automáticamente cuando se detecte el shortcode
+
+=== SHORTCODES DISPONIBLES ===
+
+Para la guía de comerciales:
+[crm_guia_comerciales]
+
+Para la guía de administradores:
+[crm_guia_admin]
+
+=== EJEMPLO DE PÁGINA COMPLETA ===
+-->
+
+<!DOCTYPE html>
+<!-- Esta es una página de ejemplo que puedes crear en WordPress -->
+<div class="ast-container"> <!-- Contenedor de Astra de 1200px -->
+    
+    <!-- Para comerciales -->
+    [crm_guia_comerciales]
+    
+    <!-- O para administradores -->
+    <!-- [crm_guia_admin] -->
+    
+</div>
+
+<!-- 
+=== CARACTERÍSTICAS DE LOS NUEVOS ESTILOS ===
+
+✅ DISEÑO MODERNO:
+- Tipografía Inter (Google Fonts)
+- Gradientes y sombras sutiles
+- Animaciones CSS suaves
+- Iconos emoji para mejor UX
+
+✅ RESPONSIVO:
+- Optimizado para contenedor de 1200px de Astra
+- Breakpoints móviles nativos
+- Grid y flexbox modernos
+- Touch-friendly en iPad
+
+✅ UX MEJORADA:
+- Navegación con hover effects
+- Barras de progreso en workflows
+- Cajas de contenido categorizadas por colores
+- Smooth scrolling entre secciones
+
+✅ ACCESIBILIDAD:
+- Contraste WCAG AA
+- Focus states visibles
+- Estructura semántica
+- Compatible con lectores de pantalla
+
+✅ RENDIMIENTO:
+- CSS externo (no inline)
+- Carga condicional según shortcode
+- Optimizado para Core Web Vitals
+- Print styles incluidos
+
+=== ESTRUCTURA DE COLORES ===
+
+🔵 FEATURE-BOX: Azul - Información importante
+🟢 TIP-BOX: Verde - Consejos y recomendaciones  
+🟡 WARNING-BOX: Amarillo - Advertencias
+🔴 TROUBLESHOOTING: Rojo - Solución de problemas
+⚪ STEP-BY-STEP: Blanco - Pasos numerados
+🔘 WORKFLOW: Gris - Diagramas de flujo
+
+=== CÓMO PERSONALIZAR ===
+
+1. Los estilos están en: /css/crm-docs-styles.css
+2. Se cargan automáticamente cuando detecta el shortcode
+3. Puedes sobrescribir estilos en el theme de Astra
+4. Variables CSS disponibles para fácil customización
+
+=== ENLACES RECOMENDADOS ===
+
+Crear un menú footer en Astra con enlaces a:
+- /guia-comerciales/ → Guía para Comerciales  
+- /guia-administradores/ → Guía para Administradores
+- /soporte/ → Contacto de soporte técnico
+
+=== CONTENIDO ADICIONAL ===
+
+Puedes añadir contenido extra antes o después del shortcode:
+
+<div class="contenido-personalizado">
+    <h2>Bienvenido al Sistema CRM</h2>
+    <p>Esta documentación te ayudará a sacar el máximo provecho del sistema.</p>
+    
+    [crm_guia_comerciales]
+    
+    <div class="contacto-adicional">
+        <h3>¿Necesitas más ayuda?</h3>
+        <p>Contacta con soporte: soporte@empresa.com</p>
+    </div>
+</div>
+
+-->

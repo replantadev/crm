@@ -1,0 +1,624 @@
+/**
+ * CRM Documentation Styles v1.13.1
+ * Estilos modernos para las guías de usuario - Optimizado para contenedor de 1200px
+ */
+
+/* ===== CONTENEDOR PRINCIPAL ===== */
+.crm-help-container {
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    line-height: 1.7;
+    color: #2d3748;
+    background: #ffffff;
+    position: relative;
+}
+
+/* ===== HEADER PRINCIPAL ===== */
+.crm-help-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 60px 40px;
+    margin: -20px -20px 40px -20px;
+    border-radius: 0 0 20px 20px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.crm-help-header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/></pattern></defs><rect width="100" height="100" fill="url(%23grid)"/></svg>');
+    opacity: 0.3;
+}
+
+.crm-help-header h1 {
+    margin: 0 0 15px 0;
+    font-size: 3rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    position: relative;
+    z-index: 1;
+}
+
+.help-subtitle {
+    margin: 0;
+    font-size: 1.25rem;
+    opacity: 0.9;
+    font-weight: 400;
+    position: relative;
+    z-index: 1;
+}
+
+.admin-header {
+    background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+}
+
+/* ===== NAVEGACIÓN ===== */
+.help-navigation {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 30px;
+    margin-bottom: 40px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.help-navigation ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 15px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.help-navigation li {
+    margin: 0;
+}
+
+.help-navigation a {
+    display: block;
+    padding: 15px 20px;
+    background: white;
+    color: #4a5568;
+    text-decoration: none;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    transition: all 0.3s ease;
+    font-weight: 500;
+    position: relative;
+}
+
+.help-navigation a:hover {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.help-navigation a::before {
+    content: '→';
+    opacity: 0;
+    transform: translateX(-10px);
+    transition: all 0.3s ease;
+    margin-right: 8px;
+}
+
+.help-navigation a:hover::before {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* ===== SECCIONES ===== */
+.help-section {
+    background: white;
+    margin-bottom: 40px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    border: 1px solid #e2e8f0;
+    overflow: hidden;
+}
+
+.help-section h2 {
+    background: linear-gradient(90deg, #f7fafc 0%, #edf2f7 100%);
+    margin: 0;
+    padding: 25px 30px;
+    color: #2d3748;
+    font-size: 1.75rem;
+    font-weight: 600;
+    border-bottom: 1px solid #e2e8f0;
+    position: relative;
+}
+
+.help-section h2::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.help-content {
+    padding: 30px;
+}
+
+.help-content h3 {
+    color: #4a5568;
+    font-size: 1.25rem;
+    margin: 0 0 20px 0;
+    font-weight: 600;
+}
+
+.help-content h4 {
+    color: #2d3748;
+    font-size: 1.1rem;
+    margin: 25px 0 15px 0;
+    font-weight: 600;
+}
+
+/* ===== CAJAS DE CONTENIDO ===== */
+.feature-box {
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    border: 1px solid #0ea5e9;
+    border-radius: 10px;
+    padding: 25px;
+    margin: 25px 0;
+    position: relative;
+}
+
+.feature-box::before {
+    content: '💡';
+    position: absolute;
+    top: -10px;
+    left: 20px;
+    background: white;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 1.2rem;
+}
+
+.tip-box {
+    background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+    border: 1px solid #22c55e;
+    border-radius: 10px;
+    padding: 25px;
+    margin: 25px 0;
+    position: relative;
+}
+
+.tip-box::before {
+    content: '💡';
+    position: absolute;
+    top: -10px;
+    left: 20px;
+    background: white;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 1.2rem;
+}
+
+.warning-box {
+    background: linear-gradient(135deg, #fefce8 0%, #fef3c7 100%);
+    border: 1px solid #f59e0b;
+    border-radius: 10px;
+    padding: 25px;
+    margin: 25px 0;
+    position: relative;
+}
+
+.warning-box::before {
+    content: '⚠️';
+    position: absolute;
+    top: -10px;
+    left: 20px;
+    background: white;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 1.2rem;
+}
+
+/* ===== CAJAS ESPECIALIZADAS ===== */
+.admin-permissions,
+.notification-types,
+.file-management,
+.upload-guidelines,
+.dashboard-features,
+.table-analysis,
+.maintenance-tips,
+.table-features,
+.validation-info {
+    background: linear-gradient(135deg, #fafafa 0%, #f4f4f5 100%);
+    border: 1px solid #d4d4d8;
+    border-radius: 10px;
+    padding: 25px;
+    margin: 25px 0;
+    position: relative;
+}
+
+.email-content {
+    background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+    border-left: 4px solid #22c55e;
+    border-radius: 10px;
+    padding: 25px;
+    margin: 25px 0;
+}
+
+/* ===== WORKFLOW DIAGRAM ===== */
+.workflow-diagram {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 15px;
+    margin: 30px 0;
+    padding: 30px;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+}
+
+.workflow-step {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    flex: 1;
+    min-width: 140px;
+    border: 1px solid #e2e8f0;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.workflow-step:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.workflow-step strong {
+    display: block;
+    color: #2d3748;
+    margin-bottom: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.workflow-step p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #718096;
+    line-height: 1.4;
+}
+
+.workflow-arrow {
+    font-size: 1.5rem;
+    color: #667eea;
+    font-weight: bold;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* ===== PASOS NUMERADOS ===== */
+.step-by-step {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 25px;
+    margin: 25px 0;
+}
+
+.step-by-step ol {
+    margin: 15px 0 0 0;
+    padding-left: 0;
+    list-style: none;
+    counter-reset: step-counter;
+}
+
+.step-by-step li {
+    counter-increment: step-counter;
+    position: relative;
+    padding: 15px 0 15px 60px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.step-by-step li:last-child {
+    border-bottom: none;
+}
+
+.step-by-step li::before {
+    content: counter(step-counter);
+    position: absolute;
+    left: 0;
+    top: 15px;
+    width: 35px;
+    height: 35px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+/* ===== LISTAS MEJORADAS ===== */
+.help-content ul {
+    margin: 15px 0;
+    padding-left: 0;
+    list-style: none;
+}
+
+.help-content li {
+    position: relative;
+    padding: 8px 0 8px 30px;
+    margin-bottom: 5px;
+}
+
+.help-content li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: #667eea;
+    font-weight: bold;
+}
+
+.help-content li strong {
+    color: #2d3748;
+    font-weight: 600;
+}
+
+/* ===== TROUBLESHOOTING ===== */
+.troubleshooting {
+    background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+    border: 1px solid #ef4444;
+    border-radius: 10px;
+    padding: 25px;
+    margin: 25px 0;
+}
+
+/* ===== FOOTER ===== */
+.help-footer {
+    text-align: center;
+    padding: 40px 30px;
+    background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+    color: white;
+    border-radius: 12px;
+    margin-top: 60px;
+    position: relative;
+    overflow: hidden;
+}
+
+.help-footer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/></pattern></defs><rect width="100" height="100" fill="url(%23grid)"/></svg>');
+    opacity: 0.3;
+}
+
+.contact-support {
+    position: relative;
+    z-index: 1;
+}
+
+.contact-support h3 {
+    margin: 0 0 15px 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.version-info {
+    font-size: 0.875rem;
+    opacity: 0.8;
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* ===== TIPOS DE ARCHIVOS ===== */
+.file-types {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin: 25px 0;
+}
+
+.file-type {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.file-type:hover {
+    border-color: #667eea;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
+/* ===== RESPONSIVE DESIGN ===== */
+@media (max-width: 768px) {
+    .crm-help-container {
+        padding: 0;
+    }
+    
+    .crm-help-header {
+        padding: 40px 20px;
+        margin: -10px -10px 30px -10px;
+        border-radius: 0 0 15px 15px;
+    }
+    
+    .crm-help-header h1 {
+        font-size: 2rem;
+    }
+    
+    .help-subtitle {
+        font-size: 1rem;
+    }
+    
+    .help-navigation {
+        padding: 20px;
+        margin-bottom: 30px;
+    }
+    
+    .help-navigation ul {
+        grid-template-columns: 1fr;
+    }
+    
+    .help-section {
+        margin-bottom: 30px;
+        border-radius: 10px;
+    }
+    
+    .help-section h2 {
+        padding: 20px;
+        font-size: 1.5rem;
+    }
+    
+    .help-content {
+        padding: 20px;
+    }
+    
+    .workflow-diagram {
+        flex-direction: column;
+        padding: 20px;
+    }
+    
+    .workflow-arrow {
+        transform: rotate(90deg);
+        margin: 10px 0;
+    }
+    
+    .workflow-step {
+        width: 100%;
+        min-width: auto;
+    }
+    
+    .step-by-step li {
+        padding-left: 50px;
+    }
+    
+    .step-by-step li::before {
+        width: 30px;
+        height: 30px;
+        font-size: 0.75rem;
+    }
+    
+    .help-footer {
+        padding: 30px 20px;
+        margin-top: 40px;
+    }
+}
+
+@media (max-width: 480px) {
+    .crm-help-header h1 {
+        font-size: 1.75rem;
+    }
+    
+    .help-navigation a {
+        padding: 12px 15px;
+        font-size: 0.9rem;
+    }
+    
+    .help-content {
+        padding: 15px;
+    }
+    
+    .feature-box,
+    .tip-box,
+    .warning-box,
+    .admin-permissions,
+    .step-by-step {
+        padding: 20px;
+        margin: 20px 0;
+    }
+}
+
+/* ===== ANIMACIONES SUTILES ===== */
+.help-section {
+    animation: fadeInUp 0.6s ease-out;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ===== SMOOTH SCROLLING ===== */
+html {
+    scroll-behavior: smooth;
+}
+
+/* ===== CÓDIGO Y ELEMENTOS TÉCNICOS ===== */
+code {
+    background: #f1f5f9;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Fira Code', 'Monaco', 'Consolas', monospace;
+    font-size: 0.875em;
+    color: #e53e3e;
+}
+
+/* ===== FOCUS Y ACCESIBILIDAD ===== */
+.help-navigation a:focus,
+button:focus {
+    outline: 2px solid #667eea;
+    outline-offset: 2px;
+}
+
+/* ===== IMPRESIÓN ===== */
+@media print {
+    .crm-help-container {
+        max-width: none;
+        margin: 0;
+        padding: 0;
+        background: white;
+        color: black;
+    }
+    
+    .crm-help-header {
+        background: #f0f0f0 !important;
+        color: black !important;
+        margin: 0;
+        page-break-after: avoid;
+    }
+    
+    .help-navigation {
+        display: none;
+    }
+    
+    .help-section {
+        page-break-inside: avoid;
+        box-shadow: none;
+        border: 1px solid #ccc;
+    }
+    
+    .workflow-step {
+        box-shadow: none;
+        border: 1px solid #ccc;
+    }
+}

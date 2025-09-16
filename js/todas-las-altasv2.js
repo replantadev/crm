@@ -88,12 +88,18 @@ document.addEventListener("DOMContentLoaded", function () {
 
           <td>${formatEstadoPorSector(c.estado_por_sector)}</td>
           <td>${formatDocumentosMinimal(c.presupuestos, c.contratos_generados, c.contratos_firmados)}</td>
-          <td data-order="${c.actualizado_en}">${formatDate(c.actualizado_en)}</td>
-           <td class="accion">
-                                <a href="/editar-cliente/?client_id=${c.id}"
-                                    class="btn btn-edit" title="Editar">✏️</a>
-                                <a class="btn btn-delete" data-id="${c.id}" title="Borrar">🗑️</a>
-                            </td>
+          <td data-order="${c.actualizado_en}">${formatDateWithUser(c.actualizado_en, c.actualizado_por_nombre)}</td>
+           <td class="acciones-cell">
+                <div class="acciones-group">
+                    <a href="/editar-cliente/?client_id=${c.id}"
+                        class="action-btn edit-btn" title="Editar cliente">
+                        <i class="icon-edit">✏️</i>
+                    </a>
+                    <button class="action-btn delete-btn" data-id="${c.id}" title="Eliminar cliente">
+                        <i class="icon-delete">🗑️</i>
+                    </button>
+                </div>
+            </td>
         `;
                 tbody.appendChild(tr);
             });
@@ -108,8 +114,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 columnDefs: [
                     { targets: 0, width: "60px", className: "text-center" }, // ID - ancho mínimo
                     { targets: 1, width: "100px" }, // Fecha - ancho mínimo
-                    // Documentos - ancho del contenido
-                    { targets: 6, width: "100px", type: "datetime" } // Última edición - ancho mínimo para fecha
+                    { targets: 6, width: "130px", type: "datetime" }, // Última edición - ancho para fecha + usuario
+                    { targets: 7, width: "80px", className: "text-center", orderable: false } // Acciones - compacto
                 ],
                 order: [[6, "desc"]],
                 pageLength: 50,
@@ -182,9 +188,20 @@ document.addEventListener("DOMContentLoaded", function () {
         const date = new Date(dateString);
         return date.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
     }
+    
     function formatDates(dateString) {
         const date = new Date(dateString);
         return date.toLocaleString("es-ES", { dateStyle: "short" });
+    }
+    
+    function formatDateWithUser(dateString, userName) {
+        const date = new Date(dateString);
+        const formattedDate = date.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
+        const user = userName || 'Usuario no disponible';
+        return `<div class="fecha-usuario">
+            <div class="fecha">${formattedDate}</div>
+            <div class="usuario">por <strong>${user}</strong></div>
+        </div>`;
     }
     /* ----------  Construir celda “Cliente”  ---------- */
     function buildClienteCell(c) {
@@ -422,11 +439,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
     function attachDeleteHandlers() {
-        const deleteButtons = document.querySelectorAll(".btn-delete");
+        const deleteButtons = document.querySelectorAll(".delete-btn");
         deleteButtons.forEach((button) => {
-            button.addEventListener("click", () => {
+            button.addEventListener("click", (event) => {
+                event.preventDefault();
                 const clientId = button.dataset.id;
-                if (confirm("¿Estás seguro de que deseas borrar este cliente?")) {
+                if (confirm("¿Estás seguro de que deseas eliminar este cliente?")) {
+                    // Añadir estado de carga
+                    button.classList.add('loading');
                     deleteClient(clientId);
                 }
             });
@@ -475,16 +495,25 @@ document.addEventListener("DOMContentLoaded", function () {
             })
             .then((result) => {
                 console.log("Datos procesados:", result);
+                // Remover estado de carga de todos los botones
+                document.querySelectorAll('.delete-btn.loading').forEach(btn => {
+                    btn.classList.remove('loading');
+                });
+                
                 if (result.success) {
-                    showToast("Cliente borrado correctamente.", "success");
+                    showToast("Cliente eliminado correctamente.", "success");
                     setTimeout(() => location.reload(), 1500); // Recargar después del toast
                 } else {
-                    showToast(result.data?.message || "Error al borrar el cliente.", "error");
+                    showToast(result.data?.message || "Error al eliminar el cliente.", "error");
                 }
             })
             .catch((error) => {
                 console.error("Error al borrar cliente:", error);
-                showToast("Error de conexión al borrar el cliente.", "error");
+                // Remover estado de carga en caso de error
+                document.querySelectorAll('.delete-btn.loading').forEach(btn => {
+                    btn.classList.remove('loading');
+                });
+                showToast("Error de conexión al eliminar el cliente.", "error");
             });
     }
 

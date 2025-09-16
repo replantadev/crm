@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.12.4
+Version: 1.12.5
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -870,9 +870,15 @@ function crm_formulario_alta_cliente()
 
         <!-- ——— Acciones Globales ——— -->
         <div class="crm-global-actions">
-            <button type="submit" name="crm_guardar_cliente" class="crm-btn">Guardar borrador</button>
-
             <?php if (current_user_can('crm_admin')): ?>
+                <button type="submit" name="crm_guardar_cliente" class="crm-btn">
+                    <i class="fas fa-save" style="margin-right: 8px;"></i>Guardar ficha
+                </button>
+                <button type="submit" name="crm_guardar_notificar" class="crm-btn enviar-btn">
+                    <i class="fas fa-paper-plane" style="margin-right: 8px;"></i>Guardar y notificar comercial
+                </button>
+            <?php else: ?>
+                <button type="submit" name="crm_guardar_cliente" class="crm-btn">Guardar borrador</button>
                 <button type="submit" name="crm_enviar_cliente" class="crm-btn enviar-btn">Enviar para revisión</button>
             <?php endif; ?>
         </div>
@@ -984,6 +990,7 @@ function crm_formulario_alta_cliente()
 // Registrar las acciones AJAX
 add_action('wp_ajax_crm_guardar_cliente_ajax', 'crm_guardar_cliente_ajax');
 add_action('wp_ajax_crm_enviar_cliente_ajax', 'crm_enviar_cliente_ajax');
+add_action('wp_ajax_crm_guardar_notificar_ajax', 'crm_guardar_notificar_ajax');
 
 // Función para guardar cliente (Guardar como borrador)
 function crm_guardar_cliente_ajax()
@@ -1008,8 +1015,24 @@ function crm_enviar_cliente_ajax()
     }
 }
 
+// Función para guardar y notificar comercial (solo admin)
+function crm_guardar_notificar_ajax()
+{
+    try {
+        if (!current_user_can('crm_admin')) {
+            wp_send_json_error(['message' => 'No tienes permisos para esta acción']);
+            return;
+        }
+        
+        $estado = isset($_POST['estado_formulario']) ? sanitize_text_field($_POST['estado_formulario']) : 'actualizado';
+        crm_handle_ajax_request($estado, true); // true indica que se debe enviar notificación
+    } catch (Exception $e) {
+        wp_send_json_error(['message' => $e->getMessage()]);
+    }
+}
+
 // Función principal para manejar la lógica AJAX
-function crm_handle_ajax_request($estado_inicial)
+function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
 {
     global $wpdb;
     $table      = $wpdb->prefix . 'crm_clients';
@@ -1240,6 +1263,7 @@ function crm_handle_ajax_request($estado_inicial)
         'usuario_envio_por_sector'  => maybe_serialize($users_envio),
         'editado_por'               => get_current_user_id(),
         'actualizado_en'            => current_time('mysql'),
+        'actualizado_por'           => get_current_user_id(),
     ];
 
     if ($estado === 'enviado') {
@@ -1362,7 +1386,100 @@ function crm_handle_ajax_request($estado_inicial)
         crm_log_action('cliente_creado', implode(' | ', $action_details), $client_id, $current_user->ID);
     }
 
+    // Enviar notificación por email si se solicitó
+    if ($enviar_notificacion && $is_update) {
+        crm_enviar_notificacion_comercial($client_id, $data, $action_details);
+    }
+
     wp_send_json_success(['redirect_url' => $redirect]);
+}
+
+/**
+ * Envía notificación por email al comercial sobre actualizaciones de admin
+ */
+function crm_enviar_notificacion_comercial($client_id, $client_data, $action_details)
+{
+    global $wpdb;
+    
+    // Obtener el comercial del cliente
+    $comercial_id = isset($client_data['user_id']) ? intval($client_data['user_id']) : 0;
+    if (!$comercial_id) {
+        return false;
+    }
+    
+    $comercial = get_user_by('ID', $comercial_id);
+    if (!$comercial) {
+        return false;
+    }
+    
+    $admin_user = wp_get_current_user();
+    $cliente_nombre = isset($client_data['cliente_nombre']) ? $client_data['cliente_nombre'] : 'Cliente';
+    
+    // Construir el mensaje
+    $subject = "🔔 Actualización de Cliente: {$cliente_nombre}";
+    
+    $message = "
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .header { background: #007cba; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background: #f9f9f9; }
+        .detail-box { background: white; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #007cba; }
+        .footer { padding: 15px; text-align: center; color: #666; font-size: 12px; }
+        .btn { display: inline-block; background: #007cba; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class='header'>
+        <h2>📋 Actualización de Cliente CRM</h2>
+    </div>
+    
+    <div class='content'>
+        <p>Hola <strong>{$comercial->display_name}</strong>,</p>
+        
+        <p>El administrador <strong>{$admin_user->display_name}</strong> ha actualizado la ficha de uno de tus clientes:</p>
+        
+        <div class='detail-box'>
+            <h3>👤 Cliente: {$cliente_nombre}</h3>
+            <p><strong>📧 Email:</strong> {$client_data['email_cliente']}</p>
+            <p><strong>📞 Teléfono:</strong> {$client_data['telefono']}</p>
+            <p><strong>🏢 Delegado:</strong> {$client_data['delegado']}</p>
+        </div>
+        
+        <div class='detail-box'>
+            <h3>📝 Detalles de la Actualización:</h3>
+            <ul>";
+    
+    foreach ($action_details as $detail) {
+        $message .= "<li>{$detail}</li>";
+    }
+    
+    $client_url = home_url("/editar-cliente/?client_id={$client_id}");
+    
+    $message .= "
+            </ul>
+        </div>
+        
+        <p style='text-align: center;'>
+            <a href='{$client_url}' class='btn'>📝 Ver Cliente</a>
+        </p>
+        
+        <p><em>Esta notificación se envía automáticamente cuando el administrador actualiza los datos de tus clientes.</em></p>
+    </div>
+    
+    <div class='footer'>
+        <p>Sistema CRM Energitel | " . get_bloginfo('name') . "</p>
+    </div>
+</body>
+</html>";
+    
+    $headers = [
+        'Content-Type: text/html; charset=UTF-8',
+        'From: CRM Sistema <' . get_option('admin_email') . '>'
+    ];
+    
+    return wp_mail($comercial->user_email, $subject, $message, $headers);
 }
 
 /**
@@ -2012,9 +2129,10 @@ function crm_obtener_todas_altas()
     $table_name = $wpdb->prefix . "crm_clients";
 
     $clientes = $wpdb->get_results("
-        SELECT c.id, c.fecha, c.user_id, c.cliente_nombre, c.empresa, c.direccion, c.poblacion, c.intereses, c.email_cliente, c.facturas, c.presupuesto, c.contratos_generados, c.contratos_firmados, c.estado, c.estado_por_sector, c.reenvios, c.actualizado_en, u.display_name AS comercial
+        SELECT c.id, c.fecha, c.user_id, c.cliente_nombre, c.empresa, c.direccion, c.poblacion, c.intereses, c.email_cliente, c.facturas, c.presupuesto, c.contratos_generados, c.contratos_firmados, c.estado, c.estado_por_sector, c.reenvios, c.actualizado_en, c.actualizado_por, u.display_name AS comercial, u2.display_name AS actualizado_por_nombre
         FROM $table_name c
         LEFT JOIN {$wpdb->users} u ON c.user_id = u.ID
+        LEFT JOIN {$wpdb->users} u2 ON c.actualizado_por = u2.ID
         ORDER BY c.actualizado_en DESC
     ", ARRAY_A);
 
@@ -2723,7 +2841,8 @@ function crm_update_clients_table_structure() {
     $required_columns = [
         'poblacion' => "VARCHAR(100) DEFAULT ''",
         'provincia' => "VARCHAR(100) DEFAULT 'León'",
-        'comentarios' => "TEXT"
+        'comentarios' => "TEXT",
+        'actualizado_por' => "BIGINT(20) DEFAULT NULL"
     ];
     
     foreach ($required_columns as $column => $definition) {

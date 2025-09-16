@@ -481,6 +481,7 @@ function showToast(msg, tipo, duration = 4000) {
         event.preventDefault();
         const isEnviar = event.submitter?.name === "crm_enviar_cliente";
         const isGuardar = event.submitter?.name === "crm_guardar_cliente";
+        const isNotificar = event.submitter?.name === "crm_guardar_notificar";
         const isCustom = event.submitter?.name === "crm_guardar_como_estado";
         const forzaEstado = forzarCheckbox?.checked;
         const pendings = Array.from(form.querySelectorAll('.upload-input'))
@@ -499,10 +500,16 @@ function showToast(msg, tipo, duration = 4000) {
         else if (isGuardar) {
             estadoHidden.value = "borrador";
         }
-        // 3) Custom (admin) → dejamos el valor del select
+        // 3) Guardar y notificar → "actualizado"
+        else if (isNotificar) {
+            estadoHidden.value = "actualizado";
+        }
+        // 4) Custom (admin) → dejamos el valor del select
 
         const action = isGuardar || isCustom
             ? "crm_guardar_cliente_ajax"
+            : isNotificar
+            ? "crm_guardar_notificar_ajax"
             : "crm_enviar_cliente_ajax";
 
         if (validateForm()) sendClientData(action);

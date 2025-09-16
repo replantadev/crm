@@ -480,9 +480,9 @@ function crm_admin_panel_widget() {
                         echo '<option value="' . $current_month . '">' . date('F Y') . '</option>';
                     }
                     
-                    foreach ($available_months as $month) {
-                        $date = DateTime::createFromFormat('Y_m', $month);
-                        $month_label = $date ? $date->format('F Y') : $month;
+                    foreach ($available_months as $month_data) {
+                        $month = $month_data['value'];
+                        $month_label = $month_data['label'];
                         $selected = ($month === $current_month) ? 'selected' : '';
                         echo '<option value="' . $month . '" ' . $selected . '>' . $month_label . '</option>';
                     }
@@ -684,96 +684,6 @@ function crm_clientes_recientes_widget() {
     </div>
     <?php
     return ob_get_clean();
-}
-
-// Funciones auxiliares para el panel de administración
-function crm_get_available_log_months() {
-    global $wpdb;
-    $log_table = $wpdb->prefix . 'crm_activity_log';
-    
-    $results = $wpdb->get_col("
-        SELECT DISTINCT DATE_FORMAT(created_at, '%Y_%m') as log_month 
-        FROM $log_table 
-        ORDER BY log_month DESC 
-        LIMIT 12
-    ");
-    
-    return $results ? $results : [current_time('Y_m')];
-}
-
-function crm_get_logs_by_month($month, $limit = 50) {
-    global $wpdb;
-    $log_table = $wpdb->prefix . 'crm_activity_log';
-    $users_table = $wpdb->users;
-    
-    // Convertir formato Y_m a Y-m para consulta
-    $year_month = str_replace('_', '-', $month);
-    
-    $results = $wpdb->get_results($wpdb->prepare("
-        SELECT l.*, u.display_name as user_name 
-        FROM $log_table l
-        LEFT JOIN $users_table u ON l.user_id = u.ID
-        WHERE DATE_FORMAT(l.created_at, '%%Y-%%m') = %s
-        ORDER BY l.created_at DESC 
-        LIMIT %d
-    ", $year_month, $limit), ARRAY_A);
-    
-    return $results ? $results : [];
-}
-
-function crm_get_action_label($action_type) {
-    $labels = [
-        'cliente_creado' => 'Cliente Creado',
-        'cliente_actualizado' => 'Cliente Actualizado', 
-        'sectores_enviados' => 'Sectores Enviados',
-        'email_enviado' => 'Email Enviado',
-        'test_email_enviado' => 'Email de Prueba',
-        'panel_consultado' => 'Panel Consultado',
-        'sistema_inicializado' => 'Sistema Inicializado',
-        'backup_creado' => 'Backup Creado',
-        'bd_optimizada' => 'BD Optimizada',
-        'logs_limpiados' => 'Logs Limpiados',
-        'datos_exportados' => 'Datos Exportados'
-    ];
-    
-    return isset($labels[$action_type]) ? $labels[$action_type] : ucfirst(str_replace('_', ' ', $action_type));
-}
-
-function crm_log_action($action_type, $details = '', $client_id = null) {
-    global $wpdb;
-    $log_table = $wpdb->prefix . 'crm_activity_log';
-    
-    // Crear tabla si no existe
-    $charset_collate = $wpdb->get_charset_collate();
-    $sql = "CREATE TABLE IF NOT EXISTS $log_table (
-        id mediumint(9) NOT NULL AUTO_INCREMENT,
-        user_id mediumint(9) NOT NULL,
-        action_type varchar(50) NOT NULL,
-        details text,
-        client_id mediumint(9),
-        ip_address varchar(45),
-        created_at datetime DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (id),
-        KEY user_id (user_id),
-        KEY action_type (action_type),
-        KEY created_at (created_at)
-    ) $charset_collate;";
-    
-    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-    dbDelta($sql);
-    
-    // Insertar log
-    $wpdb->insert(
-        $log_table,
-        [
-            'user_id' => get_current_user_id(),
-            'action_type' => $action_type,
-            'details' => $details,
-            'client_id' => $client_id,
-            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
-            'created_at' => current_time('mysql')
-        ]
-    );
 }
 
 add_action('wp_footer', 'crm_admin_panel_scripts');

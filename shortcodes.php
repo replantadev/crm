@@ -1163,40 +1163,6 @@ function crm_comerciales_estadisticas_widget() {
 }
 
 // Handlers AJAX para el panel de administración
-add_action('wp_ajax_crm_get_monitoring_data', 'crm_ajax_get_monitoring_data');
-function crm_ajax_get_monitoring_data() {
-    if (!current_user_can('crm_admin') || !wp_verify_nonce($_POST['nonce'], 'crm_monitoring')) {
-        wp_die('Sin permisos');
-    }
-    
-    global $wpdb;
-    $log_table = $wpdb->prefix . 'crm_activity_log';
-    
-    // Obtener última actividad
-    $last_activity = $wpdb->get_var("SELECT created_at FROM $log_table ORDER BY created_at DESC LIMIT 1");
-    $last_activity_formatted = $last_activity ? date('H:i', strtotime($last_activity)) : '-';
-    
-    // Calcular uso de memoria
-    $memory_limit = ini_get('memory_limit');
-    $memory_usage = memory_get_usage(true);
-    $memory_limit_bytes = crm_convert_to_bytes($memory_limit);
-    $memory_percentage = $memory_limit_bytes > 0 ? round(($memory_usage / $memory_limit_bytes) * 100, 1) : 0;
-    
-    // Obtener tamaño de BD
-    $db_size = $wpdb->get_var($wpdb->prepare("
-        SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 1) AS 'DB Size in MB'  
-        FROM information_schema.tables 
-        WHERE table_schema = %s
-    ", DB_NAME));
-    
-    wp_send_json_success([
-        'users_online' => count_users()['total_users'], // Total de usuarios registrados
-        'memory_usage' => $memory_percentage . '%',
-        'db_size' => ($db_size ?: '0') . ' MB',
-        'last_activity' => $last_activity_formatted
-    ]);
-}
-
 add_action('wp_ajax_crm_send_test_email', 'crm_ajax_send_test_email');
 function crm_ajax_send_test_email() {
     if (!current_user_can('crm_admin') || !wp_verify_nonce($_POST['nonce'], 'crm_admin_actions')) {

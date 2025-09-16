@@ -92,6 +92,14 @@ function crm_cleanup_duplicate_files() {
 require_once CRM_PLUGIN_PATH . 'acceso.php';
 require_once CRM_PLUGIN_PATH . 'shortcodes.php';
 
+// Incluir páginas de ayuda
+if (file_exists(CRM_PLUGIN_PATH . 'includes/guia-comerciales.php')) {
+    require_once CRM_PLUGIN_PATH . 'includes/guia-comerciales.php';
+}
+if (file_exists(CRM_PLUGIN_PATH . 'includes/guia-admin.php')) {
+    require_once CRM_PLUGIN_PATH . 'includes/guia-admin.php';
+}
+
 add_action('wp_enqueue_scripts', 'crm_enqueue_styles');
 function crm_enqueue_styles()
 {

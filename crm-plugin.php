@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.12.6
+Version: 1.13.0
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -96,6 +96,12 @@ add_action('wp_enqueue_scripts', 'crm_enqueue_styles');
 function crm_enqueue_styles()
 {
     wp_enqueue_style('crm-styles', CRM_PLUGIN_URL . 'crm-styles.css', [], CRM_PLUGIN_VERSION);
+    
+    // Cargar estilos para funcionalidades offline solo en páginas del CRM
+    if (is_page(['alta-de-clientes', 'editar-cliente', 'mis-altas-de-cliente', 'resumen']) || 
+        (is_admin() && current_user_can('crm_admin'))) {
+        wp_enqueue_style('crm-offline-styles', CRM_PLUGIN_URL . 'css/crm-offline-styles.css', ['crm-styles'], CRM_PLUGIN_VERSION);
+    }
 }
 add_action('wp_enqueue_scripts', 'crm_enqueue_scripts');
 
@@ -389,6 +395,10 @@ function crm_formulario_alta_cliente()
     // Encolar el script JavaScript y localizar datos
     wp_enqueue_script('crm-municipios', CRM_PLUGIN_URL . 'js/municipios-spain.js', array(), CRM_PLUGIN_VERSION, true);
     wp_enqueue_script('crm-scriptv2', CRM_PLUGIN_URL . 'js/crm-scriptv7.js', array('jquery', 'crm-municipios'), CRM_PLUGIN_VERSION, true);
+    
+    // Cargar script para funcionalidades offline (trabajo sin conexión, compresión, progress bars)
+    wp_enqueue_script('crm-offline-handler', CRM_PLUGIN_URL . 'js/crm-offline-handler.js', array('crm-scriptv2'), CRM_PLUGIN_VERSION, true);
+    
     wp_localize_script('crm-scriptv2', 'crmData', array(
         'ajaxurl' => admin_url('admin-ajax.php'),
         'nonce'   => wp_create_nonce('crm_alta_cliente_nonce'),
@@ -991,6 +1001,7 @@ function crm_formulario_alta_cliente()
 add_action('wp_ajax_crm_guardar_cliente_ajax', 'crm_guardar_cliente_ajax');
 add_action('wp_ajax_crm_enviar_cliente_ajax', 'crm_enviar_cliente_ajax');
 add_action('wp_ajax_crm_guardar_notificar_ajax', 'crm_guardar_notificar_ajax');
+add_action('wp_ajax_crm_sync_offline_data', 'crm_sync_offline_data_ajax');
 
 // Función para guardar cliente (Guardar como borrador)
 function crm_guardar_cliente_ajax()
@@ -1028,6 +1039,43 @@ function crm_guardar_notificar_ajax()
         crm_handle_ajax_request($estado, true); // true indica que se debe enviar notificación
     } catch (Exception $e) {
         wp_send_json_error(['message' => $e->getMessage()]);
+    }
+}
+
+// Función para sincronizar datos guardados offline
+function crm_sync_offline_data_ajax()
+{
+    try {
+        // Verificar permisos básicos
+        if (!is_user_logged_in()) {
+            wp_send_json_error(['message' => 'Usuario no autenticado']);
+            return;
+        }
+
+        // Verificar que sea una sincronización offline
+        if (!isset($_POST['offline_sync']) || $_POST['offline_sync'] !== '1') {
+            wp_send_json_error(['message' => 'Solicitud de sincronización inválida']);
+            return;
+        }
+
+        // Log para debugging
+        error_log("CRM Offline Sync: Procesando sincronización para usuario " . get_current_user_id());
+        error_log("CRM Offline Sync: Datos recibidos - " . print_r($_POST, true));
+
+        // Determinar el estado basado en los datos recibidos
+        $estado = 'enviado'; // Por defecto, los datos offline se marcan como enviados
+        
+        // Si es admin, puede tener estado específico
+        if (current_user_can('crm_admin') && isset($_POST['estado'])) {
+            $estado = sanitize_text_field($_POST['estado']);
+        }
+
+        // Procesar usando la función principal
+        crm_handle_ajax_request($estado, false);
+        
+    } catch (Exception $e) {
+        error_log("CRM Offline Sync Error: " . $e->getMessage());
+        wp_send_json_error(['message' => 'Error en sincronización: ' . $e->getMessage()]);
     }
 }
 

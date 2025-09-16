@@ -1,3 +1,4 @@
+<?php
 /**
  * Guía de uso para CRM Admin - CRM v1.13.0
  * Manual de funcionalidades administrativas, gestión de contratos y notificaciones
@@ -389,3 +390,4 @@ function crm_guia_admin_shortcode() {
     return ob_get_clean();
 }
 add_shortcode('crm_guia_admin', 'crm_guia_admin_shortcode');
+?>

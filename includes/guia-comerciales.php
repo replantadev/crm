@@ -1,3 +1,4 @@
+<?php
 /**
  * Guía de uso para comerciales - CRM v1.13.0
  * Manual de funcionalidades offline, compresión de imágenes y trabajo en iPad

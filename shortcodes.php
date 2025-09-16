@@ -386,3 +386,114 @@ function crm_rendimiento_comercial_widget() {
     <?php
     return ob_get_clean();
 }
+
+add_shortcode('crm_comerciales_estadisticas', 'crm_comerciales_estadisticas_widget');
+function crm_comerciales_estadisticas_widget() {
+    if (!current_user_can('crm_admin')) {
+        return "<p>No tienes permiso para ver esta sección.</p>";
+    }
+    global $wpdb;
+    $table = $wpdb->prefix . "crm_clients";
+
+    // Obtener todos los user_id que tengan clientes
+    $users = $wpdb->get_col("SELECT DISTINCT user_id FROM $table");
+
+    ob_start(); 
+    ?>
+    <div class="crm-widget-compact">
+        <div class="widget-header-compact">
+            <h3 class="widget-title-compact">Estadísticas por Comercial</h3>
+            <div class="widget-stats-compact">
+                <span class="total-count"><?php echo count($users); ?> comerciales</span>
+            </div>
+        </div>
+        
+        <div class="widget-content-compact">
+            <div class="table-responsive-compact">
+                <table class="crm-table-compact" id="crm-comerciales-estadisticas">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Comercial</th>
+                            <th>Borrador</th>
+                            <th>Presup. Acept.</th>
+                            <th>Contr. Gen.</th>
+                            <th>Contr. Firm.</th>
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($users as $i => $uid):
+                            $totales = array('borrador' => 0, 'presupuesto_aceptado' => 0, 'contratos_generados' => 0, 'contratos_firmados' => 0);
+                            
+                            // Recuperar registros del comercial
+                            $rows = $wpdb->get_results(
+                                $wpdb->prepare("SELECT estado_por_sector FROM $table WHERE user_id=%d", $uid),
+                                ARRAY_A
+                            );
+                            
+                            foreach ($rows as $r) {
+                                $eps = maybe_unserialize($r['estado_por_sector']);
+                                if (is_array($eps)) {
+                                    foreach ($eps as $st) {
+                                        if (isset($totales[$st])) {
+                                            $totales[$st]++;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            $total_comercial = array_sum($totales);
+                            $user_data = get_userdata($uid);
+                        ?>
+                            <tr>
+                                <td class="text-center"><?php echo $i + 1; ?></td>
+                                <td class="comercial-name-cell">
+                                    <a href="<?php echo home_url("/mis-altas-de-cliente/?user_id={$uid}"); ?>" class="comercial-link">
+                                        <?php echo esc_html($user_data->display_name); ?>
+                                    </a>
+                                </td>
+                                <td class="text-center">
+                                    <span class="estado-badge estado-borrador"><?php echo $totales['borrador']; ?></span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="estado-badge estado-presupuesto"><?php echo $totales['presupuesto_aceptado']; ?></span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="estado-badge estado-contratos-gen"><?php echo $totales['contratos_generados']; ?></span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="estado-badge estado-contratos-firm"><?php echo $totales['contratos_firmados']; ?></span>
+                                </td>
+                                <td class="text-center total-cell">
+                                    <strong><?php echo $total_comercial; ?></strong>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Inicializar DataTable si está disponible
+        if (typeof jQuery !== 'undefined' && jQuery.fn.DataTable) {
+            jQuery('#crm-comerciales-estadisticas').DataTable({
+                pageLength: 20,
+                language: {
+                    url: "https://cdn.datatables.net/plug-ins/1.13.4/i18n/es-ES.json"
+                },
+                order: [[6, 'desc']], // Ordenar por total descendente
+                columnDefs: [
+                    { orderable: false, targets: 0 }, // Desactivar orden en columna #
+                    { className: "text-center", targets: [0, 2, 3, 4, 5, 6] }
+                ]
+            });
+        }
+    });
+    </script>
+    <?php
+    return ob_get_clean();
+}

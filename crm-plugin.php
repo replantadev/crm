@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.14.4
+Version: 1.14.5
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.14.4');
+define('CRM_PLUGIN_VERSION', '1.14.5');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -288,6 +288,7 @@ function crm_get_action_label($action) {
         'archivo_subido' => 'Archivo Subido',
         'archivo_eliminado' => 'Archivo Eliminado',
         'sectores_enviados' => 'Sectores Enviados',
+        'interes_eliminado' => 'Interés Eliminado',
         'test_email_enviado' => 'Test Email Enviado',
         'test_email_error' => 'Error Test Email',
         'notificacion_comercial_enviada' => 'Email a Comercial',
@@ -3108,3 +3109,147 @@ add_action('plugins_loaded', function() {
         update_option('crm_plugin_version', CRM_PLUGIN_VERSION);
     }
 });
+
+/**
+ * AJAX handler para quitar un interés/sector de un cliente
+ */
+add_action('wp_ajax_crm_quitar_interes', 'crm_ajax_quitar_interes');
+function crm_ajax_quitar_interes() {
+    // Verificar permisos
+    if (!is_user_logged_in()) {
+        wp_send_json_error(['message' => 'Debes iniciar sesión para realizar esta acción.']);
+    }
+    
+    if (!wp_verify_nonce($_POST['nonce'] ?? '', 'crm_alta_cliente_nonce')) {
+        wp_send_json_error(['message' => 'Error de seguridad.']);
+    }
+    
+    $client_id = intval($_POST['client_id'] ?? 0);
+    $sector = sanitize_text_field($_POST['sector'] ?? '');
+    
+    if (!$client_id || !$sector) {
+        wp_send_json_error(['message' => 'Datos incompletos.']);
+    }
+    
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'crm_clients';
+    
+    // Obtener el cliente
+    $client = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $client_id), ARRAY_A);
+    
+    if (!$client) {
+        wp_send_json_error(['message' => 'Cliente no encontrado.']);
+    }
+    
+    // Verificar permisos de edición
+    if (!current_user_can('crm_admin') && intval($client['user_id']) !== get_current_user_id()) {
+        wp_send_json_error(['message' => 'No tienes permisos para editar este cliente.']);
+    }
+    
+    // Obtener intereses actuales
+    $intereses_actuales = maybe_unserialize($client['intereses'] ?? []);
+    if (!is_array($intereses_actuales)) {
+        $intereses_actuales = [];
+    }
+    
+    // Remover el sector de la lista de intereses
+    $intereses_actuales = array_diff($intereses_actuales, [$sector]);
+    
+    // Obtener datos de archivos
+    $facturas = maybe_unserialize($client['facturas'] ?? []);
+    $presupuestos = maybe_unserialize($client['presupuesto'] ?? []);
+    $contratos_firmados = maybe_unserialize($client['contratos_firmados'] ?? []);
+    
+    if (!is_array($facturas)) $facturas = [];
+    if (!is_array($presupuestos)) $presupuestos = [];
+    if (!is_array($contratos_firmados)) $contratos_firmados = [];
+    
+    // Eliminar archivos del sector
+    $archivos_eliminados = 0;
+    
+    // Eliminar facturas del sector
+    if (isset($facturas[$sector])) {
+        foreach ($facturas[$sector] as $file_url) {
+            if (crm_delete_file_from_url($file_url)) {
+                $archivos_eliminados++;
+            }
+        }
+        unset($facturas[$sector]);
+    }
+    
+    // Eliminar presupuestos del sector
+    if (isset($presupuestos[$sector])) {
+        foreach ($presupuestos[$sector] as $file_url) {
+            if (crm_delete_file_from_url($file_url)) {
+                $archivos_eliminados++;
+            }
+        }
+        unset($presupuestos[$sector]);
+    }
+    
+    // Eliminar contratos firmados del sector
+    if (isset($contratos_firmados[$sector])) {
+        foreach ($contratos_firmados[$sector] as $file_url) {
+            if (crm_delete_file_from_url($file_url)) {
+                $archivos_eliminados++;
+            }
+        }
+        unset($contratos_firmados[$sector]);
+    }
+    
+    // Obtener estado por sector y limpiarlo
+    $estado_por_sector = maybe_unserialize($client['estado_por_sector'] ?? []);
+    if (!is_array($estado_por_sector)) {
+        $estado_por_sector = [];
+    }
+    
+    // Remover el estado del sector
+    if (isset($estado_por_sector[$sector])) {
+        unset($estado_por_sector[$sector]);
+    }
+    
+    // Actualizar la base de datos
+    $updated = $wpdb->update(
+        $table_name,
+        [
+            'intereses' => serialize($intereses_actuales),
+            'facturas' => serialize($facturas),
+            'presupuesto' => serialize($presupuestos),
+            'contratos_firmados' => serialize($contratos_firmados),
+            'estado_por_sector' => serialize($estado_por_sector),
+            'actualizado_en' => current_time('mysql')
+        ],
+        ['id' => $client_id]
+    );
+    
+    if ($updated === false) {
+        wp_send_json_error(['message' => 'Error al actualizar la base de datos.']);
+    }
+    
+    // Registrar la acción en el log
+    $current_user = wp_get_current_user();
+    $log_details = "Interés eliminado: {$sector} | Cliente: {$client['cliente_nombre']} | Archivos eliminados: {$archivos_eliminados}";
+    crm_log_action('interes_eliminado', $log_details, $client_id, $current_user->ID);
+    
+    wp_send_json_success([
+        'message' => "Interés '{$sector}' eliminado correctamente" . ($archivos_eliminados > 0 ? " ({$archivos_eliminados} archivos eliminados)" : "")
+    ]);
+}
+
+/**
+ * Función auxiliar para eliminar un archivo desde su URL
+ */
+function crm_delete_file_from_url($file_url) {
+    if (empty($file_url)) {
+        return false;
+    }
+    
+    $upload_dir = wp_upload_dir();
+    $file_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $file_url);
+    
+    if (file_exists($file_path)) {
+        return unlink($file_path);
+    }
+    
+    return false;
+}

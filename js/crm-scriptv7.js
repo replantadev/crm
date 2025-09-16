@@ -157,9 +157,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }).then(r => r.json());
 
         if (!res.success) {
-            return showToast(res.data.message || 'Error al quitar interés', 'error');
+            return showToast(res.data?.message || res.message || 'Error al quitar interés', 'error');
         }
-        showToast(res.data.message, 'success');
+        showToast(res.data?.message || res.message || 'Interés eliminado correctamente', 'success');
 
         // 3) limpiar UI local
         // eliminar ficheros visibles

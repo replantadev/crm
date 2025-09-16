@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.14.1
+Version: 1.14.2
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.14.1');
+define('CRM_PLUGIN_VERSION', '1.14.2');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -290,9 +290,14 @@ function crm_get_action_label($action) {
         'sectores_enviados' => 'Sectores Enviados',
         'test_email_enviado' => 'Test Email Enviado',
         'test_email_error' => 'Error Test Email',
+        'notificacion_comercial_enviada' => 'Email a Comercial',
+        'notificacion_comercial_error' => 'Error Email Comercial',
+        'notificacion_admin_enviada' => 'Email a Admin',
+        'notificacion_admin_error' => 'Error Email Admin',
         'backup_created' => 'Backup Creado',
         'database_optimized' => 'BD Optimizada',
         'logs_prueba_generados' => 'Logs de Prueba',
+        'logs_limpiados' => 'Logs Limpiados',
         'panel_consultado' => 'Panel Consultado',
         'sistema_inicializado' => 'Sistema Iniciado',
         'debug_sector_save' => 'Debug Guardado'
@@ -2406,8 +2411,10 @@ function crm_enviar_notificacion_admin_a_comercial($client_id, $comercial_email,
     $result = wp_mail($comercial_email, $subject, $message, $headers);
     
     if ($result) {
+        crm_log_action('notificacion_comercial_enviada', "Notificación enviada a comercial: {$comercial_email} - Cliente: {$cliente['cliente_nombre']}", $client_id);
         error_log("CRM Email: Notificación enviada exitosamente a comercial: " . $comercial_email);
     } else {
+        crm_log_action('notificacion_comercial_error', "Error al enviar notificación a comercial: {$comercial_email} - Cliente: {$cliente['cliente_nombre']}", $client_id);
         error_log("CRM Email: Error al enviar notificación a comercial: " . $comercial_email);
     }
     
@@ -2525,8 +2532,10 @@ function crm_enviar_notificacion_comercial_a_admin($client_id, $sectores_enviado
     foreach ($admin_emails as $email) {
         if (wp_mail($email, $subject, $message, $headers)) {
             $emails_enviados++;
+            crm_log_action('notificacion_admin_enviada', "Notificación enviada a admin: {$email} - Cliente: {$cliente['cliente_nombre']} - Sectores: " . implode(', ', $sectores_enviados), $client_id);
         } else {
             $success = false;
+            crm_log_action('notificacion_admin_error', "Error al enviar notificación a admin: {$email} - Cliente: {$cliente['cliente_nombre']}", $client_id);
             error_log("CRM Email: Error al enviar notificación a admin: " . $email);
         }
     }
@@ -2998,6 +3007,95 @@ function crm_migrate_to_monthly_logs() {
     // Renombrar tabla antigua como backup
     $backup_table = $old_table . '_backup_' . date('Y_m_d');
     $wpdb->query("RENAME TABLE $old_table TO $backup_table");
+}
+
+/**
+ * AJAX handler para obtener datos de monitoreo en tiempo real
+ */
+add_action('wp_ajax_crm_get_monitoring_data', 'crm_ajax_get_monitoring_data');
+function crm_ajax_get_monitoring_data() {
+    if (!current_user_can('crm_admin') || !wp_verify_nonce($_POST['nonce'], 'crm_monitoring')) {
+        wp_die('Sin permisos');
+    }
+    
+    global $wpdb;
+    
+    // Obtener usuarios online (últimos 5 minutos)
+    $users_online = get_transient('crm_users_online');
+    if ($users_online === false) {
+        $users_online = $wpdb->get_var("
+            SELECT COUNT(DISTINCT user_id) 
+            FROM {$wpdb->usermeta} 
+            WHERE meta_key = 'session_tokens' 
+            AND meta_value != ''
+        ");
+        set_transient('crm_users_online', $users_online, 300); // Cache por 5 minutos
+    }
+    
+    // Obtener uso de memoria
+    $memory_usage = '0%';
+    if (function_exists('memory_get_usage')) {
+        $memory_used = memory_get_usage(true);
+        $memory_limit = ini_get('memory_limit');
+        
+        if ($memory_limit) {
+            $memory_limit_bytes = wp_convert_hr_to_bytes($memory_limit);
+            $percentage = round(($memory_used / $memory_limit_bytes) * 100, 1);
+            $memory_usage = $percentage . '%';
+        }
+    }
+    
+    // Obtener tamaño de la base de datos CRM
+    $db_size = get_transient('crm_db_size');
+    if ($db_size === false) {
+        $tables = ['crm_clients'];
+        $total_size = 0;
+        
+        // Agregar tablas de logs mensuales
+        $log_tables = $wpdb->get_results("SHOW TABLES LIKE '{$wpdb->prefix}crm_activity_log_%'", ARRAY_N);
+        foreach ($log_tables as $table) {
+            $tables[] = str_replace($wpdb->prefix, '', $table[0]);
+        }
+        
+        foreach ($tables as $table) {
+            $table_size = $wpdb->get_var("
+                SELECT ROUND(((data_length + index_length) / 1024 / 1024), 2) 
+                FROM information_schema.TABLES 
+                WHERE table_schema = '" . DB_NAME . "' 
+                AND table_name = '{$wpdb->prefix}{$table}'
+            ");
+            $total_size += (float) $table_size;
+        }
+        
+        $db_size = round($total_size, 2) . ' MB';
+        set_transient('crm_db_size', $db_size, 3600); // Cache por 1 hora
+    }
+    
+    // Obtener última actividad
+    $available_months = crm_get_available_log_months();
+    $last_activity = '-';
+    
+    if (!empty($available_months)) {
+        $latest_table = $available_months[0]['table'];
+        $last_log = $wpdb->get_row("
+            SELECT user_name, action_type, created_at 
+            FROM $latest_table 
+            ORDER BY created_at DESC 
+            LIMIT 1
+        ");
+        
+        if ($last_log) {
+            $time_diff = human_time_diff(strtotime($last_log->created_at), current_time('timestamp'));
+            $last_activity = $last_log->user_name . ' - ' . $time_diff . ' ago';
+        }
+    }
+    
+    wp_send_json_success([
+        'users_online' => $users_online,
+        'memory_usage' => $memory_usage,
+        'db_size' => $db_size,
+        'last_activity' => $last_activity
+    ]);
 }
 
 register_activation_hook(__FILE__, 'crm_plugin_activation');

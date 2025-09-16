@@ -404,13 +404,22 @@ function crm_admin_panel_widget() {
             <?php
             global $wpdb;
             $clients_table = $wpdb->prefix . 'crm_clients';
-            $log_table = $wpdb->prefix . 'crm_activity_log';
+            
+            // Obtener emails enviados de tablas mensuales
+            $available_months = crm_get_available_log_months();
+            $emails_sent = 0;
+            
+            foreach ($available_months as $month_data) {
+                $table_name = $month_data['table'];
+                $count = $wpdb->get_var("SELECT COUNT(*) FROM $table_name WHERE action_type IN ('email_enviado', 'test_email_enviado', 'notificacion_comercial_enviada', 'notificacion_admin_enviada')");
+                $emails_sent += (int) $count;
+            }
             
             $stats = [
-                'total_clients' => $wpdb->get_var("SELECT COUNT(*) FROM $clients_table"),
-                'clients_today' => $wpdb->get_var("SELECT COUNT(*) FROM $clients_table WHERE DATE(creado_en) = CURDATE()"),
-                'emails_sent' => $wpdb->get_var("SELECT COUNT(*) FROM $log_table WHERE action_type = 'email_enviado'"),
-                'active_comercials' => $wpdb->get_var("SELECT COUNT(DISTINCT user_id) FROM $clients_table")
+                'total_clients' => (int) $wpdb->get_var("SELECT COUNT(*) FROM $clients_table"),
+                'clients_today' => (int) $wpdb->get_var("SELECT COUNT(*) FROM $clients_table WHERE DATE(creado_en) = CURDATE()"),
+                'emails_sent' => $emails_sent,
+                'active_comercials' => (int) $wpdb->get_var("SELECT COUNT(DISTINCT user_id) FROM $clients_table WHERE user_id IS NOT NULL")
             ];
             ?>
             <div class="crm-stats-grid">
@@ -691,6 +700,9 @@ function crm_admin_panel_scripts() {
     if (!current_user_can('crm_admin') || !is_page()) return;
     ?>
     <script>
+    // Definir ajaxurl para WordPress frontend
+    var ajaxurl = '<?php echo admin_url('admin-ajax.php'); ?>';
+    
     jQuery(document).ready(function($) {
         var autoRefreshInterval;
         var autoRefreshEnabled = false;
@@ -1213,17 +1225,26 @@ function crm_ajax_clean_old_logs() {
     }
     
     global $wpdb;
-    $log_table = $wpdb->prefix . 'crm_activity_log';
     $settings = get_option('crm_email_settings', ['log_retention_days' => 30]);
-    
     $days = intval($settings['log_retention_days']);
-    $deleted = $wpdb->query($wpdb->prepare("
-        DELETE FROM $log_table 
-        WHERE created_at < DATE_SUB(NOW(), INTERVAL %d DAY)
-    ", $days));
     
-    crm_log_action('logs_limpiados', "Eliminados $deleted logs antiguos (>$days días)");
-    wp_send_json_success("Se eliminaron $deleted logs antiguos");
+    $available_months = crm_get_available_log_months();
+    $total_deleted = 0;
+    $tables_processed = 0;
+    
+    foreach ($available_months as $month_data) {
+        $table_name = $month_data['table'];
+        $deleted = $wpdb->query($wpdb->prepare("
+            DELETE FROM $table_name 
+            WHERE created_at < DATE_SUB(NOW(), INTERVAL %d DAY)
+        ", $days));
+        
+        $total_deleted += (int) $deleted;
+        $tables_processed++;
+    }
+    
+    crm_log_action('logs_limpiados', "Eliminados $total_deleted logs antiguos de $tables_processed tablas (>$days días)");
+    wp_send_json_success("Se eliminaron $total_deleted logs antiguos de $tables_processed tablas");
 }
 
 add_action('wp_ajax_crm_export_data', 'crm_ajax_export_data');
@@ -1276,8 +1297,15 @@ function crm_ajax_create_backup() {
     $filepath = $backup_dir . $filename;
     
     // Obtener tablas CRM
-    $tables = ['crm_clients', 'crm_activity_log'];
+    $tables = ['crm_clients'];
     $sql_content = '';
+    
+    // Agregar tablas de logs mensuales
+    $available_months = crm_get_available_log_months();
+    foreach ($available_months as $month_data) {
+        $table_name_only = str_replace($wpdb->prefix, '', $month_data['table']);
+        $tables[] = $table_name_only;
+    }
     
     foreach ($tables as $table) {
         $full_table = $wpdb->prefix . $table;
@@ -1316,8 +1344,15 @@ function crm_ajax_optimize_database() {
     global $wpdb;
     
     // Optimizar tablas CRM
-    $tables = ['crm_clients', 'crm_activity_log'];
+    $tables = ['crm_clients'];
     $optimized = 0;
+    
+    // Agregar tablas de logs mensuales
+    $available_months = crm_get_available_log_months();
+    foreach ($available_months as $month_data) {
+        $table_name_only = str_replace($wpdb->prefix, '', $month_data['table']);
+        $tables[] = $table_name_only;
+    }
     
     foreach ($tables as $table) {
         $full_table = $wpdb->prefix . $table;
@@ -1361,15 +1396,25 @@ function crm_ajax_clear_all_logs() {
     }
     
     global $wpdb;
-    $log_table = $wpdb->prefix . 'crm_activity_log';
     
-    $count = $wpdb->get_var("SELECT COUNT(*) FROM $log_table");
-    $wpdb->query("TRUNCATE TABLE $log_table");
+    // Obtener todas las tablas de logs mensuales
+    $available_months = crm_get_available_log_months();
+    $total_count = 0;
+    $cleared_tables = 0;
+    
+    foreach ($available_months as $month_data) {
+        $table_name = $month_data['table'];
+        $count = $wpdb->get_var("SELECT COUNT(*) FROM $table_name");
+        $total_count += (int) $count;
+        
+        $wpdb->query("TRUNCATE TABLE $table_name");
+        $cleared_tables++;
+    }
     
     // Registrar la limpieza
-    crm_log_action('logs_limpiados', "Eliminados todos los logs ($count registros)");
+    crm_log_action('logs_limpiados', "Eliminados todos los logs de $cleared_tables tablas mensuales ($total_count registros)");
     
-    wp_send_json_success("Todos los logs eliminados ($count registros)");
+    wp_send_json_success("Todos los logs eliminados de $cleared_tables tablas ($total_count registros)");
 }
 
 add_action('wp_ajax_crm_load_month_logs', 'crm_ajax_load_month_logs');

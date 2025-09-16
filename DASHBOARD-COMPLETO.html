@@ -1,0 +1,76 @@
+<!-- PÁGINA DE RESUMEN/DASHBOARD COMPLETO PARA CRM ADMIN -->
+
+<!-- 
+Crear una página en WordPress llamada "Resumen" o "Dashboard"
+URL sugerida: /resumen/ 
+Pegar este contenido en el editor en modo "Texto"
+-->
+
+<div class="crm-dashboard-layout">
+    <!-- Panel principal con estadísticas -->
+    [crm_admin_panel]
+    
+    <!-- Primera fila de widgets -->
+    <div class="dashboard-row">
+        <div class="dashboard-col-6">
+            [crm_clientes_recientes]
+        </div>
+        <div class="dashboard-col-6">
+            [crm_clientes_por_estado]
+        </div>
+    </div>
+    
+    <!-- Segunda fila de widgets -->
+    <div class="dashboard-row">
+        <div class="dashboard-col-6">
+            [crm_clientes_por_interes]
+        </div>
+        <div class="dashboard-col-6">
+            [crm_rendimiento_comercial]
+        </div>
+    </div>
+    
+    <!-- Tabla completa de estadísticas -->
+    <div class="dashboard-row">
+        <div class="dashboard-col-12">
+            [crm_comerciales_estadisticas]
+        </div>
+    </div>
+</div>
+
+<style>
+/* Estilos para el layout del dashboard */
+.crm-dashboard-layout {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.dashboard-row {
+    display: flex;
+    flex-wrap: wrap;
+    margin-bottom: 30px;
+    gap: 20px;
+}
+
+.dashboard-col-6 {
+    flex: 1;
+    min-width: 300px;
+}
+
+.dashboard-col-12 {
+    width: 100%;
+}
+
+@media (max-width: 768px) {
+    .dashboard-row {
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .dashboard-col-6 {
+        width: 100%;
+        min-width: auto;
+    }
+}
+</style>

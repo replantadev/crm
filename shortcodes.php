@@ -1261,14 +1261,14 @@ function crm_ajax_get_monitoring_data() {
     $memory_percentage = $memory_limit_bytes > 0 ? round(($memory_usage / $memory_limit_bytes) * 100, 1) : 0;
     
     // Obtener tamaño de BD
-    $db_size = $wpdb->get_var("
+    $db_size = $wpdb->get_var($wpdb->prepare("
         SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 1) AS 'DB Size in MB'  
         FROM information_schema.tables 
-        WHERE table_schema='" . DB_NAME . "'
-    ");
+        WHERE table_schema = %s
+    ", DB_NAME));
     
     wp_send_json_success([
-        'users_online' => wp_count_posts('user')->publish ?? 0,
+        'users_online' => count_users()['total_users'], // Total de usuarios registrados
         'memory_usage' => $memory_percentage . '%',
         'db_size' => ($db_size ?: '0') . ' MB',
         'last_activity' => $last_activity_formatted

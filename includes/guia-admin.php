@@ -308,6 +308,7 @@ function crm_guia_admin_shortcode() {
             <div class="contact-support">
                 <h3>Soporte Técnico</h3>
                 <p>Para incidencias técnicas o dudas avanzadas sobre el sistema, consulta con el desarrollador.</p>
+                <p>Email: info@replanta.dev</p>
                 <p class="version-info">Versión del sistema: <?php echo CRM_PLUGIN_VERSION; ?> | Manual actualizado: <?php echo date('d/m/Y'); ?></p>
             </div>
         </div>

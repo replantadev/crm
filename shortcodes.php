@@ -1224,24 +1224,151 @@ function crm_ajax_export_data() {
     
     $clients = $wpdb->get_results("SELECT * FROM $clients_table ORDER BY creado_en DESC", ARRAY_A);
     
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename=crm_export_' . date('Y-m-d') . '.csv');
+    // Configurar headers para Excel XLS
+    header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+    header('Content-Disposition: attachment; filename=crm_export_' . date('Y-m-d') . '.xls');
+    header('Pragma: no-cache');
+    header('Expires: 0');
     
-    $output = fopen('php://output', 'w');
+    // Iniciar la tabla HTML para Excel
+    echo "\xEF\xBB\xBF"; // BOM para UTF-8
+    echo '<table border="1">';
     
     if (!empty($clients)) {
-        // Escribir encabezados
-        fputcsv($output, array_keys($clients[0]));
+        // Escribir encabezados personalizados
+        echo '<tr>';
+        $headers = [
+            'ID', 'Delegado', 'Usuario ID', 'Email Comercial', 'Fecha Creación',
+            'Cliente', 'Empresa', 'Dirección', 'Teléfono', 'Email Cliente',
+            'Población', 'Provincia', 'Área', 'Tipo', 'Comentarios',
+            'Intereses', 'Facturas', 'Presupuestos', 'Contratos', 'Contratos Generados',
+            'Contratos Firmados', 'Estado', 'Estados por Sector', 'Fecha Envío por Sector',
+            'Usuario Envío por Sector', 'Reenvíos', 'Actualizado'
+        ];
         
-        // Escribir datos
+        foreach ($headers as $header) {
+            echo '<th>' . htmlspecialchars($header) . '</th>';
+        }
+        echo '</tr>';
+        
+        // Escribir datos formateados
         foreach ($clients as $client) {
-            fputcsv($output, $client);
+            echo '<tr>';
+            
+            // Formatear campos básicos
+            echo '<td>' . htmlspecialchars($client['id']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['delegado']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['user_id']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['email_comercial']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['fecha']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['cliente_nombre']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['empresa']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['direccion']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['telefono']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['email_cliente']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['poblacion']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['provincia']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['area']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['tipo']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['comentarios']) . '</td>';
+            
+            // Formatear campos serializados como listas legibles
+            echo '<td>' . crm_format_array_field($client['intereses']) . '</td>';
+            echo '<td>' . crm_format_files_field($client['facturas']) . '</td>';
+            echo '<td>' . crm_format_files_field($client['presupuesto']) . '</td>';
+            echo '<td>' . crm_format_files_field($client['contratos']) . '</td>';
+            echo '<td>' . crm_format_array_field($client['contratos_generados']) . '</td>';
+            echo '<td>' . crm_format_files_field($client['contratos_firmados']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['estado']) . '</td>';
+            echo '<td>' . crm_format_estado_sector_field($client['estado_por_sector']) . '</td>';
+            echo '<td>' . crm_format_array_field($client['fecha_envio_por_sector']) . '</td>';
+            echo '<td>' . crm_format_array_field($client['usuario_envio_por_sector']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['reenvios']) . '</td>';
+            echo '<td>' . htmlspecialchars($client['actualizado_en']) . '</td>';
+            
+            echo '</tr>';
         }
     }
     
-    fclose($output);
-    crm_log_action('datos_exportados', 'Exportados ' . count($clients) . ' clientes');
+    echo '</table>';
+    
+    crm_log_action('datos_exportados', 'Exportados ' . count($clients) . ' clientes a Excel XLS');
     exit;
+}
+
+/**
+ * Formatear campos de array para Excel
+ */
+function crm_format_array_field($field) {
+    if (empty($field)) {
+        return '-';
+    }
+    
+    $data = maybe_unserialize($field);
+    if (!is_array($data)) {
+        return htmlspecialchars($field);
+    }
+    
+    if (empty($data)) {
+        return '-';
+    }
+    
+    return htmlspecialchars(implode(', ', $data));
+}
+
+/**
+ * Formatear campos de archivos para Excel
+ */
+function crm_format_files_field($field) {
+    if (empty($field)) {
+        return '-';
+    }
+    
+    $data = maybe_unserialize($field);
+    if (!is_array($data)) {
+        return htmlspecialchars($field);
+    }
+    
+    if (empty($data)) {
+        return '-';
+    }
+    
+    $files_list = [];
+    foreach ($data as $sector => $files) {
+        if (is_array($files) && !empty($files)) {
+            $file_names = array_map(function($url) {
+                return basename(parse_url($url, PHP_URL_PATH));
+            }, $files);
+            $files_list[] = $sector . ': ' . implode(', ', $file_names);
+        }
+    }
+    
+    return htmlspecialchars(implode(' | ', $files_list));
+}
+
+/**
+ * Formatear estados por sector para Excel
+ */
+function crm_format_estado_sector_field($field) {
+    if (empty($field)) {
+        return '-';
+    }
+    
+    $data = maybe_unserialize($field);
+    if (!is_array($data)) {
+        return htmlspecialchars($field);
+    }
+    
+    if (empty($data)) {
+        return '-';
+    }
+    
+    $estados_list = [];
+    foreach ($data as $sector => $estado) {
+        $estados_list[] = $sector . ': ' . $estado;
+    }
+    
+    return htmlspecialchars(implode(', ', $estados_list));
 }
 
 add_action('wp_ajax_crm_create_backup', 'crm_ajax_create_backup');

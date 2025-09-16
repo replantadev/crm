@@ -3,7 +3,7 @@
 Plugin Name: CRM Básico
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin para gestionar clientes con roles de comercial y administrador CRM. Incluye actualizaciones automáticas desde GitHub.
-Version: 1.12.5
+Version: 1.12.6
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -1036,6 +1036,13 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
 {
     global $wpdb;
     $table      = $wpdb->prefix . 'crm_clients';
+    
+    // Verificar si la columna actualizado_por existe, si no, crearla
+    $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $table LIKE 'actualizado_por'");
+    if (empty($column_exists)) {
+        $wpdb->query("ALTER TABLE $table ADD COLUMN actualizado_por BIGINT(20) NULL");
+    }
+    
     $sectores   = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
     $client_id  = intval($_POST['client_id'] ?? 0);
     $is_update  = $client_id > 0;
@@ -2127,6 +2134,12 @@ function crm_obtener_todas_altas()
 
     global $wpdb;
     $table_name = $wpdb->prefix . "crm_clients";
+
+    // Verificar si la columna actualizado_por existe, si no, crearla
+    $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $table_name LIKE 'actualizado_por'");
+    if (empty($column_exists)) {
+        $wpdb->query("ALTER TABLE $table_name ADD COLUMN actualizado_por BIGINT(20) NULL");
+    }
 
     $clientes = $wpdb->get_results("
         SELECT c.id, c.fecha, c.user_id, c.cliente_nombre, c.empresa, c.direccion, c.poblacion, c.intereses, c.email_cliente, c.facturas, c.presupuesto, c.contratos_generados, c.contratos_firmados, c.estado, c.estado_por_sector, c.reenvios, c.actualizado_en, c.actualizado_por, u.display_name AS comercial, u2.display_name AS actualizado_por_nombre

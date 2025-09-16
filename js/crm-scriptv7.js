@@ -179,6 +179,27 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
 function showToast(msg, tipo, duration = 4000) {
+    // Limitar el número máximo de toasts visibles (máximo 3)
+    const existingToasts = document.querySelectorAll('.crm-toast');
+    const maxToasts = 3;
+    
+    // Si hay demasiados toasts, remover los más antiguos
+    if (existingToasts.length >= maxToasts) {
+        for (let i = 0; i < existingToasts.length - maxToasts + 1; i++) {
+            if (existingToasts[i]) {
+                existingToasts[i].remove();
+            }
+        }
+    }
+    
+    // Verificar si ya existe un toast con el mismo mensaje para evitar duplicados
+    const duplicateToast = Array.from(existingToasts).find(toast => 
+        toast.innerHTML === msg && toast.classList.contains(tipo || "info")
+    );
+    if (duplicateToast) {
+        return duplicateToast;
+    }
+    
     const toast = document.createElement("div");
     toast.className = "crm-toast " + (tipo || "info");
     toast.innerHTML = msg;
@@ -188,20 +209,46 @@ function showToast(msg, tipo, duration = 4000) {
     if (tipo === "error") backgroundColor = "#dc3545"; // rojo
     if (tipo === "info") backgroundColor = "#17a2b8"; // azul
     
+    // Posición dinámica basada en los toasts existentes
+    const currentToasts = document.querySelectorAll('.crm-toast');
+    const topPosition = 25 + (currentToasts.length * 70); // 70px de separación entre toasts
+    
     Object.assign(toast.style, {
         position: "fixed",
-        top: "25px", right: "25px",
+        top: topPosition + "px", 
+        right: "25px",
         background: backgroundColor,
-        color: "#fff", padding: "12px 24px",
+        color: "#fff", 
+        padding: "12px 24px",
         borderRadius: "8px",
         fontSize: "1rem",
         zIndex: 99999,
         boxShadow: "0 3px 16px rgba(0,0,0,0.2)",
         maxWidth: "400px",
-        wordWrap: "break-word"
+        wordWrap: "break-word",
+        opacity: "0",
+        transform: "translateX(100%)",
+        transition: "all 0.3s ease"
     });
+    
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), duration);
+    
+    // Animación de entrada
+    setTimeout(() => {
+        toast.style.opacity = "1";
+        toast.style.transform = "translateX(0)";
+    }, 10);
+    
+    // Auto-remove con animación de salida
+    setTimeout(() => {
+        toast.style.opacity = "0";
+        toast.style.transform = "translateX(100%)";
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.remove();
+            }
+        }, 300);
+    }, duration);
     
     return toast; // devolver el elemento para poder manipularlo
 }
@@ -234,26 +281,40 @@ function showToast(msg, tipo, duration = 4000) {
     form.addEventListener("click", async e => {
         if (!e.target.matches(".upload-btn")) return;
         const btn = e.target;
+        
+        // Prevenir múltiples clics mientras se procesa
+        if (btn.disabled) return;
+        
         const sector = btn.dataset.sector;
         const tipo = btn.dataset.tipo; // factura|presupuesto|contrato_firmado
         const input = form.querySelector(`.upload-input[data-sector="${sector}"][data-tipo="${tipo}"]`);
         if (!input || !input.files.length) {
-            console.warn("Selecciona archivo antes de subir.");
+            showToast("Selecciona un archivo antes de subir.", "error");
             return;
         }
 
+        // Deshabilitar el botón y mostrar estado de carga
+        btn.disabled = true;
+        const originalText = btn.textContent;
+        btn.textContent = "Subiendo...";
+        
+        let uploadedCount = 0;
+        let errorCount = 0;
+        
         for (let file of input.files) {
             // Validación del lado cliente para tipos de archivo
             const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
             if (!allowedTypes.includes(file.type)) {
-                showToast("Tipo de archivo no permitido. Solo se permiten JPEG, PNG y PDF.", "error");
+                showToast(`Archivo "${file.name}" no permitido. Solo se permiten JPEG, PNG y PDF.`, "error");
+                errorCount++;
                 continue;
             }
 
             // Validación de tamaño (10MB)
             const maxSize = 10 * 1024 * 1024; // 10MB en bytes
             if (file.size > maxSize) {
-                showToast("El archivo excede el tamaño permitido de 10 MB.", "error");
+                showToast(`El archivo "${file.name}" excede el tamaño permitido de 10 MB.`, "error");
+                errorCount++;
                 continue;
             }
 
@@ -261,6 +322,7 @@ function showToast(msg, tipo, duration = 4000) {
             fd.append("file", file);
             fd.append("sector", sector);
             fd.append("nonce", crmData.nonce);
+            
             try {
                 const res = await fetch(`${crmData.ajaxurl}?action=crm_subir_${tipo}`, { method: "POST", body: fd });
                 const json = await res.json();
@@ -278,18 +340,28 @@ function showToast(msg, tipo, duration = 4000) {
                                 : `contratos_firmados[${sector}][]`
                         }" value="${json.data.url}">`;
                     container.insertBefore(div, input);
-                    toggleCards();
-                    showToast("Archivo subido correctamente", "success");
+                    uploadedCount++;
                 } else {
-                    showToast(json.data.message || "Error al subir archivo", "error");
+                    showToast(`Error al subir "${file.name}": ${json.data?.message || "Error desconocido"}`, "error");
+                    errorCount++;
                 }
             } catch (err) {
                 console.error("Error AJAX:", err);
-                showToast("Error de conexión al subir archivo", "error");
+                showToast(`Error de conexión al subir "${file.name}"`, "error");
+                errorCount++;
             }
         }
-
-        input.value = "";
+        
+        // Mostrar resultado final
+        if (uploadedCount > 0) {
+            showToast(`${uploadedCount} archivo(s) subido(s) correctamente`, "success");
+            toggleCards();
+        }
+        
+        // Restaurar el botón
+        btn.disabled = false;
+        btn.textContent = originalText;
+        input.value = ""; // Limpiar el input
     });
 
     // ————— Eliminación de archivos —————

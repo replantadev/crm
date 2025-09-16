@@ -2890,54 +2890,6 @@ button.aceptar-presupuesto{background:#25C685;color:#fff;font-size:12px;margin:4
   cursor: pointer;
 }
 
-/* Toast notifications mejorados */
-.crm-toast {
-    animation: slideInRight 0.3s ease-out, fadeOut 0.5s ease-in 2.5s forwards;
-    transform: translateX(0);
-    opacity: 1;
-    transition: all 0.3s ease;
-}
-
-.crm-toast:hover {
-    transform: translateX(-5px);
-    box-shadow: 0 5px 20px rgba(0,0,0,0.3) !important;
-}
-
-@keyframes slideInRight {
-    from {
-        transform: translateX(100%);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
-}
-
-@keyframes fadeOut {
-    from {
-        opacity: 1;
-        transform: translateX(0);
-    }
-    to {
-        opacity: 0;
-        transform: translateX(100%);
-    }
-}
-
-/* Estilos específicos por tipo de toast */
-.crm-toast.success {
-    background: linear-gradient(135deg, #28a745, #20c997) !important;
-}
-
-.crm-toast.error {
-    background: linear-gradient(135deg, #dc3545, #e74c3c) !important;
-}
-
-.crm-toast.info {
-    background: linear-gradient(135deg, #17a2b8, #3498db) !important;
-}
-
 /* === DASHBOARD COMPACTO ESTILO SEMRUSH === */
 .crm-dashboard-compact {
     background: #ffffff;

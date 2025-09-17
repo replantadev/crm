@@ -345,6 +345,17 @@ function showToast(msg, tipo, duration = 4000) {
                 container.insertBefore(div, input);
                 toggleCards();
                 showToast("Archivo subido correctamente", "success");
+
+                // Emitir evento personalizado para notificar la subida
+                const uploadEvent = new CustomEvent('CRM_FILE_UPLOADED', {
+                    detail: {
+                        tipo: tipo,
+                        sector: sector,
+                        url: json.data.url,
+                        name: json.data.name
+                    }
+                });
+                document.dispatchEvent(uploadEvent);
             } else {
                 showToast(`Error al subir archivo: ${json.data?.message || "Error desconocido"}`, "error");
             }

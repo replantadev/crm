@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.14.9
+Version: 1.14.10
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.14.9');
+define('CRM_PLUGIN_VERSION', '1.14.10');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -402,6 +402,7 @@ function crm_formulario_alta_cliente()
     $contratos_firmados   = maybe_unserialize($client_data['contratos_firmados']  ?? []);
     $contratos_generados  = maybe_unserialize($client_data['contratos_generados'] ?? []);
     $intereses            = maybe_unserialize($client_data['intereses']           ?? []);
+    $presupuestos_aceptados = maybe_unserialize($client_data['presupuestos_aceptados'] ?? []);
 
     // Arrays asegurados
     $sectores      = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
@@ -411,6 +412,7 @@ function crm_formulario_alta_cliente()
     $contratos_generados = is_array($contratos_generados) ? $contratos_generados : [];
     $intereses           = is_array($intereses)          ? $intereses          : [];
     $estado_por_sector   = is_array($estado_por_sector)  ? $estado_por_sector  : [];
+    $presupuestos_aceptados = is_array($presupuestos_aceptados) ? $presupuestos_aceptados : [];
 
     // Encolar el script JavaScript y localizar datos
     wp_enqueue_script('crm-municipios', CRM_PLUGIN_URL . 'js/municipios-spain.js', array(), CRM_PLUGIN_VERSION, true);
@@ -843,14 +845,20 @@ function crm_formulario_alta_cliente()
                             <input type="file" class="upload-input" data-sector="<?php echo esc_attr($sector); ?>" data-tipo="presupuesto" multiple>
                             <button type="button" class="upload-btn" data-sector="<?php echo esc_attr($sector); ?>" data-tipo="presupuesto">Subir presupuesto</button>
                             
-                            <!-- Checkbox presupuesto aceptado (solo visible si hay presupuestos) -->
-                            <?php if (!empty($filesP) && !current_user_can('crm_admin')): ?>
-                                <div class="presupuesto-aceptado-section" style="margin-top: 10px; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+                            <!-- Checkbox presupuesto aceptado (visible si hay presupuestos o comercial) -->
+                            <?php if (!current_user_can('crm_admin')): 
+                                $presupuesto_aceptado_checked = isset($presupuestos_aceptados[$sector]) ? 'checked' : '';
+                                $show_checkbox = !empty($filesP) ? 'block' : 'none';
+                            ?>
+                                <div class="presupuesto-aceptado-section" 
+                                     style="margin-top: 10px; padding: 8px; background: #f8f9fa; border-radius: 4px; display: <?php echo $show_checkbox; ?>;" 
+                                     data-sector="<?php echo esc_attr($sector); ?>">
                                     <label style="display: flex; align-items: center; font-weight: 500; color: #2c5282;">
                                         <input type="checkbox" 
                                                class="presupuesto-aceptado-checkbox" 
                                                name="presupuesto_aceptado[<?php echo esc_attr($sector); ?>]" 
                                                data-sector="<?php echo esc_attr($sector); ?>"
+                                               <?php echo $presupuesto_aceptado_checked; ?>
                                                style="margin-right: 8px;">
                                         <span>✓ Cliente ha aceptado este presupuesto</span>
                                     </label>
@@ -862,8 +870,10 @@ function crm_formulario_alta_cliente()
                         </div>
 
                         <!-- Botón sectorial para Comerciales -->
-                        <?php if (! current_user_can('crm_admin')): ?>
-                            <div class="send-sector-wrapper" style="display: none;" data-sector="<?php echo esc_attr($sector); ?>">
+                        <?php if (! current_user_can('crm_admin')): 
+                            $show_button = isset($presupuestos_aceptados[$sector]) ? 'block' : 'none';
+                        ?>
+                            <div class="send-sector-wrapper" style="display: <?php echo $show_button; ?>;" data-sector="<?php echo esc_attr($sector); ?>">>
                                 <button type="button"
                                     class="send-sector-btn crm-submit-btn enviar-btn"
                                     data-sector="<?php echo esc_attr($sector); ?>"
@@ -1043,6 +1053,14 @@ function crm_formulario_alta_cliente()
             });
         }
 
+        // Mostrar checkbox cuando se sube un presupuesto
+        function showPresupuestoCheckbox(sector) {
+            const checkboxSection = document.querySelector('.presupuesto-aceptado-section[data-sector="' + sector + '"]');
+            if (checkboxSection) {
+                checkboxSection.style.display = 'block';
+            }
+        }
+
         // Ejecutar al cargar la página
         toggleSendSectorButton();
 
@@ -1050,6 +1068,13 @@ function crm_formulario_alta_cliente()
         document.addEventListener('change', function(e) {
             if (e.target.classList.contains('presupuesto-aceptado-checkbox')) {
                 toggleSendSectorButton();
+            }
+        });
+
+        // Listener global para detectar subida de presupuestos
+        document.addEventListener('CRM_FILE_UPLOADED', function(e) {
+            if (e.detail && e.detail.tipo === 'presupuesto' && e.detail.sector) {
+                showPresupuestoCheckbox(e.detail.sector);
             }
         });
     });
@@ -1380,6 +1405,7 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         'presupuesto'               => maybe_serialize($presu_existentes),
         'contratos_firmados'        => maybe_serialize($contratos_existentes),
         'contratos_generados'       => maybe_serialize($contratos_generados),
+        'presupuestos_aceptados'    => maybe_serialize($_POST['presupuesto_aceptado'] ?? []),
         'estado'                    => $estado,
         'estado_por_sector'         => maybe_serialize($new_estado),
         'fecha_envio_por_sector'    => maybe_serialize($fechas_envio),
@@ -2975,7 +3001,8 @@ function crm_update_clients_table_structure() {
         'poblacion' => "VARCHAR(100) DEFAULT ''",
         'provincia' => "VARCHAR(100) DEFAULT 'León'",
         'comentarios' => "TEXT",
-        'actualizado_por' => "BIGINT(20) DEFAULT NULL"
+        'actualizado_por' => "BIGINT(20) DEFAULT NULL",
+        'presupuestos_aceptados' => "TEXT DEFAULT NULL"
     ];
     
     foreach ($required_columns as $column => $definition) {

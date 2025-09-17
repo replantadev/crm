@@ -117,7 +117,7 @@ function crm_guia_admin_shortcode() {
                         <div class="workflow-arrow">→</div>
                         <div class="workflow-step">
                             <strong>Presupuesto Generado</strong>
-                            <p>Admin creó y subió presupuesto</p>
+                            <p>Comercial/Admin creó y subió presupuesto</p>
                         </div>
                         <div class="workflow-arrow">→</div>
                         <div class="workflow-step">

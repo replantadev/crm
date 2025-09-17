@@ -2081,8 +2081,21 @@ function crm_lista_altas()
                     "render": function(data, type, row) {
                         if (data && typeof data === 'object' && Object.keys(data).length > 0) {
                             let badges = '';
-                            // Obtener datos de envío
-                            const fechasEnvio = row.fecha_envio_por_sector ? JSON.parse(row.fecha_envio_por_sector) : {};
+                            // Obtener datos de envío - pueden venir como objeto o string serializado
+                            let fechasEnvio = {};
+                            try {
+                                if (row.fecha_envio_por_sector) {
+                                    if (typeof row.fecha_envio_por_sector === 'object') {
+                                        fechasEnvio = row.fecha_envio_por_sector;
+                                    } else {
+                                        // Fallback: si viene como string, intentar parsear
+                                        fechasEnvio = {};
+                                    }
+                                }
+                            } catch(e) {
+                                console.warn('Error processing fecha_envio_por_sector:', e);
+                                fechasEnvio = {};
+                            }
                             
                             Object.entries(data).forEach(([sector, estado]) => {
                                 const hasSentToAdmin = fechasEnvio[sector] ? ' sent-indicator' : '';
@@ -2252,6 +2265,38 @@ function crm_obtener_altas()
                 }
             } else {
                 $cliente['estado_por_sector'] = [];
+            }
+
+            // Deserializar fecha_envio_por_sector
+            $feps = $cliente['fecha_envio_por_sector'];
+            if (is_array($feps)) {
+                $cliente['fecha_envio_por_sector'] = $feps;
+            } elseif (is_string($feps) && !empty($feps)) {
+                $tmp = maybe_unserialize($feps);
+                if (is_array($tmp)) {
+                    $cliente['fecha_envio_por_sector'] = $tmp;
+                } else {
+                    $decoded = json_decode($feps, true);
+                    $cliente['fecha_envio_por_sector'] = is_array($decoded) ? $decoded : [];
+                }
+            } else {
+                $cliente['fecha_envio_por_sector'] = [];
+            }
+
+            // Deserializar usuario_envio_por_sector
+            $ueps = $cliente['usuario_envio_por_sector'];
+            if (is_array($ueps)) {
+                $cliente['usuario_envio_por_sector'] = $ueps;
+            } elseif (is_string($ueps) && !empty($ueps)) {
+                $tmp = maybe_unserialize($ueps);
+                if (is_array($tmp)) {
+                    $cliente['usuario_envio_por_sector'] = $tmp;
+                } else {
+                    $decoded = json_decode($ueps, true);
+                    $cliente['usuario_envio_por_sector'] = is_array($decoded) ? $decoded : [];
+                }
+            } else {
+                $cliente['usuario_envio_por_sector'] = [];
             }
         }
 

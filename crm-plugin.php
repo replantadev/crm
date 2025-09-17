@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.14.13
+Version: 1.14.14
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -1331,7 +1331,16 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
     }
     $new_estado  = $old_estado; // Preservamos los estados existentes
 
-    foreach ($intereses as $s) {
+    // Si admin está gestionando presupuestos, necesitamos procesar TODOS los sectores posibles
+    $sectores_a_procesar = $intereses;
+    if (current_user_can('crm_admin') && isset($_POST['admin_presupuesto_aceptado'])) {
+        $existing_presupuestos = maybe_unserialize($client['presupuestos_aceptados'] ?? '');
+        if (is_array($existing_presupuestos)) {
+            $sectores_a_procesar = array_unique(array_merge($intereses, array_keys($existing_presupuestos), array_keys($old_estado)));
+        }
+    }
+
+    foreach ($sectores_a_procesar as $s) {
         $e = $old_estado[$s] ?? 'borrador'; // Estado actual del sector
         $estado_forzado = false;
 
@@ -1348,6 +1357,16 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         // 1.6) Si admin marcó "presupuesto aceptado" para este sector
         if (current_user_can('crm_admin') && isset($_POST['admin_presupuesto_aceptado'][$s]) && !$forzar) {
             $e = 'presupuesto_aceptado';
+        }
+
+        // 1.7) Si admin DESMARCÓ un presupuesto que estaba aceptado - revertir al estado lógico anterior
+        if (current_user_can('crm_admin') && !isset($_POST['admin_presupuesto_aceptado'][$s]) && $e === 'presupuesto_aceptado' && !$forzar) {
+            // Determinar el estado correcto sin la aceptación del presupuesto
+            if (!empty($presu_existentes[$s])) {
+                $e = 'presupuesto_generado'; // Tiene presupuesto subido
+            } else {
+                $e = 'enviado'; // No tiene presupuesto, volver a enviado
+            }
         }
 
         // 2) Admin forzando estado específico

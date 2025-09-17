@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.14.12
+Version: 1.14.13
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -1345,6 +1345,11 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
             $e = 'presupuesto_aceptado';
         }
 
+        // 1.6) Si admin marcó "presupuesto aceptado" para este sector
+        if (current_user_can('crm_admin') && isset($_POST['admin_presupuesto_aceptado'][$s]) && !$forzar) {
+            $e = 'presupuesto_aceptado';
+        }
+
         // 2) Admin forzando estado específico
         if ($forzar && isset($_POST["estado_{$s}"])) {
             $e = sanitize_text_field($_POST["estado_{$s}"]);
@@ -1419,21 +1424,24 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         // Admin está gestionando - usar sus controles
         $admin_input = (array)$_POST['admin_presupuesto_aceptado'];
         
-        // Mantener los existentes que no tienen contratos generados o que el admin mantiene marcados
+        // Obtener los existentes
         $existing_presupuestos = maybe_unserialize($client['presupuestos_aceptados'] ?? '');
         if (!is_array($existing_presupuestos)) $existing_presupuestos = [];
         
-        foreach ($intereses as $sector) {
+        // Obtener todos los sectores posibles (activos + los que tenían presupuestos antes)
+        $all_sectors = array_unique(array_merge($intereses, array_keys($existing_presupuestos)));
+        
+        foreach ($all_sectors as $sector) {
             $tiene_contrato = in_array($sector, $contratos_generados);
             
             if (isset($admin_input[$sector])) {
                 // Admin marcó este sector
                 $presupuestos_aceptados_final[$sector] = true;
             } elseif ($tiene_contrato && isset($existing_presupuestos[$sector])) {
-                // Tiene contrato y estaba marcado antes - conservar
+                // Tiene contrato y estaba marcado antes - conservar (no se puede desmarcar)
                 $presupuestos_aceptados_final[$sector] = true;
             }
-            // Si no está marcado por admin y no tiene contrato, no se incluye
+            // Si no está marcado por admin y no tiene contrato, se desmarca/no se incluye
         }
     } else {
         // No es admin o no está gestionando - usar el método existente (comerciales)
@@ -3376,6 +3384,50 @@ function crm_delete_file_from_url($file_url) {
     if (file_exists($file_path)) {
         return unlink($file_path);
     }
-    
+
     return false;
+}
+
+// JavaScript para hacer dinámico el texto de los checkboxes de admin
+add_action('wp_footer', 'crm_admin_checkbox_dynamic_text');
+function crm_admin_checkbox_dynamic_text() {
+    if (!current_user_can('crm_admin')) return;
+    ?>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Manejar checkboxes de admin para presupuesto aceptado
+        const adminCheckboxes = document.querySelectorAll('input[name^="admin_presupuesto_aceptado"]');
+        
+        adminCheckboxes.forEach(function(checkbox) {
+            if (checkbox.disabled) return; // Skip disabled checkboxes
+            
+            const span = checkbox.nextElementSibling;
+            if (!span || span.tagName !== 'SPAN') return;
+            
+            // Guardar textos originales
+            const textChecked = '✓ Presupuesto aceptado por cliente';
+            const textUnchecked = 'Sin aceptación de presupuesto';
+            const colorChecked = '#10b981';
+            const colorUnchecked = '#6b7280';
+            
+            // Función para actualizar el texto y color
+            function updateText() {
+                if (checkbox.checked) {
+                    span.textContent = textChecked;
+                    span.style.color = colorChecked;
+                } else {
+                    span.textContent = textUnchecked;
+                    span.style.color = colorUnchecked;
+                }
+            }
+            
+            // Escuchar cambios en el checkbox
+            checkbox.addEventListener('change', updateText);
+            
+            // Inicializar el estado correcto
+            updateText();
+        });
+    });
+    </script>
+    <?php
 }

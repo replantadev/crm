@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.14.6
+Version: 1.14.7
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.14.6');
+define('CRM_PLUGIN_VERSION', '1.14.7');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -104,12 +104,6 @@ add_action('wp_enqueue_scripts', 'crm_enqueue_styles');
 function crm_enqueue_styles()
 {
     wp_enqueue_style('crm-styles', CRM_PLUGIN_URL . 'crm-styles.css', [], CRM_PLUGIN_VERSION);
-    
-    // Cargar estilos para funcionalidades offline solo en páginas del CRM
-    if (is_page(['alta-de-clientes', 'editar-cliente', 'mis-altas-de-cliente', 'resumen']) || 
-        (is_admin() && current_user_can('crm_admin'))) {
-        wp_enqueue_style('crm-offline-styles', CRM_PLUGIN_URL . 'css/crm-offline-styles.css', ['crm-styles'], CRM_PLUGIN_VERSION);
-    }
     
     // Cargar estilos para documentación en páginas que contengan los shortcodes de guías
     global $post;
@@ -419,9 +413,6 @@ function crm_formulario_alta_cliente()
     // Encolar el script JavaScript y localizar datos
     wp_enqueue_script('crm-municipios', CRM_PLUGIN_URL . 'js/municipios-spain.js', array(), CRM_PLUGIN_VERSION, true);
     wp_enqueue_script('crm-scriptv2', CRM_PLUGIN_URL . 'js/crm-scriptv7.js', array('jquery', 'crm-municipios'), CRM_PLUGIN_VERSION, true);
-    
-    // Cargar script para funcionalidades offline (trabajo sin conexión, compresión, progress bars)
-    wp_enqueue_script('crm-offline-handler', CRM_PLUGIN_URL . 'js/crm-offline-handler.js', array('crm-scriptv2'), CRM_PLUGIN_VERSION, true);
     
     wp_localize_script('crm-scriptv2', 'crmData', array(
         'ajaxurl' => admin_url('admin-ajax.php'),

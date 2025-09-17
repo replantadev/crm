@@ -288,8 +288,26 @@ function showToast(msg, tipo, duration = 4000) {
         const sector = btn.dataset.sector;
         const tipo = btn.dataset.tipo; // factura|presupuesto|contrato_firmado
         const input = form.querySelector(`.upload-input[data-sector="${sector}"][data-tipo="${tipo}"]`);
+        
         if (!input || !input.files.length) {
             showToast("Selecciona un archivo antes de subir.", "error");
+            return;
+        }
+
+        // Solo procesar el primer archivo seleccionado para mayor estabilidad
+        const file = input.files[0];
+        
+        // Validación del lado cliente para tipos de archivo
+        const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+        if (!allowedTypes.includes(file.type)) {
+            showToast(`Tipo de archivo no permitido. Solo se permiten JPEG, PNG y PDF.`, "error");
+            return;
+        }
+
+        // Validación de tamaño (10MB)
+        const maxSize = 10 * 1024 * 1024; // 10MB en bytes
+        if (file.size > maxSize) {
+            showToast(`El archivo excede el tamaño permitido de 10 MB.`, "error");
             return;
         }
 
@@ -298,70 +316,47 @@ function showToast(msg, tipo, duration = 4000) {
         const originalText = btn.textContent;
         btn.textContent = "Subiendo...";
         
-        let uploadedCount = 0;
-        let errorCount = 0;
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("sector", sector);
+        fd.append("nonce", crmData.nonce);
         
-        for (let file of input.files) {
-            // Validación del lado cliente para tipos de archivo
-            const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
-            if (!allowedTypes.includes(file.type)) {
-                showToast(`Archivo "${file.name}" no permitido. Solo se permiten JPEG, PNG y PDF.`, "error");
-                errorCount++;
-                continue;
-            }
-
-            // Validación de tamaño (10MB)
-            const maxSize = 10 * 1024 * 1024; // 10MB en bytes
-            if (file.size > maxSize) {
-                showToast(`El archivo "${file.name}" excede el tamaño permitido de 10 MB.`, "error");
-                errorCount++;
-                continue;
-            }
-
-            const fd = new FormData();
-            fd.append("file", file);
-            fd.append("sector", sector);
-            fd.append("nonce", crmData.nonce);
+        try {
+            const res = await fetch(`${crmData.ajaxurl}?action=crm_subir_${tipo}`, { 
+                method: "POST", 
+                body: fd 
+            });
             
-            try {
-                const res = await fetch(`${crmData.ajaxurl}?action=crm_subir_${tipo}`, { method: "POST", body: fd });
-                const json = await res.json();
-                if (json.success) {
-                    const container = btn.closest(".upload-section");
-                    const div = document.createElement("div");
-                    div.className = "uploaded-file";
-                    div.innerHTML = `
-          <a href="${json.data.url}" target="_blank">${json.data.name}</a>
-          <button type="button" class="remove-file-btn" data-url="${json.data.url}" data-tipo="${tipo}">×</button>
-          <input type="hidden" name="${tipo === "factura"
-                            ? `facturas[${sector}][]`
-                            : tipo === "presupuesto"
-                                ? `presupuesto[${sector}][]`
-                                : `contratos_firmados[${sector}][]`
-                        }" value="${json.data.url}">`;
-                    container.insertBefore(div, input);
-                    uploadedCount++;
-                } else {
-                    showToast(`Error al subir "${file.name}": ${json.data?.message || "Error desconocido"}`, "error");
-                    errorCount++;
-                }
-            } catch (err) {
-                console.error("Error AJAX:", err);
-                showToast(`Error de conexión al subir "${file.name}"`, "error");
-                errorCount++;
+            const json = await res.json();
+            
+            if (json.success) {
+                const container = btn.closest(".upload-section");
+                const div = document.createElement("div");
+                div.className = "uploaded-file";
+                div.innerHTML = `
+                    <a href="${json.data.url}" target="_blank">${json.data.name}</a>
+                    <button type="button" class="remove-file-btn" data-url="${json.data.url}" data-tipo="${tipo}">×</button>
+                    <input type="hidden" name="${tipo === "factura"
+                        ? `facturas[${sector}][]`
+                        : tipo === "presupuesto"
+                            ? `presupuesto[${sector}][]`
+                            : `contratos_firmados[${sector}][]`
+                    }" value="${json.data.url}">`;
+                container.insertBefore(div, input);
+                toggleCards();
+                showToast("Archivo subido correctamente", "success");
+            } else {
+                showToast(`Error al subir archivo: ${json.data?.message || "Error desconocido"}`, "error");
             }
+        } catch (err) {
+            console.error("Error AJAX:", err);
+            showToast("Error de conexión al subir archivo", "error");
+        } finally {
+            // Restaurar el botón siempre
+            btn.disabled = false;
+            btn.textContent = originalText;
+            input.value = ""; // Limpiar el input
         }
-        
-        // Mostrar resultado final
-        if (uploadedCount > 0) {
-            showToast(`${uploadedCount} archivo(s) subido(s) correctamente`, "success");
-            toggleCards();
-        }
-        
-        // Restaurar el botón
-        btn.disabled = false;
-        btn.textContent = originalText;
-        input.value = ""; // Limpiar el input
     });
 
     // ————— Eliminación de archivos —————

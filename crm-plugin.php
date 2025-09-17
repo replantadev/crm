@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.14.15
+Version: 1.14.16
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -349,14 +349,15 @@ function crm_format_spanish_phone($phone) {
 /**
  * Renderiza badges de estado por sector/interés.
  */
-function crm_render_estado_badges($estado_por_sector = [], $sectores = [])
+function crm_render_estado_badges($estado_por_sector = [], $sectores = [], $fechas_envio = [])
 {
     $out = '';
     foreach ($sectores as $sector) {
         $estado = $estado_por_sector[$sector] ?? 'borrador';
         $estado_label = crm_get_estado_label($estado);
         $sector_label = ucfirst($sector);
-        $out .= '<span class="crm-badge estado ' . $estado . '">' . $sector_label . ': ' . $estado_label . '</span>';
+        $sent_class = isset($fechas_envio[$sector]) ? ' sent-indicator' : '';
+        $out .= '<span class="crm-badge estado ' . $estado . $sent_class . '">' . $sector_label . ': ' . $estado_label . '</span>';
     }
     return $out;
 }
@@ -472,7 +473,8 @@ function crm_formulario_alta_cliente()
                 <div class="crm-header-badges">
                     <?php
                     $sectores = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
-                    echo crm_render_estado_badges($estado_por_sector, $sectores);
+                    $fechas_envio = maybe_unserialize($client_data['fecha_envio_por_sector'] ?? []);
+                    echo crm_render_estado_badges($estado_por_sector, $sectores, $fechas_envio);
                     ?>
                 </div>
             <?php endif; ?>
@@ -651,8 +653,9 @@ function crm_formulario_alta_cliente()
                 <?php
                 // en crm_formulario_alta_cliente(), antes de ob_start():
                 $sectores = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
+                $fechas_envio = maybe_unserialize($client_data['fecha_envio_por_sector'] ?? []);
                 echo '<div class="crm-badges-estado">';
-                echo crm_render_estado_badges($estado_por_sector, $sectores);
+                echo crm_render_estado_badges($estado_por_sector, $sectores, $fechas_envio);
                 echo '</div>';
                 ?>
             </div>
@@ -878,7 +881,10 @@ function crm_formulario_alta_cliente()
                                     class="send-sector-btn crm-submit-btn enviar-btn"
                                     data-sector="<?php echo esc_attr($sector); ?>"
                                     title="Confirmar que el cliente ha aprobado el presupuesto y notificar al administrador">
-                                    ✅ Presupuesto Aprobado - Enviar a Admin
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M3 20L21 12L3 4V10L16 12L3 14V20Z" fill="currentColor"/>
+                                    </svg>
+                                    Presupuesto Aprobado - Enviar a Admin
                                 </button>
                                 <small class="sector-send-help">
                                     Al hacer clic confirmas que el cliente ha aprobado el presupuesto de <?php echo esc_html($secLabel); ?>
@@ -1921,7 +1927,7 @@ function crm_lista_altas()
     $wpdb->flush(); // Limpiar cualquier caché previa del objeto
     $clientes = $wpdb->get_results($wpdb->prepare("
         SELECT id, fecha, cliente_nombre, empresa, direccion, poblacion, email_cliente, estado, actualizado_en, facturas, presupuesto, 
-    contratos_firmados, intereses, estado_por_sector, reenvios
+    contratos_firmados, intereses, estado_por_sector, reenvios, fecha_envio_por_sector, usuario_envio_por_sector
         FROM $table_name
         WHERE user_id = %d
         ORDER BY actualizado_en DESC
@@ -2075,8 +2081,12 @@ function crm_lista_altas()
                     "render": function(data, type, row) {
                         if (data && typeof data === 'object' && Object.keys(data).length > 0) {
                             let badges = '';
+                            // Obtener datos de envío
+                            const fechasEnvio = row.fecha_envio_por_sector ? JSON.parse(row.fecha_envio_por_sector) : {};
+                            
                             Object.entries(data).forEach(([sector, estado]) => {
-                                badges += '<span class="estado-badge ' + estado + '">' + 
+                                const hasSentToAdmin = fechasEnvio[sector] ? ' sent-indicator' : '';
+                                badges += '<span class="estado-badge ' + estado + hasSentToAdmin + '">' + 
                                          sector + ': ' + getEstadoLabel(estado) + '</span> ';
                             });
                             return badges;
@@ -2206,7 +2216,7 @@ function crm_obtener_altas()
 
     $clientes = $wpdb->get_results($wpdb->prepare("
    SELECT id, fecha, cliente_nombre, empresa, email_cliente, estado, actualizado_en, 
-          facturas, presupuesto, contratos_firmados, contratos_generados, intereses, estado_por_sector, reenvios
+          facturas, presupuesto, contratos_firmados, contratos_generados, intereses, estado_por_sector, reenvios, fecha_envio_por_sector, usuario_envio_por_sector
    FROM $table_name
    WHERE user_id = %d
    ORDER BY actualizado_en DESC
@@ -2367,7 +2377,7 @@ function crm_obtener_todas_altas()
     }
 
     $clientes = $wpdb->get_results("
-        SELECT c.id, c.fecha, c.user_id, c.cliente_nombre, c.empresa, c.direccion, c.poblacion, c.intereses, c.email_cliente, c.facturas, c.presupuesto, c.contratos_generados, c.contratos_firmados, c.estado, c.estado_por_sector, c.reenvios, c.actualizado_en, c.actualizado_por, u.display_name AS comercial, u2.display_name AS actualizado_por_nombre
+        SELECT c.id, c.fecha, c.user_id, c.cliente_nombre, c.empresa, c.direccion, c.poblacion, c.intereses, c.email_cliente, c.facturas, c.presupuesto, c.contratos_generados, c.contratos_firmados, c.estado, c.estado_por_sector, c.reenvios, c.actualizado_en, c.actualizado_por, c.fecha_envio_por_sector, c.usuario_envio_por_sector, u.display_name AS comercial, u2.display_name AS actualizado_por_nombre
         FROM $table_name c
         LEFT JOIN {$wpdb->users} u ON c.user_id = u.ID
         LEFT JOIN {$wpdb->users} u2 ON c.actualizado_por = u2.ID

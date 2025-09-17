@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.14.17
+Version: 1.14.18
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -876,7 +876,7 @@ function crm_formulario_alta_cliente()
                         <?php if (! current_user_can('crm_admin')): 
                             $show_button = isset($presupuestos_aceptados[$sector]) ? 'block' : 'none';
                         ?>
-                            <div class="send-sector-wrapper" style="display: <?php echo $show_button; ?>;" data-sector="<?php echo esc_attr($sector); ?>">>
+                            <div class="send-sector-wrapper" style="display: <?php echo $show_button; ?>;" data-sector="<?php echo esc_attr($sector); ?>">
                                 <button type="button"
                                     class="send-sector-btn crm-submit-btn enviar-btn"
                                     data-sector="<?php echo esc_attr($sector); ?>"
@@ -884,7 +884,7 @@ function crm_formulario_alta_cliente()
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                         <path d="M3 20L21 12L3 4V10L16 12L3 14V20Z" fill="currentColor"/>
                                     </svg>
-                                    Presupuesto Aprobado - Enviar a Admin
+                                    Presupuesto Aprobado <br> Enviar a Admin
                                 </button>
                                 <small class="sector-send-help">
                                     Al hacer clic confirmas que el cliente ha aprobado el presupuesto de <?php echo esc_html($secLabel); ?>

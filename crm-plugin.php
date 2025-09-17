@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.14.7
+Version: 1.14.8
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.14.7');
+define('CRM_PLUGIN_VERSION', '1.14.8');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -816,7 +816,7 @@ function crm_formulario_alta_cliente()
                     <div class="card-body">
                         <!-- Facturas -->
                         <div class="upload-section facturas">
-                            <strong>Facturas:</strong>
+                            <strong><?php echo ($sector === 'alarmas') ? 'Facturas/Documentación:' : 'Facturas:'; ?></strong>
                             <?php foreach ($filesF as $url): ?>
                                 <div class="uploaded-file">
                                     <a href="<?php echo esc_url($url); ?>" target="_blank"><?php echo esc_html(basename($url)); ?></a>
@@ -825,7 +825,7 @@ function crm_formulario_alta_cliente()
                                 </div>
                             <?php endforeach; ?>
                             <input type="file" class="upload-input" data-sector="<?php echo esc_attr($sector); ?>" data-tipo="factura" multiple>
-                            <button type="button" class="upload-btn" data-sector="<?php echo esc_attr($sector); ?>" data-tipo="factura">Subir factura</button>
+                            <button type="button" class="upload-btn" data-sector="<?php echo esc_attr($sector); ?>" data-tipo="factura"><?php echo ($sector === 'alarmas') ? 'Subir documentación' : 'Subir factura'; ?></button>
                         </div>
 
                         <!-- Presupuestos -->
@@ -847,9 +847,13 @@ function crm_formulario_alta_cliente()
                             <div class="send-sector-wrapper">
                                 <button type="button"
                                     class="send-sector-btn crm-submit-btn enviar-btn"
-                                    data-sector="<?php echo esc_attr($sector); ?>">
-                                    Enviar <?php echo esc_html($secLabel); ?>
+                                    data-sector="<?php echo esc_attr($sector); ?>"
+                                    title="Confirmar que el cliente ha aprobado el presupuesto y notificar al administrador">
+                                    ✅ Presupuesto Aprobado - Enviar a Admin
                                 </button>
+                                <small class="sector-send-help">
+                                    Al hacer clic confirmas que el cliente ha aprobado el presupuesto de <?php echo esc_html($secLabel); ?>
+                                </small>
                                 <span class="last-sent" data-sector="<?php echo esc_attr($sector); ?>">
                                     <?php
                                     // si tienes ya guardado en DB

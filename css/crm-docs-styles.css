@@ -329,7 +329,7 @@
 .step-by-step li {
     counter-increment: step-counter;
     position: relative;
-    padding: 15px 0 15px 60px;
+    padding: 12px 0 12px 40px;
     border-bottom: 1px solid #f1f5f9;
 }
 
@@ -341,17 +341,18 @@
     content: counter(step-counter);
     position: absolute;
     left: 0;
-    top: 15px;
-    width: 35px;
-    height: 35px;
+    top: 8px;
+    width: 24px;
+    height: 24px;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: 600;
-    font-size: 0.875rem;
+    font-weight: 500;
+    font-size: 0.75rem;
+    box-shadow: 0 2px 4px rgba(102, 126, 234, 0.15);
 }
 
 /* ===== LISTAS MEJORADAS ===== */
@@ -368,11 +369,13 @@
 }
 
 .help-content li::before {
-    content: '→';
+    content: '▸';
     position: absolute;
-    left: 0;
+    left: 8px;
     color: #667eea;
-    font-weight: bold;
+    font-weight: normal;
+    font-size: 0.9rem;
+    opacity: 0.8;
 }
 
 .help-content li strong {
@@ -513,13 +516,13 @@
     }
     
     .step-by-step li {
-        padding-left: 50px;
+        padding-left: 35px;
     }
     
     .step-by-step li::before {
-        width: 30px;
-        height: 30px;
-        font-size: 0.75rem;
+        width: 22px;
+        height: 22px;
+        font-size: 0.7rem;
     }
     
     .help-footer {

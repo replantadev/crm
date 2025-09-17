@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.14.10
+Version: 1.14.11
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.14.10');
+define('CRM_PLUGIN_VERSION', '1.14.11');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -936,8 +936,14 @@ function crm_formulario_alta_cliente()
                     <i class="fas fa-paper-plane" style="margin-right: 8px;"></i>Guardar y notificar comercial
                 </button>
             <?php else: ?>
-                <button type="submit" name="crm_guardar_cliente" class="crm-btn">Guardar borrador</button>
-                <button type="submit" name="crm_enviar_cliente" class="crm-btn enviar-btn">Enviar para revisión</button>
+                <button type="submit" name="crm_guardar_cliente" class="crm-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                        <polyline points="17,21 17,13 7,13 7,21"></polyline>
+                        <polyline points="7,3 7,8 15,8"></polyline>
+                    </svg>
+                    Guardar borrador
+                </button>
             <?php endif; ?>
         </div>
 
@@ -1104,7 +1110,7 @@ function crm_guardar_cliente_ajax()
     }
 }
 
-// Función para enviar cliente (Enviar para revisión o acción adicional)
+// Función para enviar por sector (usada por botones "Enviar a Admin" de cada sector)
 function crm_enviar_cliente_ajax()
 {
     try {

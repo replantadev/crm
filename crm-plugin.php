@@ -174,11 +174,12 @@ function crm_enqueue_chartjs()
 function crm_get_estados_sector()
 {
     return [
-        'borrador'            => ['label' => 'Borrador',            'color' => '#B0B7C3'],
-        'enviado'             => ['label' => 'Enviado',             'color' => '#2AA8F2'],
-        'presupuesto_aceptado' => ['label' => 'Presupuesto Aceptado', 'color' => '#25C685'],
-        'contratos_generados' => ['label' => 'Contratos Generados', 'color' => '#007bff'],
-        'contratos_firmados'  => ['label' => 'Contratos Firmados',  'color' => '#7048E8'],
+        'borrador'              => ['label' => 'Borrador',              'color' => '#B0B7C3'],
+        'enviado'               => ['label' => 'Enviado',               'color' => '#2AA8F2'],
+        'presupuesto_generado'  => ['label' => 'Presupuesto Generado',  'color' => '#FF9500'],
+        'presupuesto_aceptado'  => ['label' => 'Presupuesto Aceptado',  'color' => '#25C685'],
+        'contratos_generados'   => ['label' => 'Contratos Generados',   'color' => '#007bff'],
+        'contratos_firmados'    => ['label' => 'Contratos Firmados',    'color' => '#7048E8'],
     ];
 }
 
@@ -203,6 +204,7 @@ function crm_get_orden_estados()
     return [
         'borrador',
         'enviado',
+        'presupuesto_generado',
         'presupuesto_aceptado',
         'contratos_generados',
         'contratos_firmados'

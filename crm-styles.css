@@ -3897,3 +3897,87 @@ button.aceptar-presupuesto{background:#25C685;color:#fff;font-size:12px;margin:4
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+/* ============================================
+   CHECKBOX PRESUPUESTO ACEPTADO
+   ============================================ */
+
+.presupuesto-aceptado-section {
+    margin-top: 12px !important;
+    padding: 12px !important;
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%) !important;
+    border: 1px solid #0284c7 !important;
+    border-radius: 8px !important;
+    transition: all 0.3s ease !important;
+}
+
+.presupuesto-aceptado-section:hover {
+    background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(2, 132, 199, 0.15);
+}
+
+.presupuesto-aceptado-section label {
+    display: flex !important;
+    align-items: center !important;
+    font-weight: 600 !important;
+    color: #0c4a6e !important;
+    margin: 0 !important;
+    cursor: pointer !important;
+}
+
+.presupuesto-aceptado-checkbox {
+    width: 18px !important;
+    height: 18px !important;
+    margin-right: 10px !important;
+    margin-left: 0 !important;
+    accent-color: #0284c7 !important;
+    cursor: pointer !important;
+    transform: scale(1.1);
+}
+
+.presupuesto-aceptado-section small {
+    color: #475569 !important;
+    margin-left: 28px !important;
+    margin-top: 4px !important;
+    display: block !important;
+    font-size: 13px !important;
+    line-height: 1.4 !important;
+}
+
+/* Animación cuando está marcado */
+.presupuesto-aceptado-checkbox:checked + span {
+    color: #0c4a6e !important;
+    font-weight: 700 !important;
+}
+
+/* Estado hover para el checkbox */
+.presupuesto-aceptado-checkbox:hover {
+    transform: scale(1.2);
+    filter: brightness(1.1);
+}
+
+/* Estilo para el botón enviar cuando aparece */
+.send-sector-wrapper[style*="block"] {
+    animation: slideInFromTop 0.4s ease-out;
+    margin-top: 15px !important;
+}
+
+@keyframes slideInFromTop {
+    0% {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Estado presupuesto_generado */
+.estado.presupuesto_generado,
+.estado-badge.presupuesto_generado {
+    background: linear-gradient(135deg, #FF9500 0%, #e67e00 100%) !important;
+    color: white !important;
+    border-color: #FF9500 !important;
+}

@@ -135,11 +135,24 @@ function crm_guia_comerciales_shortcode() {
                 <div class="feature-box">
                     <h4>Estados del cliente:</h4>
                     <ul>
-                        <li><strong>Borrador:</strong> Datos guardados pero no enviados</li>
-                        <li><strong>Enviado:</strong> Cliente completado y enviado al CRM Admin</li>
-                        <li><strong>En proceso:</strong> CRM Admin está trabajando con él</li>
-                        <li><strong>Finalizado:</strong> Proceso completado</li>
+                        <li><strong>Borrador:</strong> Cliente creado pero no enviado</li>
+                        <li><strong>Enviado:</strong> Comercial completó y envió datos al admin</li>
+                        <li><strong>Presupuesto Generado:</strong> Comercial subió presupuesto al sistema</li>
+                        <li><strong>Presupuesto Aceptado:</strong> Cliente acepta la propuesta</li>
+                        <li><strong>Contratos Generados:</strong> Admin prepara contratos para firma</li>
+                        <li><strong>Contratos Firmados:</strong> Proceso completado</li>
                     </ul>
+
+                    <div class="tip-box">
+                        <h4>💡 Nuevo Flujo de Trabajo:</h4>
+                        <ol>
+                            <li>Completa los datos del cliente y súbelos presupuestos</li>
+                            <li>Envía al cliente → Estado: <strong>Presupuesto Generado</strong></li>
+                            <li>Cuando el cliente acepta, marca ✓ "Cliente ha aceptado presupuesto"</li>
+                            <li>Aparece el botón "Enviar a Admin" para notificar aceptación</li>
+                            <li>Admin genera contratos y cliente firma</li>
+                        </ol>
+                    </div>
                 </div>
             </div>
         </section>

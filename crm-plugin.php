@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.14.8
+Version: 1.14.9
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.14.8');
+define('CRM_PLUGIN_VERSION', '1.14.9');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -174,12 +174,12 @@ function crm_enqueue_chartjs()
 function crm_get_estados_sector()
 {
     return [
-        'borrador'              => ['label' => 'Borrador',              'color' => '#B0B7C3'],
-        'enviado'               => ['label' => 'Enviado',               'color' => '#2AA8F2'],
-        'presupuesto_generado'  => ['label' => 'Presupuesto Generado',  'color' => '#FF9500'],
-        'presupuesto_aceptado'  => ['label' => 'Presupuesto Aceptado',  'color' => '#25C685'],
-        'contratos_generados'   => ['label' => 'Contratos Generados',   'color' => '#007bff'],
-        'contratos_firmados'    => ['label' => 'Contratos Firmados',    'color' => '#7048E8'],
+        'borrador'            => ['label' => 'Borrador',            'color' => '#B0B7C3'],
+        'enviado'             => ['label' => 'Enviado',             'color' => '#2AA8F2'],
+        'presupuesto_generado' => ['label' => 'Presupuesto Generado', 'color' => '#FF9500'],
+        'presupuesto_aceptado' => ['label' => 'Presupuesto Aceptado', 'color' => '#25C685'],
+        'contratos_generados' => ['label' => 'Contratos Generados', 'color' => '#007bff'],
+        'contratos_firmados'  => ['label' => 'Contratos Firmados',  'color' => '#7048E8'],
     ];
 }
 
@@ -842,11 +842,28 @@ function crm_formulario_alta_cliente()
                             <?php endforeach; ?>
                             <input type="file" class="upload-input" data-sector="<?php echo esc_attr($sector); ?>" data-tipo="presupuesto" multiple>
                             <button type="button" class="upload-btn" data-sector="<?php echo esc_attr($sector); ?>" data-tipo="presupuesto">Subir presupuesto</button>
+                            
+                            <!-- Checkbox presupuesto aceptado (solo visible si hay presupuestos) -->
+                            <?php if (!empty($filesP) && !current_user_can('crm_admin')): ?>
+                                <div class="presupuesto-aceptado-section" style="margin-top: 10px; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+                                    <label style="display: flex; align-items: center; font-weight: 500; color: #2c5282;">
+                                        <input type="checkbox" 
+                                               class="presupuesto-aceptado-checkbox" 
+                                               name="presupuesto_aceptado[<?php echo esc_attr($sector); ?>]" 
+                                               data-sector="<?php echo esc_attr($sector); ?>"
+                                               style="margin-right: 8px;">
+                                        <span>✓ Cliente ha aceptado este presupuesto</span>
+                                    </label>
+                                    <small style="color: #666; margin-left: 24px; display: block;">
+                                        Marca esta casilla cuando el cliente confirme que acepta la propuesta
+                                    </small>
+                                </div>
+                            <?php endif; ?>
                         </div>
 
                         <!-- Botón sectorial para Comerciales -->
                         <?php if (! current_user_can('crm_admin')): ?>
-                            <div class="send-sector-wrapper">
+                            <div class="send-sector-wrapper" style="display: none;" data-sector="<?php echo esc_attr($sector); ?>">
                                 <button type="button"
                                     class="send-sector-btn crm-submit-btn enviar-btn"
                                     data-sector="<?php echo esc_attr($sector); ?>"
@@ -1009,6 +1026,32 @@ function crm_formulario_alta_cliente()
                 existingError.remove();
             }
         }
+
+        // Control de visibilidad del botón "Enviar a Admin" basado en checkbox presupuesto aceptado
+        function toggleSendSectorButton() {
+            document.querySelectorAll('.presupuesto-aceptado-checkbox').forEach(function(checkbox) {
+                const sector = checkbox.dataset.sector;
+                const sendWrapper = document.querySelector('.send-sector-wrapper[data-sector="' + sector + '"]');
+                
+                if (sendWrapper) {
+                    if (checkbox.checked) {
+                        sendWrapper.style.display = 'block';
+                    } else {
+                        sendWrapper.style.display = 'none';
+                    }
+                }
+            });
+        }
+
+        // Ejecutar al cargar la página
+        toggleSendSectorButton();
+
+        // Añadir listeners a los checkboxes
+        document.addEventListener('change', function(e) {
+            if (e.target.classList.contains('presupuesto-aceptado-checkbox')) {
+                toggleSendSectorButton();
+            }
+        });
     });
     </script>
         </div> <!-- /crm-form-content -->
@@ -1245,6 +1288,11 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
             $e = 'enviado';
         }
 
+        // 1.5) Si comercial marcó "presupuesto aceptado" para este sector
+        if (!current_user_can('crm_admin') && isset($_POST['presupuesto_aceptado'][$s]) && !$forzar) {
+            $e = 'presupuesto_aceptado';
+        }
+
         // 2) Admin forzando estado específico
         if ($forzar && isset($_POST["estado_{$s}"])) {
             $e = sanitize_text_field($_POST["estado_{$s}"]);
@@ -1253,13 +1301,12 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
 
         // Solo aplicar lógica automática si no se ha forzado el estado
         if (!$estado_forzado) {
-            // 3) Lógica automática de transición: SOLO enviado -> presupuesto_aceptado
-            // El borrador permanece como borrador aunque tenga presupuestos
+            // 3) Lógica automática de transición: enviado con presupuesto -> presupuesto_generado
             if (
                 $e === 'enviado'
                 && !empty($presu_existentes[$s])
             ) {
-                $e = 'presupuesto_aceptado';
+                $e = 'presupuesto_generado';
             }
 
             // 4) Lógica automática: presupuesto_aceptado -> contratos_generados

@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.14.11
+Version: 1.14.12
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -905,6 +905,27 @@ function crm_formulario_alta_cliente()
                                     <input type="checkbox" name="contratos_generados[]" value="<?php echo esc_attr($sector); ?>" <?php echo $genChecked; ?>>
                                     Marcar contrato generado
                                 </label>
+                                
+                                <!-- Admin: Control de presupuesto aceptado -->
+                                <?php 
+                                    $admin_presupuesto_checked = isset($presupuestos_aceptados[$sector]) ? 'checked' : '';
+                                    $can_toggle_presupuesto = !$genChecked; // Solo se puede desmarcar si no hay contratos generados
+                                ?>
+                                <label class="admin-presupuesto-control" style="margin-top: 8px; display: flex; align-items: center;">
+                                    <input type="checkbox" 
+                                           name="admin_presupuesto_aceptado[<?php echo esc_attr($sector); ?>]" 
+                                           <?php echo $admin_presupuesto_checked; ?>
+                                           <?php echo !$can_toggle_presupuesto ? 'disabled' : ''; ?>
+                                           style="margin-right: 8px;">
+                                    <span style="color: <?php echo isset($presupuestos_aceptados[$sector]) ? '#10b981' : '#6b7280'; ?>;">
+                                        <?php echo isset($presupuestos_aceptados[$sector]) ? '✓ Presupuesto aceptado por cliente' : 'Sin aceptación de presupuesto'; ?>
+                                    </span>
+                                </label>
+                                <?php if (!$can_toggle_presupuesto): ?>
+                                    <small style="color: #9ca3af; margin-left: 24px; font-style: italic;">
+                                        No se puede modificar (contrato ya generado)
+                                    </small>
+                                <?php endif; ?>
                                 <div class="upload-section contratos-firmados">
                                     <strong>Contratos Firmados:</strong>
                                     <?php foreach ($filesCF as $url): ?>
@@ -1391,6 +1412,34 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         wp_send_json_error(['message' => 'El nombre de la población no es válido. Use solo letras, espacios y guiones. Mínimo 2 caracteres.']);
     }
 
+    // Procesar presupuestos aceptados (combinando comerciales y admin)
+    $presupuestos_aceptados_final = [];
+    
+    if (current_user_can('crm_admin') && isset($_POST['admin_presupuesto_aceptado'])) {
+        // Admin está gestionando - usar sus controles
+        $admin_input = (array)$_POST['admin_presupuesto_aceptado'];
+        
+        // Mantener los existentes que no tienen contratos generados o que el admin mantiene marcados
+        $existing_presupuestos = maybe_unserialize($client['presupuestos_aceptados'] ?? '');
+        if (!is_array($existing_presupuestos)) $existing_presupuestos = [];
+        
+        foreach ($intereses as $sector) {
+            $tiene_contrato = in_array($sector, $contratos_generados);
+            
+            if (isset($admin_input[$sector])) {
+                // Admin marcó este sector
+                $presupuestos_aceptados_final[$sector] = true;
+            } elseif ($tiene_contrato && isset($existing_presupuestos[$sector])) {
+                // Tiene contrato y estaba marcado antes - conservar
+                $presupuestos_aceptados_final[$sector] = true;
+            }
+            // Si no está marcado por admin y no tiene contrato, no se incluye
+        }
+    } else {
+        // No es admin o no está gestionando - usar el método existente (comerciales)
+        $presupuestos_aceptados_final = (array)($_POST['presupuesto_aceptado'] ?? []);
+    }
+
     // preparar array de guardado
     $data = [
         'delegado'                  => sanitize_text_field($_POST['delegado']),
@@ -1411,7 +1460,7 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         'presupuesto'               => maybe_serialize($presu_existentes),
         'contratos_firmados'        => maybe_serialize($contratos_existentes),
         'contratos_generados'       => maybe_serialize($contratos_generados),
-        'presupuestos_aceptados'    => maybe_serialize($_POST['presupuesto_aceptado'] ?? []),
+        'presupuestos_aceptados'    => maybe_serialize($presupuestos_aceptados_final),
         'estado'                    => $estado,
         'estado_por_sector'         => maybe_serialize($new_estado),
         'fecha_envio_por_sector'    => maybe_serialize($fechas_envio),

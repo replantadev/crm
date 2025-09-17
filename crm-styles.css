@@ -3981,3 +3981,113 @@ button.aceptar-presupuesto{background:#25C685;color:#fff;font-size:12px;margin:4
     color: white !important;
     border-color: #FF9500 !important;
 }
+
+/* === ADMIN CONTROLS STYLING === */
+.admin-controls {
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.admin-controls label {
+    display: flex;
+    align-items: center;
+    font-weight: 500;
+    color: #334155;
+    margin-bottom: 0;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.admin-controls label:hover {
+    color: #1e293b;
+}
+
+.admin-controls input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin-right: 10px;
+    accent-color: #0ea5e9;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.admin-controls input[type="checkbox"]:checked {
+    transform: scale(1.05);
+}
+
+.admin-presupuesto-control {
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 10px 12px;
+    transition: all 0.2s ease;
+}
+
+.admin-presupuesto-control:hover {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: #cbd5e1;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.admin-presupuesto-control input[type="checkbox"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.admin-presupuesto-control small {
+    font-size: 11px;
+    font-style: italic;
+    opacity: 0.8;
+}
+
+/* Admin controls en sectores específicos */
+.sector-card .admin-controls {
+    background: linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(226, 232, 240, 0.9) 100%);
+    border: 1px solid rgba(203, 213, 225, 0.8);
+    backdrop-filter: blur(4px);
+}
+
+/* Colores específicos por sector para admin controls */
+.sector-card.solar .admin-controls {
+    border-left: 4px solid #f59e0b;
+}
+
+.sector-card.autoconsumo .admin-controls {
+    border-left: 4px solid #10b981;
+}
+
+.sector-card.aerotermia .admin-controls {
+    border-left: 4px solid #3b82f6;
+}
+
+.sector-card.cargadores .admin-controls {
+    border-left: 4px solid #8b5cf6;
+}
+
+.sector-card.eficiencia .admin-controls {
+    border-left: 4px solid #f97316;
+}
+
+.sector-card.gas .admin-controls {
+    border-left: 4px solid #06b6d4;
+}
+
+.sector-card.seguros .admin-controls {
+    border-left: 4px solid #ef4444;
+}
+
+.sector-card.placas .admin-controls {
+    border-left: 4px solid #84cc16;
+}
+
+.sector-card.fibra .admin-controls {
+    border-left: 4px solid #ec4899;
+}
+
+.sector-card.alarmas .admin-controls {
+    border-left: 4px solid #6366f1;
+}

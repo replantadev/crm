@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.14.18
+Version: 1.14.19
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.14.17');
+define('CRM_PLUGIN_VERSION', '1.14.19');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -1916,12 +1916,22 @@ function crm_lista_altas()
 
     // Determinar si el usuario puede ver las altas de otro comercial
     $current_user_id = get_current_user_id();
-    if ($requested_user_id && (!current_user_can('crm_admin') || $requested_user_id === $current_user_id)) {
-        $user_id = $current_user_id;
+    if ($requested_user_id && current_user_can('crm_admin') && $requested_user_id !== $current_user_id) {
+        // Admin viendo otro comercial
+        $user_id = $requested_user_id;
     } else {
-        $user_id = $requested_user_id ?: $current_user_id;
+        // Comercial viendo sus propias altas
+        $user_id = $current_user_id;
     }
 
+    // Obtener información del comercial si es diferente del usuario actual
+    $comercial_name = '';
+    if ($user_id !== $current_user_id) {
+        $comercial = get_userdata($user_id);
+        if ($comercial) {
+            $comercial_name = $comercial->display_name;
+        }
+    }
 
     // Obtener los datos de los clientes
     $wpdb->flush(); // Limpiar cualquier caché previa del objeto
@@ -1934,7 +1944,8 @@ function crm_lista_altas()
     ", $user_id), ARRAY_A);
 
     if (empty($clientes)) {
-        return "<p>No hay clientes registrados.</p>";
+        $empty_message = $comercial_name ? "No hay clientes registrados para {$comercial_name}." : "No hay clientes registrados.";
+        return "<p>{$empty_message}</p>";
     }
 
     // Construir la tabla en HTML
@@ -1942,8 +1953,13 @@ function crm_lista_altas()
 ?>
     <div class="crm-table-container">
         <div class="crm-table-header">
-            <h3><img src="<?php echo get_site_icon_url(); ?>" alt="Logo" class="crm-logo-small"> Mis Clientes - Energitel CRM</h3>
-            <p class="table-subtitle">Gestión de clientes y seguimiento de estados</p>
+            <?php if ($comercial_name): ?>
+                <h3><img src="<?php echo get_site_icon_url(); ?>" alt="Logo" class="crm-logo-small"> Clientes de <?php echo esc_html($comercial_name); ?> - Energitel CRM</h3>
+                <p class="table-subtitle">Visualizando clientes y seguimiento de estados de <?php echo esc_html($comercial_name); ?></p>
+            <?php else: ?>
+                <h3><img src="<?php echo get_site_icon_url(); ?>" alt="Logo" class="crm-logo-small"> Mis Clientes - Energitel CRM</h3>
+                <p class="table-subtitle">Gestión de clientes y seguimiento de estados</p>
+            <?php endif; ?>
         </div>
         
         <div class="table-responsive">
@@ -1969,7 +1985,7 @@ function crm_lista_altas()
     window.crmData = {
         ajaxurl: '<?php echo admin_url('admin-ajax.php'); ?>',
         nonce: '<?php echo wp_create_nonce('crm_obtener_clientes_nonce'); ?>',
-        user_id: <?php echo get_current_user_id(); ?>
+        user_id: <?php echo $user_id; ?>
     };
     
     jQuery(document).ready(function($) {

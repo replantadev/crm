@@ -10,28 +10,64 @@ add_filter('nocache_headers', function($headers) {
     return $headers;
 });
 
+/**
+ * Devuelve el ID de la página de login. Filtrable y configurable por opción.
+ * Filtros: `crm_login_page_id`. Opción: `crm_login_page_id`.
+ */
+function crm_get_login_page_id() {
+    $id = (int) get_option('crm_login_page_id', 2);
+    return (int) apply_filters('crm_login_page_id', $id);
+}
+
+/**
+ * Devuelve el ID de la página a la que redirigir tras login.
+ */
+function crm_get_post_login_redirect_id() {
+    $id = (int) get_option('crm_post_login_page_id', 30);
+    return (int) apply_filters('crm_post_login_page_id', $id);
+}
+
 // Restringir acceso si no estás logueado
 add_action('template_redirect', 'restrict_access_for_guests');
 function restrict_access_for_guests() {
-    $login_page_id = 2; // ID de la página de acceso
-    $login_page_url = get_permalink($login_page_id);
-    // Permitir acceso a admin-post.php incluso si no está logueado
-    if (is_admin() || strpos($_SERVER['REQUEST_URI'], 'admin-post.php') !== false) {
+    $login_page_id  = crm_get_login_page_id();
+    $login_page_url = $login_page_id ? get_permalink($login_page_id) : wp_login_url();
+
+    // Permitir acceso a admin-post.php / admin-ajax.php / cron incluso si no está logueado
+    if (is_admin()) {
+        return;
+    }
+    $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+    if (
+        strpos($request_uri, 'admin-post.php') !== false ||
+        strpos($request_uri, 'admin-ajax.php') !== false ||
+        strpos($request_uri, 'wp-cron.php') !== false ||
+        strpos($request_uri, 'wp-login.php') !== false
+    ) {
         return;
     }
 
     // Permitir acceso solo si el usuario está logueado o en la página de acceso
-    if (!is_user_logged_in() && !is_page($login_page_id)) {
-        wp_redirect($login_page_url);
-        exit;
+    if (!is_user_logged_in() && (!$login_page_id || !is_page($login_page_id))) {
+        if ($login_page_url) {
+            wp_safe_redirect($login_page_url);
+            exit;
+        }
     }
 }
 
-// Redirigir al usuario logueado a la página de inicio (ID: 30)
+// Redirigir al usuario logueado a la página de inicio configurada
 add_filter('login_redirect', 'custom_login_redirect', 10, 3);
 function custom_login_redirect($redirect_to, $requested_redirect_to, $user) {
-    if (isset($user->roles)) {
-        return get_permalink(30); // Redirigir a la página con ID 30
+    if (is_wp_error($user) || empty($user) || !isset($user->roles)) {
+        return $redirect_to;
+    }
+    $target_id = crm_get_post_login_redirect_id();
+    if ($target_id) {
+        $url = get_permalink($target_id);
+        if ($url) {
+            return $url;
+        }
     }
     return $redirect_to;
 }
@@ -54,7 +90,8 @@ function display_user_profile() {
 
 add_action('wp_head', 'hide_header_with_css_on_login_page');
 function hide_header_with_css_on_login_page() {
-    if (is_page(2) && !is_user_logged_in()) { // Reemplaza 2 con el ID de tu página de login
+    $login_page_id = crm_get_login_page_id();
+    if ($login_page_id && is_page($login_page_id) && !is_user_logged_in()) {
         echo '<style>
             .ast-header-break-point, .ast-mobile-header-wrap { display: none !important; }
             header { display: none !important; }

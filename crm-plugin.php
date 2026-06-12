@@ -3,13 +3,13 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.14.19
+Version: 1.15.0
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
-Requires at least: 5.0
-Tested up to: 6.3
-Requires PHP: 7.4
+Requires at least: 5.8
+Tested up to: 6.5
+Requires PHP: 8.0
 License: GPL v2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Text Domain: crm-basico
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.14.19');
+define('CRM_PLUGIN_VERSION', '1.15.0');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -88,6 +88,11 @@ function crm_cleanup_duplicate_files() {
     }
 }
 
+// Helpers internos (seguridad, roles, uploads). Se cargan ANTES que el resto.
+require_once CRM_PLUGIN_PATH . 'includes/security.php';
+require_once CRM_PLUGIN_PATH . 'includes/roles.php';
+require_once CRM_PLUGIN_PATH . 'includes/uploads-handler.php';
+
 // Incluir archivos del plugin
 require_once CRM_PLUGIN_PATH . 'acceso.php';
 require_once CRM_PLUGIN_PATH . 'shortcodes.php';
@@ -99,6 +104,11 @@ if (file_exists(CRM_PLUGIN_PATH . 'includes/guia-comerciales.php')) {
 if (file_exists(CRM_PLUGIN_PATH . 'includes/guia-admin.php')) {
     require_once CRM_PLUGIN_PATH . 'includes/guia-admin.php';
 }
+
+// Cargar text-domain para internacionalización futura
+add_action('plugins_loaded', function () {
+    load_plugin_textdomain('crm-basico', false, dirname(plugin_basename(CRM_PLUGIN_FILE)) . '/languages');
+});
 
 add_action('wp_enqueue_scripts', 'crm_enqueue_styles');
 function crm_enqueue_styles()
@@ -1181,8 +1191,7 @@ function crm_sync_offline_data_ajax()
         }
 
         // Log para debugging
-        error_log("CRM Offline Sync: Procesando sincronización para usuario " . get_current_user_id());
-        error_log("CRM Offline Sync: Datos recibidos - " . print_r($_POST, true));
+        crm_debug_log('Offline Sync: procesando petición para usuario ' . get_current_user_id());
 
         // Determinar el estado basado en los datos recibidos
         $estado = 'enviado'; // Por defecto, los datos offline se marcan como enviados
@@ -1196,7 +1205,7 @@ function crm_sync_offline_data_ajax()
         crm_handle_ajax_request($estado, false);
         
     } catch (Exception $e) {
-        error_log("CRM Offline Sync Error: " . $e->getMessage());
+        crm_debug_log('Offline Sync error: ' . $e->getMessage());
         wp_send_json_error(['message' => 'Error en sincronización: ' . $e->getMessage()]);
     }
 }
@@ -1206,14 +1215,8 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
 {
     global $wpdb;
     $table      = $wpdb->prefix . 'crm_clients';
-    
-    // Verificar si la columna actualizado_por existe, si no, crearla
-    $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $table LIKE 'actualizado_por'");
-    if (empty($column_exists)) {
-        $wpdb->query("ALTER TABLE $table ADD COLUMN actualizado_por BIGINT(20) NULL");
-    }
-    
-    $sectores   = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
+
+    $sectores   = crm_get_valid_sectores();
     $client_id  = intval($_POST['client_id'] ?? 0);
     $is_update  = $client_id > 0;
     $client     = $is_update
@@ -1221,13 +1224,11 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         : [];
 
     // Debug: Log incoming data
-    error_log("CRM Plugin - AJAX Request Data: " . print_r($_POST, true));
-    error_log("CRM Plugin - Is Update: " . ($is_update ? 'Yes' : 'No'));
-    error_log("CRM Plugin - Client ID: " . $client_id);
+    crm_debug_log('AJAX cliente: is_update=' . ($is_update ? '1' : '0') . ' client_id=' . (int) $client_id);
 
     // seguridad
     if (! wp_verify_nonce($_POST['crm_nonce'] ?? '', 'crm_alta_cliente_nonce')) {
-        error_log("CRM Plugin - Nonce verification failed");
+        crm_debug_log('Nonce inválido en alta/edición de cliente.');
         wp_send_json_error(['message' => 'Error de seguridad']);
     }
 
@@ -1241,16 +1242,17 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
 
     // helper: procesar un campo de archivos y fusionar con los existentes
     $handle_files = function ($field_name, $existing_serialized) use ($sectores) {
-        $existing = maybe_unserialize($existing_serialized ?: 'a:0:{}');
+        $existing  = crm_safe_unserialize_array($existing_serialized);
         if (! is_array($existing)) {
             $existing = [];
         }
-        $new_urls = [];
+        $new_urls  = [];
 
         // 1) archivos server
         if (! empty($_FILES[$field_name]['name']) && is_array($_FILES[$field_name]['name'])) {
             foreach ($_FILES[$field_name]['name'] as $sector => $names) {
-                if (! is_array($names)) {
+                $sector = sanitize_key($sector);
+                if (!in_array($sector, $sectores, true) || !is_array($names)) {
                     continue;
                 }
                 foreach ($names as $i => $name) {
@@ -1264,23 +1266,37 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
                         'error'    => $_FILES[$field_name]['error'][$sector][$i],
                         'size'     => $_FILES[$field_name]['size'][$sector][$i],
                     ];
-                    $up = wp_handle_upload($file, ['test_form' => false]);
-                    if (! empty($up['url'])) {
-                        $new_urls[$sector][] = $up['url'];
+                    $secure = crm_handle_secure_upload($file, $field_name);
+                    if (!is_wp_error($secure) && !empty($secure['url'])) {
+                        $new_urls[$sector][] = $secure['url'];
                     }
                 }
             }
         }
 
-        // 2) URLs recibidas en POST
+        // 2) URLs recibidas en POST (solo aceptamos URLs ya dentro de uploads)
         foreach ((array) ($_POST[$field_name] ?? []) as $sector => $urls) {
-            $new_urls[$sector] = array_merge($new_urls[$sector] ?? [], (array)$urls);
+            $sector = sanitize_key($sector);
+            if (!in_array($sector, $sectores, true)) {
+                continue;
+            }
+            $clean = crm_filter_uploads_urls((array) $urls);
+            if (!empty($clean)) {
+                $new_urls[$sector] = array_merge($new_urls[$sector] ?? [], $clean);
+            }
         }
 
-        // 3) fusionar existente + nuevas
+        // 3) fusionar existente + nuevas (solo claves de sectores válidos)
         foreach ($new_urls as $s => $urls) {
-            $existing[$s] = array_unique(array_merge($existing[$s] ?? [], $urls));
+            if (!in_array($s, $sectores, true)) {
+                continue;
+            }
+            $prev          = isset($existing[$s]) && is_array($existing[$s]) ? $existing[$s] : [];
+            $existing[$s]  = array_values(array_unique(array_merge($prev, $urls)));
         }
+
+        // Sanear cualquier clave huérfana que no esté en la whitelist
+        $existing = array_intersect_key($existing, array_flip($sectores));
 
         return $existing;
     };
@@ -1290,27 +1306,31 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
     $presu_existentes      = $handle_files('presupuesto',       $client['presupuesto'] ?? '');
     $contratos_existentes  = $handle_files('contratos_firmados', $client['contratos_firmados'] ?? '');
 
-    // contratos generados
-    $contratos_generados = array_map('sanitize_text_field', (array) ($_POST['contratos_generados'] ?? []));
+    // contratos generados (whitelist de sectores)
+    $contratos_generados = crm_sanitize_sectores_list((array) ($_POST['contratos_generados'] ?? []));
 
     // ————— Gestión de envío por sector mejorada —————
-    $fechas_envio = maybe_unserialize($client['fecha_envio_por_sector'] ?? 'a:0:{}');
-    $users_envio  = maybe_unserialize($client['usuario_envio_por_sector'] ?? 'a:0:{}');
-    
+    $fechas_envio = crm_safe_unserialize_array($client['fecha_envio_por_sector'] ?? '');
+    $users_envio  = crm_safe_unserialize_array($client['usuario_envio_por_sector'] ?? '');
+
     // Asegurar que son arrays
-    if (!is_array($fechas_envio)) $fechas_envio = [];
-    if (!is_array($users_envio)) $users_envio = [];
-    
-    $env_sectores = (array) ($_POST['enviar_sector'] ?? []);
-    
+    if (!is_array($fechas_envio)) {
+        $fechas_envio = [];
+    }
+    if (!is_array($users_envio)) {
+        $users_envio = [];
+    }
+
+    $env_sectores = crm_sanitize_sectores_list((array) ($_POST['enviar_sector'] ?? []));
+
     // Solo actualizar fecha y usuario para sectores que se están enviando AHORA
     foreach ($env_sectores as $s) {
         $fechas_envio[$s] = current_time('d/m/Y H:i');
         $users_envio[$s]  = wp_get_current_user()->display_name;
     }
     // ————— Reconstruyo intereses —————
-    // 1) Los que vienen marcados en el POST (checkboxes)
-    $intereses_post = array_map('sanitize_text_field', (array) ($_POST['intereses'] ?? []));
+    // 1) Los que vienen marcados en el POST (checkboxes), filtrados por whitelist
+    $intereses_post = crm_sanitize_sectores_list((array) ($_POST['intereses'] ?? []));
     
     // 2) Aquellos que ya tienen ficheros subidos (para preservar sectores con archivos)
     $file_sectors = array_unique(array_merge(
@@ -1331,20 +1351,31 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
     // ————— Gestión de estado por sector mejorada —————
     $is_send     = current_filter() === 'wp_ajax_crm_enviar_cliente_ajax';
     $forzar      = current_user_can('crm_admin') && ! empty($_POST['forzar_estado']);
-    $old_estado  = maybe_unserialize($client['estado_por_sector'] ?? 'a:0:{}');
+    $old_estado  = crm_safe_unserialize_array($client['estado_por_sector'] ?? '');
     if (!is_array($old_estado)) {
         $old_estado = [];
     }
+    // Solo aceptar claves de sectores válidos para evitar inyectar columnas raras
+    $old_estado = array_intersect_key($old_estado, array_flip($sectores));
     $new_estado  = $old_estado; // Preservamos los estados existentes
+
+    // Sanitizar arrays de aceptación por sector recibidos por POST
+    $admin_acept_post   = current_user_can('crm_admin') && isset($_POST['admin_presupuesto_aceptado'])
+        ? crm_sanitize_sector_map((array) $_POST['admin_presupuesto_aceptado'])
+        : [];
+    $comercial_acept_post = isset($_POST['presupuesto_aceptado'])
+        ? crm_sanitize_sector_map((array) $_POST['presupuesto_aceptado'])
+        : [];
 
     // Si admin está gestionando presupuestos, necesitamos procesar TODOS los sectores posibles
     $sectores_a_procesar = $intereses;
-    if (current_user_can('crm_admin') && isset($_POST['admin_presupuesto_aceptado'])) {
-        $existing_presupuestos = maybe_unserialize($client['presupuestos_aceptados'] ?? '');
+    if (!empty($admin_acept_post)) {
+        $existing_presupuestos = crm_safe_unserialize_array($client['presupuestos_aceptados'] ?? '');
         if (is_array($existing_presupuestos)) {
             $sectores_a_procesar = array_unique(array_merge($intereses, array_keys($existing_presupuestos), array_keys($old_estado)));
         }
     }
+    $sectores_a_procesar = array_values(array_intersect($sectores_a_procesar, $sectores));
 
     foreach ($sectores_a_procesar as $s) {
         $e = $old_estado[$s] ?? 'borrador'; // Estado actual del sector
@@ -1356,17 +1387,17 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         }
 
         // 1.5) Si comercial marcó "presupuesto aceptado" para este sector
-        if (!current_user_can('crm_admin') && isset($_POST['presupuesto_aceptado'][$s]) && !$forzar) {
+        if (!current_user_can('crm_admin') && isset($comercial_acept_post[$s]) && !$forzar) {
             $e = 'presupuesto_aceptado';
         }
 
         // 1.6) Si admin marcó "presupuesto aceptado" para este sector
-        if (current_user_can('crm_admin') && isset($_POST['admin_presupuesto_aceptado'][$s]) && !$forzar) {
+        if (current_user_can('crm_admin') && isset($admin_acept_post[$s]) && !$forzar) {
             $e = 'presupuesto_aceptado';
         }
 
         // 1.7) Si admin DESMARCÓ un presupuesto que estaba aceptado - revertir al estado lógico anterior
-        if (current_user_can('crm_admin') && !isset($_POST['admin_presupuesto_aceptado'][$s]) && $e === 'presupuesto_aceptado' && !$forzar) {
+        if (current_user_can('crm_admin') && !isset($admin_acept_post[$s]) && $e === 'presupuesto_aceptado' && !$forzar) {
             // Determinar el estado correcto sin la aceptación del presupuesto
             if (!empty($presu_existentes[$s])) {
                 $e = 'presupuesto_generado'; // Tiene presupuesto subido
@@ -1511,7 +1542,7 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
     if ($is_update) {
         $result = $wpdb->update($table, $data, ['id' => $client_id]);
         if ($result === false) {
-            error_log("CRM Plugin - Error updating client {$client_id}: " . $wpdb->last_error);
+            error_log('CRM: error actualizando cliente ' . (int) $client_id . ': ' . $wpdb->last_error);
             wp_send_json_error(['message' => 'Error al actualizar cliente en la base de datos: ' . $wpdb->last_error]);
         }
     } else {
@@ -1519,13 +1550,12 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         $data['creado_en']  = current_time('mysql');
         $result = $wpdb->insert($table, $data);
         if ($result === false) {
-            error_log("CRM Plugin - Error inserting new client: " . $wpdb->last_error);
-            error_log("CRM Plugin - Data attempted to insert: " . print_r($data, true));
+            error_log('CRM: error insertando nuevo cliente: ' . $wpdb->last_error);
             wp_send_json_error(['message' => 'Error al crear cliente en la base de datos: ' . $wpdb->last_error]);
         }
         $client_id = $wpdb->insert_id;
         if (!$client_id) {
-            error_log("CRM Plugin - Error: No insert_id returned");
+            error_log('CRM: insert_id no devuelto al crear cliente.');
             wp_send_json_error(['message' => 'Error: No se pudo obtener el ID del cliente creado']);
         }
     }
@@ -1650,11 +1680,19 @@ function crm_enviar_notificacion_comercial($client_id, $client_data, $action_det
     }
     
     $admin_user = wp_get_current_user();
-    $cliente_nombre = isset($client_data['cliente_nombre']) ? $client_data['cliente_nombre'] : 'Cliente';
-    
+    $cliente_nombre = isset($client_data['cliente_nombre']) ? (string) $client_data['cliente_nombre'] : 'Cliente';
+
+    // Pre-escapar para evitar XSS en el cuerpo HTML del email
+    $cn  = esc_html($cliente_nombre);
+    $ce  = esc_html($client_data['email_cliente'] ?? '');
+    $ct  = esc_html($client_data['telefono'] ?? '');
+    $cd  = esc_html($client_data['delegado'] ?? '');
+    $com = esc_html($comercial->display_name);
+    $adm = esc_html($admin_user->display_name);
+
     // Construir el mensaje
-    $subject = "🔔 Actualización de Cliente: {$cliente_nombre}";
-    
+    $subject = sprintf('🔔 Actualización de Cliente: %s', $cliente_nombre);
+
     $message = "
 <html>
 <head>
@@ -1673,47 +1711,47 @@ function crm_enviar_notificacion_comercial($client_id, $client_data, $action_det
     </div>
     
     <div class='content'>
-        <p>Hola <strong>{$comercial->display_name}</strong>,</p>
+        <p>Hola <strong>{$com}</strong>,</p>
         
-        <p>El administrador <strong>{$admin_user->display_name}</strong> ha actualizado la ficha de uno de tus clientes:</p>
+        <p>El administrador <strong>{$adm}</strong> ha actualizado la ficha de uno de tus clientes:</p>
         
         <div class='detail-box'>
-            <h3>👤 Cliente: {$cliente_nombre}</h3>
-            <p><strong>📧 Email:</strong> {$client_data['email_cliente']}</p>
-            <p><strong>📞 Teléfono:</strong> {$client_data['telefono']}</p>
-            <p><strong>🏢 Delegado:</strong> {$client_data['delegado']}</p>
+            <h3>👤 Cliente: {$cn}</h3>
+            <p><strong>📧 Email:</strong> {$ce}</p>
+            <p><strong>📞 Teléfono:</strong> {$ct}</p>
+            <p><strong>🏢 Delegado:</strong> {$cd}</p>
         </div>
         
         <div class='detail-box'>
             <h3>📝 Detalles de la Actualización:</h3>
             <ul>";
-    
-    foreach ($action_details as $detail) {
-        $message .= "<li>{$detail}</li>";
+
+    foreach ((array) $action_details as $detail) {
+        $message .= '<li>' . esc_html((string) $detail) . '</li>';
     }
-    
-    $client_url = home_url("/editar-cliente/?client_id={$client_id}");
-    
+
+    $client_url = home_url('/editar-cliente/?client_id=' . (int) $client_id);
+
     $message .= "
             </ul>
         </div>
         
         <p style='text-align: center;'>
-            <a href='{$client_url}' class='btn'>📝 Ver Cliente</a>
+            <a href='" . esc_url($client_url) . "' class='btn'>📝 Ver Cliente</a>
         </p>
         
         <p><em>Esta notificación se envía automáticamente cuando el administrador actualiza los datos de tus clientes.</em></p>
     </div>
     
     <div class='footer'>
-        <p>Sistema CRM Energitel | " . get_bloginfo('name') . "</p>
+        <p>Sistema CRM Energitel | " . esc_html(get_bloginfo('name')) . "</p>
     </div>
 </body>
 </html>";
     
     $headers = [
         'Content-Type: text/html; charset=UTF-8',
-        'From: CRM Sistema <' . get_option('admin_email') . '>'
+        'From: ' . get_option('blogname') . ' <' . get_option('admin_email') . '>'
     ];
     
     return wp_mail($comercial->user_email, $subject, $message, $headers);
@@ -1745,83 +1783,52 @@ function crm_debug_sector_save($client_id, $action, $data) {
  */
 function crm_subir_archivo_generico($tipo)
 {
-    // Verificar permisos: ajustar según tus necesidades
+    // Permisos
     if (!current_user_can('crm_admin') && !current_user_can('comercial')) {
         wp_send_json_error(['message' => 'No tienes permisos para realizar esta acción.']);
-        exit;
+        return;
     }
 
-    // Validar la solicitud: verificar si los datos necesarios están presentes y el nonce es válido
+    // Validar nonce y parámetros
     if (
-        !isset($_POST['sector']) ||
-        !isset($_FILES['file']) ||
-        !isset($_POST['nonce']) ||
+        !isset($_POST['sector'], $_FILES['file'], $_POST['nonce']) ||
         !wp_verify_nonce($_POST['nonce'], 'crm_alta_cliente_nonce')
     ) {
         wp_send_json_error(['message' => 'Solicitud no válida. Error de seguridad o datos faltantes.']);
-        exit;
+        return;
     }
 
-    // Sanitizar los datos recibidos
-    $sector = sanitize_text_field($_POST['sector']);
-    $file = $_FILES['file'];
-
-    // Validar errores de subida
-    if ($file['error'] !== UPLOAD_ERR_OK) {
-        wp_send_json_error(['message' => 'Error en la subida del archivo: ' . $file['error']]);
-        exit;
+    // Sector contra whitelist
+    $sector = sanitize_key($_POST['sector']);
+    if (!crm_is_valid_sector($sector)) {
+        wp_send_json_error(['message' => 'Sector no válido.']);
+        return;
     }
 
-    // Comprobar el tamaño del archivo (10 MB máximo)
-    $max_file_size = 10 * 1024 * 1024; // 10 MB
-    if ($file['size'] > $max_file_size) {
-        wp_send_json_error(['message' => 'El archivo excede el tamaño permitido de 10 MB.']);
-        exit;
+    // Subida hardened (valida MIME real, extensión, tamaño, usa wp_handle_upload)
+    $result = crm_handle_secure_upload($_FILES['file'], $tipo);
+    if (is_wp_error($result)) {
+        wp_send_json_error(['message' => $result->get_error_message()]);
+        return;
     }
 
-    // Validar tipos de archivo permitidos
-    $allowed_file_types = ['image/jpeg', 'image/png', 'application/pdf'];
-    if (!in_array($file['type'], $allowed_file_types)) {
-        wp_send_json_error(['message' => 'Tipo de archivo no permitido. Solo se permiten JPEG, PNG y PDF.']);
-        exit;
-    }
-
-    // Obtener la información del directorio de subida de WordPress
-    $upload_dir = wp_upload_dir();
-
-    // Verificar si el directorio de subidas es escribable
-    if (!is_writable($upload_dir['basedir'])) {
-        wp_send_json_error(['message' => 'Error en el servidor. El directorio de subidas no es escribable.']);
-        exit;
-    }
-
-    // Asegurarse de que el nombre del archivo sea único
-    $file_name = sanitize_file_name($file['name']);
-    $unique_file_name = wp_unique_filename($upload_dir['path'], $file_name);
-
-    // Establecer la ruta completa para guardar el archivo
-    $file_path = $upload_dir['path'] . '/' . $unique_file_name;
-
-    // Mover el archivo al directorio de subidas
-    if (!move_uploaded_file($file['tmp_name'], $file_path)) {
-        wp_send_json_error(['message' => 'Error al mover el archivo al directorio de subidas.']);
-        exit;
-    }
-
-    // Generar la URL del archivo subido
-    $file_url = $upload_dir['url'] . '/' . $unique_file_name;
-
-    // Log de la subida de archivo
-    $client_id = isset($_POST['client_id']) ? intval($_POST['client_id']) : null;
+    // Log
+    $client_id    = isset($_POST['client_id']) ? intval($_POST['client_id']) : null;
     $current_user = wp_get_current_user();
-    $log_details = "Archivo subido: {$unique_file_name} | Sector: {$sector} | Tipo: {$tipo} | Tamaño: " . round($file['size'] / 1024, 2) . " KB";
+    $size_kb      = isset($_FILES['file']['size']) ? round((int) $_FILES['file']['size'] / 1024, 2) : 0;
+    $log_details  = sprintf(
+        'Archivo subido: %s | Sector: %s | Tipo: %s | Tamaño: %s KB',
+        $result['name'],
+        $sector,
+        $tipo,
+        $size_kb
+    );
     crm_log_action('archivo_subido', $log_details, $client_id, $current_user->ID);
 
-    // Respuesta exitosa
     wp_send_json_success([
         'sector' => $sector,
-        'url'    => esc_url($file_url), // URL del archivo subido
-        'name'   => sanitize_text_field(basename($file_url)) // Nombre del archivo
+        'url'    => esc_url_raw($result['url']),
+        'name'   => $result['name'],
     ]);
 }
 
@@ -1832,15 +1839,15 @@ function crm_subir_archivo_generico($tipo)
  */
 function crm_eliminar_archivo_generico($tipo)
 {
-    error_log('POST recibido para eliminar ' . $tipo . ': ' . print_r($_POST, true)); // Registro de los datos recibidos
+    crm_debug_log('Eliminar archivo solicitado: tipo=' . $tipo);
 
-    // Verificar permisos: ajustar según tus necesidades
+    // Permisos
     if (!current_user_can('crm_admin') && !current_user_can('comercial')) {
         wp_send_json_error(['message' => 'No tienes permisos para realizar esta acción.']);
         return;
     }
 
-    if (!isset($_POST['url']) || !isset($_POST['nonce'])) {
+    if (!isset($_POST['url'], $_POST['nonce'])) {
         wp_send_json_error(['message' => 'URL o nonce faltantes en la solicitud.']);
         return;
     }
@@ -1850,26 +1857,24 @@ function crm_eliminar_archivo_generico($tipo)
         return;
     }
 
-    $file_url = sanitize_text_field($_POST['url']);
-    $upload_dir = wp_upload_dir();
-    $file_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $file_url);
-
-    if (file_exists($file_path)) {
-        if (unlink($file_path)) {
-            // Log de la eliminación de archivo
-            $client_id = isset($_POST['client_id']) ? intval($_POST['client_id']) : null;
-            $current_user = wp_get_current_user();
-            $file_name = basename($file_path);
-            $log_details = "Archivo eliminado: {$file_name} | Tipo: {$tipo}";
-            crm_log_action('archivo_eliminado', $log_details, $client_id, $current_user->ID);
-            
-            wp_send_json_success(['message' => ucfirst($tipo) . ' eliminado correctamente.']);
-        } else {
-            wp_send_json_error(['message' => 'Error al eliminar el ' . $tipo . '.']);
-        }
-    } else {
-        wp_send_json_error(['message' => ucfirst($tipo) . ' no encontrado.']);
+    $file_url = esc_url_raw(wp_unslash($_POST['url']));
+    if (!crm_is_uploads_url($file_url)) {
+        wp_send_json_error(['message' => 'URL de archivo no válida.']);
+        return;
     }
+
+    if (crm_delete_uploaded_file_by_url($file_url)) {
+        $client_id    = isset($_POST['client_id']) ? intval($_POST['client_id']) : null;
+        $current_user = wp_get_current_user();
+        $file_name    = sanitize_file_name(basename(parse_url($file_url, PHP_URL_PATH)));
+        $log_details  = sprintf('Archivo eliminado: %s | Tipo: %s', $file_name, $tipo);
+        crm_log_action('archivo_eliminado', $log_details, $client_id, $current_user->ID);
+
+        wp_send_json_success(['message' => ucfirst($tipo) . ' eliminado correctamente.']);
+        return;
+    }
+
+    wp_send_json_error(['message' => ucfirst($tipo) . ' no encontrado o no se pudo eliminar.']);
 }
 
 // Registrar acciones AJAX para subir archivos
@@ -1934,7 +1939,6 @@ function crm_lista_altas()
     }
 
     // Obtener los datos de los clientes
-    $wpdb->flush(); // Limpiar cualquier caché previa del objeto
     $clientes = $wpdb->get_results($wpdb->prepare("
         SELECT id, fecha, cliente_nombre, empresa, direccion, poblacion, email_cliente, estado, actualizado_en, facturas, presupuesto, 
     contratos_firmados, intereses, estado_por_sector, reenvios, fecha_envio_por_sector, usuario_envio_por_sector
@@ -2251,21 +2255,20 @@ function crm_obtener_altas()
    ORDER BY actualizado_en DESC
 ", $user_id), ARRAY_A);
 
-    // Debug logging
-    error_log("CRM Debug: Usuario $user_id solicitando datos. Encontrados " . count($clientes) . " registros");
+    crm_debug_log('crm_obtener_altas: usuario ' . $user_id . ' → ' . count($clientes) . ' registros');
     if (empty($clientes)) {
-        error_log("CRM Debug: No se encontraron clientes para user_id $user_id");
+        crm_debug_log('crm_obtener_altas: sin resultados para user_id ' . $user_id);
     }
 
 
     if (!empty($clientes)) {
         foreach ($clientes as &$cliente) {
-            // Siempre array
-            $cliente['facturas']           = is_array($cliente['facturas'])           ? $cliente['facturas']           : (empty($cliente['facturas']) ? [] : maybe_unserialize($cliente['facturas']));
-            $cliente['presupuesto']        = is_array($cliente['presupuesto'])        ? $cliente['presupuesto']        : (empty($cliente['presupuesto']) ? [] : maybe_unserialize($cliente['presupuesto']));
-            $cliente['contratos_firmados'] = is_array($cliente['contratos_firmados']) ? $cliente['contratos_firmados'] : (empty($cliente['contratos_firmados']) ? [] : maybe_unserialize($cliente['contratos_firmados']));
-            $cliente['contratos_generados'] = is_array($cliente['contratos_generados']) ? $cliente['contratos_generados'] : (empty($cliente['contratos_generados']) ? [] : maybe_unserialize($cliente['contratos_generados']));
-            $cliente['intereses']          = is_array($cliente['intereses'])          ? $cliente['intereses']          : (empty($cliente['intereses']) ? [] : maybe_unserialize($cliente['intereses']));
+            // Siempre array (deserialización segura, sin instanciar clases)
+            $cliente['facturas']            = crm_safe_unserialize_array($cliente['facturas']);
+            $cliente['presupuesto']         = crm_safe_unserialize_array($cliente['presupuesto']);
+            $cliente['contratos_firmados']  = crm_safe_unserialize_array($cliente['contratos_firmados']);
+            $cliente['contratos_generados'] = crm_safe_unserialize_array($cliente['contratos_generados']);
+            $cliente['intereses']           = crm_safe_unserialize_array($cliente['intereses']);
 
             // Estado por sector: puede ser array, JSON, string, o vacío
             $eps = $cliente['estado_por_sector'];
@@ -2428,14 +2431,13 @@ function crm_obtener_todas_altas()
         return;
     }
 
+    if (!check_ajax_referer('crm_obtener_clientes_nonce', 'nonce', false)) {
+        wp_send_json_error(['message' => 'Error de seguridad.']);
+        return;
+    }
+
     global $wpdb;
     $table_name = $wpdb->prefix . "crm_clients";
-
-    // Verificar si la columna actualizado_por existe, si no, crearla
-    $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $table_name LIKE 'actualizado_por'");
-    if (empty($column_exists)) {
-        $wpdb->query("ALTER TABLE $table_name ADD COLUMN actualizado_por BIGINT(20) NULL");
-    }
 
     $clientes = $wpdb->get_results("
         SELECT c.id, c.fecha, c.user_id, c.cliente_nombre, c.empresa, c.direccion, c.poblacion, c.intereses, c.email_cliente, c.facturas, c.presupuesto, c.contratos_generados, c.contratos_firmados, c.estado, c.estado_por_sector, c.reenvios, c.actualizado_en, c.actualizado_por, c.fecha_envio_por_sector, c.usuario_envio_por_sector, u.display_name AS comercial, u2.display_name AS actualizado_por_nombre
@@ -2446,33 +2448,22 @@ function crm_obtener_todas_altas()
     ", ARRAY_A);
 
     if (! empty($wpdb->last_error)) {
-        error_log('CRM – MySQL error: ' . $wpdb->last_error);
+        error_log('CRM – MySQL error en crm_obtener_todas_altas: ' . $wpdb->last_error);
     }
 
     if (!empty($clientes)) {
         foreach ($clientes as &$cliente) {
-            // Siempre array
-            $cliente['facturas']           = is_array($cliente['facturas'])           ? $cliente['facturas']           : (empty($cliente['facturas']) ? [] : maybe_unserialize($cliente['facturas']));
-            $cliente['presupuesto']        = is_array($cliente['presupuesto'])        ? $cliente['presupuesto']        : (empty($cliente['presupuesto']) ? [] : maybe_unserialize($cliente['presupuesto']));
-            $cliente['contratos_firmados'] = is_array($cliente['contratos_firmados']) ? $cliente['contratos_firmados'] : (empty($cliente['contratos_firmados']) ? [] : maybe_unserialize($cliente['contratos_firmados']));
-            $cliente['contratos_generados'] = is_array($cliente['contratos_generados']) ? $cliente['contratos_generados'] : (empty($cliente['contratos_generados']) ? [] : maybe_unserialize($cliente['contratos_generados']));
-            $cliente['intereses']          = is_array($cliente['intereses'])          ? $cliente['intereses']          : (empty($cliente['intereses']) ? [] : maybe_unserialize($cliente['intereses']));
+            // Deserialización segura (bloquea PHP Object Injection)
+            $cliente['facturas']            = crm_safe_unserialize_array($cliente['facturas']);
+            $cliente['presupuesto']         = crm_safe_unserialize_array($cliente['presupuesto']);
+            $cliente['contratos_firmados']  = crm_safe_unserialize_array($cliente['contratos_firmados']);
+            $cliente['contratos_generados'] = crm_safe_unserialize_array($cliente['contratos_generados']);
+            $cliente['intereses']           = crm_safe_unserialize_array($cliente['intereses']);
 
             // Estado por sector: puede ser array, JSON, string, o vacío
-            $eps = $cliente['estado_por_sector'];
-            if (is_array($eps)) {
-                $cliente['estado_por_sector'] = $eps;
-            } elseif (is_string($eps) && !empty($eps)) {
-                $tmp = maybe_unserialize($eps);
-                if (is_array($tmp)) {
-                    $cliente['estado_por_sector'] = $tmp;
-                } else {
-                    $decoded = json_decode($eps, true);
-                    $cliente['estado_por_sector'] = is_array($decoded) ? $decoded : [];
-                }
-            } else {
-                $cliente['estado_por_sector'] = [];
-            }
+            $cliente['estado_por_sector']           = crm_safe_unserialize_array($cliente['estado_por_sector'] ?? '');
+            $cliente['fecha_envio_por_sector']      = crm_safe_unserialize_array($cliente['fecha_envio_por_sector'] ?? '');
+            $cliente['usuario_envio_por_sector']    = crm_safe_unserialize_array($cliente['usuario_envio_por_sector'] ?? '');
         }
 
         wp_send_json_success($clientes);
@@ -2503,17 +2494,45 @@ function crm_borrar_cliente()
     global $wpdb;
     $table_name = $wpdb->prefix . "crm_clients";
 
-    // Obtener datos del cliente antes de eliminarlo para el log
+    // Obtener datos del cliente antes de eliminarlo (para purgar archivos y log)
     $client_data = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $client_id), ARRAY_A);
-    
-    $deleted = $wpdb->delete($table_name, ['id' => $client_id]);
+    if (!$client_data) {
+        wp_send_json_error(['message' => 'Cliente no encontrado.']);
+        return;
+    }
+
+    // Purgar archivos asociados antes de borrar el registro
+    $bundles = [
+        crm_safe_unserialize_array($client_data['facturas']           ?? []),
+        crm_safe_unserialize_array($client_data['presupuesto']        ?? []),
+        crm_safe_unserialize_array($client_data['contratos_firmados'] ?? []),
+    ];
+    foreach ($bundles as $bundle) {
+        foreach ($bundle as $items) {
+            if (!is_array($items)) {
+                continue;
+            }
+            foreach ($items as $url) {
+                if (is_string($url) && crm_is_uploads_url($url)) {
+                    crm_delete_uploaded_file_by_url($url);
+                }
+            }
+        }
+    }
+
+    $deleted = $wpdb->delete($table_name, ['id' => $client_id], ['%d']);
 
     if ($deleted) {
-        // Log de la eliminación del cliente
         $current_user = wp_get_current_user();
-        $log_details = "Cliente eliminado: {$client_data['cliente_nombre']} | Email: {$client_data['cliente_email']} | Teléfono: {$client_data['cliente_telefono']} | Estado: {$client_data['estado']}";
+        $log_details  = sprintf(
+            'Cliente eliminado: %s | Email: %s | Teléfono: %s | Estado: %s',
+            $client_data['cliente_nombre'] ?? '',
+            $client_data['email_cliente']  ?? '',
+            $client_data['telefono']       ?? '',
+            $client_data['estado']         ?? ''
+        );
         crm_log_action('cliente_eliminado', $log_details, $client_id, $current_user->ID);
-        
+
         wp_send_json_success(['message' => 'Cliente eliminado correctamente.']);
     } else {
         wp_send_json_error(['message' => 'Error al eliminar el cliente.']);
@@ -2542,7 +2561,7 @@ function crm_get_email_template($args = []) {
     <head>
         <meta charset='UTF-8'>
         <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-        <title>{$args['titulo']}</title>
+        <title>" . esc_html($args['titulo']) . "</title>
         <style>
             body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
             .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -2553,8 +2572,8 @@ function crm_get_email_template($args = []) {
     <body>
         <div class='container'>
             <div class='header'>
-                <h1 style='margin: 0; font-size: 24px;'>{$args['titulo']}</h1>
-                <p style='margin: 10px 0 0 0; opacity: 0.9;'>Energitel CRM - {$site_name}</p>
+                <h1 style='margin: 0; font-size: 24px;'>" . esc_html($args['titulo']) . "</h1>
+                <p style='margin: 10px 0 0 0; opacity: 0.9;'>Energitel CRM - " . esc_html($site_name) . "</p>
             </div>
             
             <div class='content'>
@@ -2562,8 +2581,8 @@ function crm_get_email_template($args = []) {
             </div>
             
             <div class='footer'>
-                <p>{$args['pie']}</p>
-                <p>© " . date('Y') . " <a href='{$site_url}'>{$site_name}</a> - Energitel CRM</p>
+                <p>" . esc_html($args['pie']) . "</p>
+                <p>© " . esc_html(date('Y')) . " <a href='" . esc_url($site_url) . "'>" . esc_html($site_name) . "</a> - Energitel CRM</p>
             </div>
         </div>
     </body>
@@ -2575,7 +2594,7 @@ function crm_get_email_template($args = []) {
  */
 function crm_enviar_notificacion_admin_a_comercial($client_id, $comercial_email, $cambios_realizados = []) {
     if (empty($comercial_email) || !is_email($comercial_email)) {
-        error_log("CRM Email: Email de comercial inválido: " . $comercial_email);
+        crm_debug_log('Email: comercial sin email válido (id=' . (int) $client_id . ').');
         return false;
     }
     
@@ -2584,16 +2603,23 @@ function crm_enviar_notificacion_admin_a_comercial($client_id, $comercial_email,
     
     $cliente = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $client_id), ARRAY_A);
     if (!$cliente) {
-        error_log("CRM Email: Cliente no encontrado con ID: " . $client_id);
+        crm_debug_log('Email: cliente no encontrado al notificar (id=' . (int) $client_id . ').');
         return false;
     }
     
     $admin_user = wp_get_current_user();
     $cliente_url = home_url("/editar-cliente/?client_id={$client_id}");
     $tabla_url = home_url("/mis-altas-de-cliente/");
-    
-    $subject = "🔔 Actualización de cliente: " . $cliente['cliente_nombre'];
-    
+
+    $cliente_nombre  = esc_html($cliente['cliente_nombre'] ?? '');
+    $cliente_empresa = esc_html($cliente['empresa'] ?? '');
+    $cliente_email_h = esc_html($cliente['email_cliente'] ?? '');
+    $cliente_delegado = esc_html($cliente['delegado'] ?? '');
+    $admin_display   = esc_html($admin_user->display_name);
+    $estado_label    = esc_html(crm_get_estado_label($cliente['estado'] ?? ''));
+
+    $subject = sprintf('🔔 Actualización de cliente: %s', $cliente['cliente_nombre'] ?? '');
+
     $cambios_html = '';
     if (!empty($cambios_realizados)) {
         $cambios_html = '<h3 style="color: #333; font-size: 16px;">Cambios realizados:</h3><ul>';
@@ -2602,29 +2628,29 @@ function crm_enviar_notificacion_admin_a_comercial($client_id, $comercial_email,
         }
         $cambios_html .= '</ul>';
     }
-    
+
     $message = crm_get_email_template([
         'titulo' => 'Actualización de Cliente',
         'contenido' => "
-            <p>Hola <strong>{$cliente['delegado']}</strong>,</p>
+            <p>Hola <strong>{$cliente_delegado}</strong>,</p>
             
-            <p>El administrador <strong>{$admin_user->display_name}</strong> ha actualizado la ficha del cliente:</p>
+            <p>El administrador <strong>{$admin_display}</strong> ha actualizado la ficha del cliente:</p>
             
             <div style='background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;'>
-                <h3 style='color: #333; margin-top: 0;'>📋 {$cliente['cliente_nombre']}</h3>
-                <p><strong>Empresa:</strong> {$cliente['empresa']}</p>
-                <p><strong>Email:</strong> {$cliente['email_cliente']}</p>
-                <p><strong>Estado actual:</strong> <span style='background: #007cba; color: white; padding: 3px 8px; border-radius: 4px;'>" . crm_get_estado_label($cliente['estado']) . "</span></p>
+                <h3 style='color: #333; margin-top: 0;'>📋 {$cliente_nombre}</h3>
+                <p><strong>Empresa:</strong> {$cliente_empresa}</p>
+                <p><strong>Email:</strong> {$cliente_email_h}</p>
+                <p><strong>Estado actual:</strong> <span style='background: #007cba; color: white; padding: 3px 8px; border-radius: 4px;'>{$estado_label}</span></p>
             </div>
             
             {$cambios_html}
             
             <div style='text-align: center; margin: 30px 0;'>
-                <a href='{$cliente_url}' style='background: #007cba; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 0 10px;'>📝 Editar Cliente</a>
-                <a href='{$tabla_url}' style='background: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 0 10px;'>📊 Mis Clientes</a>
+                <a href='" . esc_url($cliente_url) . "' style='background: #007cba; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 0 10px;'>📝 Editar Cliente</a>
+                <a href='" . esc_url($tabla_url) . "' style='background: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 0 10px;'>📊 Mis Clientes</a>
             </div>
         ",
-        'pie' => "Esta notificación ha sido enviada automáticamente por Energitel CRM."
+        'pie' => 'Esta notificación ha sido enviada automáticamente por Energitel CRM.'
     ]);
     
     $headers = [
@@ -2637,10 +2663,10 @@ function crm_enviar_notificacion_admin_a_comercial($client_id, $comercial_email,
     
     if ($result) {
         crm_log_action('notificacion_comercial_enviada', "Notificación enviada a comercial: {$comercial_email} - Cliente: {$cliente['cliente_nombre']}", $client_id);
-        error_log("CRM Email: Notificación enviada exitosamente a comercial: " . $comercial_email);
+        crm_debug_log('Email: notificación enviada al comercial (cliente ' . (int) $client_id . ').');
     } else {
         crm_log_action('notificacion_comercial_error', "Error al enviar notificación a comercial: {$comercial_email} - Cliente: {$cliente['cliente_nombre']}", $client_id);
-        error_log("CRM Email: Error al enviar notificación a comercial: " . $comercial_email);
+        error_log('CRM Email: error al enviar notificación al comercial (cliente ' . (int) $client_id . ').');
     }
     
     return $result;
@@ -2660,87 +2686,115 @@ function crm_enviar_notificacion_comercial_a_admin($client_id, $sectores_enviado
     $cliente_url = home_url("/editar-cliente/?client_id={$client_id}");
     $tabla_admin_url = home_url("/todas-las-altas-de-cliente/");
     
-    // Obtener datos deserializados
-    $facturas = maybe_unserialize($cliente['facturas'] ?? []);
-    $presupuestos = maybe_unserialize($cliente['presupuesto'] ?? []);
-    $intereses = maybe_unserialize($cliente['intereses'] ?? []);
-    $estado_por_sector = maybe_unserialize($cliente['estado_por_sector'] ?? []);
-    
-    $subject = "Energitel CRM - Nuevo envío de cliente: " . $cliente['cliente_nombre'] . " (" . implode(', ', $sectores_enviados) . ")";
-    
+    // Obtener datos deserializados (deserialización segura)
+    $facturas          = crm_safe_unserialize_array($cliente['facturas'] ?? []);
+    $presupuestos      = crm_safe_unserialize_array($cliente['presupuesto'] ?? []);
+    $estado_por_sector = crm_safe_unserialize_array($cliente['estado_por_sector'] ?? []);
+
+    // Pre-escapar campos de cliente para evitar XSS en el cuerpo del email
+    $cn = esc_html($cliente['cliente_nombre'] ?? '');
+    $ce = esc_html($cliente['email_cliente']  ?? '');
+    $cm = esc_html($cliente['empresa']        ?? '');
+    $ct = esc_html($cliente['telefono']       ?? '');
+    $cd = esc_html($cliente['direccion']      ?? '');
+    $cp = esc_html($cliente['poblacion']      ?? '');
+    $cti = esc_html($cliente['tipo']          ?? '');
+    $cc = esc_html($cliente['comentarios']    ?? '');
+    $coml = esc_html($comercial->display_name);
+    $come = esc_html($comercial->user_email);
+
+    $sectores_validos  = crm_sanitize_sectores_list($sectores_enviados);
+
+    $subject = sprintf(
+        'Energitel CRM - Nuevo envío de cliente: %s (%s)',
+        $cliente['cliente_nombre'] ?? '',
+        implode(', ', $sectores_validos)
+    );
+
+    $colores = crm_get_colores_sectores();
+
     // Construir información de sectores enviados
     $sectores_html = '';
-    foreach ($sectores_enviados as $sector) {
-        $estado_sector = $estado_por_sector[$sector] ?? 'borrador';
-        $facturas_sector = $facturas[$sector] ?? [];
-        $presupuestos_sector = $presupuestos[$sector] ?? [];
-        
+    foreach ($sectores_validos as $sector) {
+        $estado_sector       = $estado_por_sector[$sector] ?? 'borrador';
+        $facturas_sector     = is_array($facturas[$sector] ?? null) ? $facturas[$sector] : [];
+        $presupuestos_sector = is_array($presupuestos[$sector] ?? null) ? $presupuestos[$sector] : [];
+        $color               = esc_attr($colores[$sector] ?? '#999');
+        $sector_label        = esc_html(ucfirst($sector));
+        $estado_label        = esc_html(crm_get_estado_label($estado_sector));
+
         $sectores_html .= "
-            <div style='background: #f8f9fa; border-left: 4px solid " . crm_get_colores_sectores()[$sector] . "; padding: 15px; margin: 10px 0;'>
-                <h4 style='color: " . crm_get_colores_sectores()[$sector] . "; margin-top: 0;'>📁 " . ucfirst($sector) . "</h4>
-                <p><strong>Estado:</strong> <span style='background: " . crm_get_colores_sectores()[$sector] . "; color: white; padding: 2px 8px; border-radius: 4px;'>" . crm_get_estado_label($estado_sector) . "</span></p>
+            <div style='background: #f8f9fa; border-left: 4px solid {$color}; padding: 15px; margin: 10px 0;'>
+                <h4 style='color: {$color}; margin-top: 0;'>📁 {$sector_label}</h4>
+                <p><strong>Estado:</strong> <span style='background: {$color}; color: white; padding: 2px 8px; border-radius: 4px;'>{$estado_label}</span></p>
         ";
-        
+
         if (!empty($facturas_sector)) {
-            $sectores_html .= "<p><strong>📄 Facturas (" . count($facturas_sector) . "):</strong></p><ul>";
+            $sectores_html .= '<p><strong>📄 Facturas (' . count($facturas_sector) . '):</strong></p><ul>';
             foreach ($facturas_sector as $factura) {
-                $nombre_archivo = basename(parse_url($factura, PHP_URL_PATH));
-                $sectores_html .= "<li><a href='{$factura}' style='color: #007cba;'>{$nombre_archivo}</a></li>";
+                if (!is_string($factura) || !crm_is_uploads_url($factura)) {
+                    continue;
+                }
+                $nombre_archivo = esc_html(basename(parse_url($factura, PHP_URL_PATH)));
+                $sectores_html .= "<li><a href='" . esc_url($factura) . "' style='color: #007cba;'>{$nombre_archivo}</a></li>";
             }
-            $sectores_html .= "</ul>";
+            $sectores_html .= '</ul>';
         }
-        
+
         if (!empty($presupuestos_sector)) {
-            $sectores_html .= "<p><strong>💰 Presupuestos (" . count($presupuestos_sector) . "):</strong></p><ul>";
+            $sectores_html .= '<p><strong>💰 Presupuestos (' . count($presupuestos_sector) . '):</strong></p><ul>';
             foreach ($presupuestos_sector as $presupuesto) {
-                $nombre_archivo = basename(parse_url($presupuesto, PHP_URL_PATH));
-                $sectores_html .= "<li><a href='{$presupuesto}' style='color: #007cba;'>{$nombre_archivo}</a></li>";
+                if (!is_string($presupuesto) || !crm_is_uploads_url($presupuesto)) {
+                    continue;
+                }
+                $nombre_archivo = esc_html(basename(parse_url($presupuesto, PHP_URL_PATH)));
+                $sectores_html .= "<li><a href='" . esc_url($presupuesto) . "' style='color: #007cba;'>{$nombre_archivo}</a></li>";
             }
-            $sectores_html .= "</ul>";
+            $sectores_html .= '</ul>';
         }
-        
-        $sectores_html .= "</div>";
+
+        $sectores_html .= '</div>';
     }
-    
+
     $message = crm_get_email_template([
         'titulo' => 'Nuevo Envío de Cliente',
         'contenido' => "
             <p>Estimado equipo administrativo,</p>
             
-            <p>El comercial <strong>{$comercial->display_name}</strong> ha enviado un cliente para revisión:</p>
+            <p>El comercial <strong>{$coml}</strong> ha enviado un cliente para revisión:</p>
             
             <div style='background: #e3f2fd; padding: 20px; border-radius: 8px; margin: 20px 0;'>
-                <h3 style='color: #1976d2; margin-top: 0;'>👤 {$cliente['cliente_nombre']}</h3>
+                <h3 style='color: #1976d2; margin-top: 0;'>👤 {$cn}</h3>
                 <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 15px;'>
                     <div>
-                        <p><strong>📧 Email:</strong> {$cliente['email_cliente']}</p>
-                        <p><strong>🏢 Empresa:</strong> {$cliente['empresa']}</p>
-                        <p><strong>📞 Teléfono:</strong> {$cliente['telefono']}</p>
+                        <p><strong>📧 Email:</strong> {$ce}</p>
+                        <p><strong>🏢 Empresa:</strong> {$cm}</p>
+                        <p><strong>📞 Teléfono:</strong> {$ct}</p>
                     </div>
                     <div>
-                        <p><strong>📍 Dirección:</strong> {$cliente['direccion']}</p>
-                        <p><strong>🏙️ Población:</strong> {$cliente['poblacion']}</p>
-                        <p><strong>🏷️ Tipo:</strong> {$cliente['tipo']}</p>
+                        <p><strong>📍 Dirección:</strong> {$cd}</p>
+                        <p><strong>🏙️ Población:</strong> {$cp}</p>
+                        <p><strong>🏷️ Tipo:</strong> {$cti}</p>
                     </div>
                 </div>
-                <p><strong>💬 Comentarios:</strong> {$cliente['comentarios']}</p>
+                <p><strong>💬 Comentarios:</strong> {$cc}</p>
             </div>
             
             <h3 style='color: #333;'>📋 Sectores enviados:</h3>
             {$sectores_html}
             
             <div style='text-align: center; margin: 30px 0;'>
-                <a href='{$cliente_url}' style='background: #1976d2; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 0 10px;'>📝 Revisar Cliente</a>
-                <a href='{$tabla_admin_url}' style='background: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 0 10px;'>📊 Todas las Altas</a>
+                <a href='" . esc_url($cliente_url) . "' style='background: #1976d2; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 0 10px;'>📝 Revisar Cliente</a>
+                <a href='" . esc_url($tabla_admin_url) . "' style='background: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 0 10px;'>📊 Todas las Altas</a>
             </div>
         ",
-        'pie' => "Enviado por: {$comercial->display_name} ({$comercial->user_email})"
+        'pie' => "Enviado por: {$coml} ({$come})"
     ]);
     
     // Obtener emails de administradores CRM
     $admin_users = get_users(['role' => 'crm_admin']);
     if (empty($admin_users)) {
-        error_log("CRM Email: No se encontraron usuarios con rol crm_admin");
+        crm_debug_log('Email: no hay usuarios con rol crm_admin.');
         return false;
     }
     
@@ -2761,7 +2815,7 @@ function crm_enviar_notificacion_comercial_a_admin($client_id, $sectores_enviado
         } else {
             $success = false;
             crm_log_action('notificacion_admin_error', "Error al enviar notificación a admin: {$email} - Cliente: {$cliente['cliente_nombre']}", $client_id);
-            error_log("CRM Email: Error al enviar notificación a admin: " . $email);
+            error_log('CRM Email: error al enviar notificación a admin (cliente ' . (int) $client_id . ').');
         }
     }
     
@@ -2777,10 +2831,12 @@ add_action('wp_ajax_crm_test_email', 'crm_test_email_function');
 function crm_test_email_function() {
     if (!current_user_can('crm_admin')) {
         wp_send_json_error(['message' => 'No tienes permisos para probar emails']);
+        return;
     }
-    
-    if (!wp_verify_nonce($_POST['nonce'] ?? '', 'crm_obtener_clientes_nonce')) {
+
+    if (!check_ajax_referer('crm_obtener_clientes_nonce', 'nonce', false)) {
         wp_send_json_error(['message' => 'Error de seguridad']);
+        return;
     }
     
     $admin_email = get_option('admin_email');
@@ -2800,7 +2856,7 @@ function crm_test_email_function() {
     
     $headers = [
         'Content-Type: text/html; charset=UTF-8',
-        'From: ' . get_option('blogname') . ' <' . $admin_email . '>'
+        'From: ' . get_option('blogname') . ' <' . get_option('admin_email') . '>'
     ];
     
     $result = wp_mail($admin_email, 'Test de Energitel CRM', $test_message, $headers);
@@ -3172,11 +3228,26 @@ function crm_update_clients_table_structure() {
 }
 
 function crm_plugin_activation() {
+    crm_install_roles();
     crm_create_activity_log_table();
     crm_migrate_to_monthly_logs();
-    crm_generate_sample_activities();
+    crm_create_clients_table();
     crm_update_clients_table_structure(); // Actualizar estructura de tabla de clientes
+    crm_protect_backup_directory();
+    update_option('crm_plugin_version', CRM_PLUGIN_VERSION, false);
+    update_option('crm_roles_installed_version', CRM_PLUGIN_VERSION, false);
 }
+
+/**
+ * Hook de desactivación: revoca capacidades del rol administrator pero
+ * conserva los roles `crm_admin` y `comercial` para no perder asignaciones.
+ */
+function crm_plugin_deactivation() {
+    crm_remove_admin_caps_from_wp_admin();
+    delete_option('crm_roles_installed_version');
+    wp_clear_scheduled_hook('crm_daily_maintenance');
+}
+register_deactivation_hook(__FILE__, 'crm_plugin_deactivation');
 
 /**
  * Migrar logs existentes al sistema mensual
@@ -3462,21 +3533,14 @@ function crm_ajax_quitar_interes() {
 }
 
 /**
- * Función auxiliar para eliminar un archivo desde su URL
+ * Función auxiliar para eliminar un archivo desde su URL.
+ * Solo borra archivos que estén dentro del directorio de uploads del sitio.
  */
 function crm_delete_file_from_url($file_url) {
-    if (empty($file_url)) {
+    if (empty($file_url) || !is_string($file_url)) {
         return false;
     }
-    
-    $upload_dir = wp_upload_dir();
-    $file_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $file_url);
-    
-    if (file_exists($file_path)) {
-        return unlink($file_path);
-    }
-
-    return false;
+    return crm_delete_uploaded_file_by_url($file_url);
 }
 
 // JavaScript para hacer dinámico el texto de los checkboxes de admin

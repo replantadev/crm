@@ -60,10 +60,15 @@ document.addEventListener("DOMContentLoaded", function () {
     
     const tableElement = document.getElementById("crm-todas-las-altas");
 
-    fetch(crmData.ajaxurl + "?action=crm_obtener_todas_altas", {
+    const params = new URLSearchParams();
+    params.append("action", "crm_obtener_todas_altas");
+    params.append("nonce", crmData.nonce);
+
+    fetch(crmData.ajaxurl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nonce: crmData.nonce }),
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+        credentials: "same-origin",
+        body: params.toString(),
     })
         .then(res => res.json())
         .then(result => {

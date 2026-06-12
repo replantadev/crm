@@ -1,4 +1,14 @@
 <?php
+/**
+ * Shortcodes y AJAX handlers de paneles de administración del CRM.
+ *
+ * @package CRM_Energitel
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
 add_shortcode('crm_clientes_por_interes', 'crm_clientes_por_interes_widget');
 function crm_clientes_por_interes_widget() {
     if (!is_user_logged_in()) {
@@ -1373,20 +1383,27 @@ function crm_format_estado_sector_field($field) {
 
 add_action('wp_ajax_crm_create_backup', 'crm_ajax_create_backup');
 function crm_ajax_create_backup() {
-    if (!current_user_can('crm_admin') || !wp_verify_nonce($_POST['nonce'], 'crm_admin_actions')) {
-        wp_die('Sin permisos');
+    if (!current_user_can('crm_admin')) {
+        wp_send_json_error(['message' => 'Sin permisos']);
+        return;
     }
-    
+    if (!check_ajax_referer('crm_admin_actions', 'nonce', false)) {
+        wp_send_json_error(['message' => 'Error de seguridad']);
+        return;
+    }
+
     global $wpdb;
-    
-    // Crear directorio de backups si no existe
-    $backup_dir = ABSPATH . 'wp-content/crm-backups/';
-    if (!file_exists($backup_dir)) {
-        wp_mkdir_p($backup_dir);
+
+    // Directorio de backups protegido (index.php, .htaccess, web.config)
+    if (!crm_protect_backup_directory()) {
+        wp_send_json_error(['message' => 'No se pudo crear o proteger el directorio de backups.']);
+        return;
     }
-    
-    // Nombre del archivo
-    $filename = 'crm_backup_' . date('Y-m-d_H-i-s') . '.sql';
+    $backup_dir = trailingslashit(crm_get_backup_dir());
+
+    // Nombre con sufijo aleatorio para evitar enumeración directa por URL
+    $suffix   = wp_generate_password(12, false, false);
+    $filename = 'crm_backup_' . date('Y-m-d_H-i-s') . '_' . $suffix . '.sql';
     $filepath = $backup_dir . $filename;
     
     // Obtener tablas CRM

@@ -4,6 +4,10 @@
  * Manual de funcionalidades administrativas, gestión de contratos y notificaciones
  */
 
+if (!defined('ABSPATH')) {
+    exit;
+}
+
 function crm_guia_admin_shortcode() {
     if (!current_user_can('crm_admin')) {
         return '<p>Acceso denegado. Esta página es solo para administradores CRM.</p>';

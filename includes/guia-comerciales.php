@@ -4,6 +4,10 @@
  * Manual de funcionalidades offline, compresión de imágenes y trabajo en iPad
  */
 
+if (!defined('ABSPATH')) {
+    exit;
+}
+
 function crm_guia_comerciales_shortcode() {
     if (!current_user_can('comercial') && !current_user_can('crm_admin')) {
         return '<p>Acceso denegado. Esta página es solo para comerciales.</p>';

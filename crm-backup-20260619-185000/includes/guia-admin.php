@@ -141,29 +141,6 @@ function crm_guia_admin_shortcode() {
                     </div>
                 </div>
 
-                <div class="detailed-flow">
-                    <h4>Flujo detallado por sector</h4>
-                    <p>Cada sector tiene su propio estado independiente. A continuación se describen los estados posibles y qué los provoca:</p>
-                    <ul>
-                        <li><strong>Borrador:</strong> ficha creada o sector añadido pero no enviado.</li>
-                        <li><strong>Enviado:</strong> el comercial marca el envío del sector (o admin marca envío para el sector). Si se envía y no había estado previo, pasa de <em>borrador</em> a <em>enviado</em>.</li>
-                        <li><strong>Presupuesto Generado:</strong> existe un archivo de presupuesto subido para ese sector; la lógica automática actualiza <em>enviado → presupuesto_generado</em>.</li>
-                        <li><strong>Presupuesto Aceptado:</strong> cuando el comercial o el admin marca la aceptación del presupuesto (checkbox). Este estado puede forzarse o marcarse automáticamente si hay contratos firmados.</li>
-                        <li><strong>Contratos Generados:</strong> admin marca que ha generado los contratos (checkbox de contratos generados) o la lógica avanza desde <em>presupuesto_aceptado</em> si procede.</li>
-                        <li><strong>Contratos Firmados:</strong> si hay archivos de contratos firmados subidos para el sector, el estado finaliza en <em>contratos_firmados</em> (estado terminal).</li>
-                    </ul>
-
-                    <h5>Reglas importantes</h5>
-                    <ol>
-                        <li>Un contrato firmado para un sector fuerza el estado a <em>contratos_firmados</em>, aunque antes no se marcara la aceptación explícita.</li>
-                        <li>El admin puede <strong>forzar</strong> cualquier estado mediante el control "Forzar estado" en la edición de la ficha.</li>
-                        <li>Si el admin desmarca la aceptación de un presupuesto que ya tenía archivo subido, la lógica intentará devolver el estado al más lógico: <em>presupuesto_generado</em> si existe el presupuesto, o <em>enviado</em> si no.</li>
-                        <li>Las transiciones automáticas no se aplican cuando el estado ha sido forzado por admin.</li>
-                    </ol>
-
-                    <p>Para auditoría, el plugin registra detalles del guardado por sector en los logs (entrada <code>debug_sector_save</code>) y en las acciones <code>cliente_actualizado</code>, con un listado de <em>Estados por sector</em>. Usa el registro para verificar qué usuario realizó cada cambio y en qué momento.</p>
-                </div>
-
                 <div class="feature-box">
                     <h4>Gestión de contratos por sector:</h4>
                     <p>El sistema permite gestionar contratos independientes para cada sector de interés:</p>

@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.16.3
+Version: 1.16.2
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.16.3');
+define('CRM_PLUGIN_VERSION', '1.16.2');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -1531,20 +1531,10 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
     }
 
     if ($is_update) {
-        // Auditoría: registrar antes de actualizar
-        if (function_exists('crm_debug_sector_save')) {
-            crm_debug_sector_save($client_id, 'before_update', ['old' => $client, 'new' => $data]);
-        }
-
         $result = $wpdb->update($table, $data, ['id' => $client_id]);
         if ($result === false) {
             error_log('CRM: error actualizando cliente ' . (int) $client_id . ': ' . $wpdb->last_error);
             wp_send_json_error(['message' => 'Error al actualizar cliente en la base de datos: ' . $wpdb->last_error]);
-        }
-
-        // Auditoría: registrar después de actualizar
-        if (function_exists('crm_debug_sector_save')) {
-            crm_debug_sector_save($client_id, 'after_update', $data);
         }
     } else {
         $data['creado_por'] = get_current_user_id();
@@ -1558,10 +1548,6 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         if (!$client_id) {
             error_log('CRM: insert_id no devuelto al crear cliente.');
             wp_send_json_error(['message' => 'Error: No se pudo obtener el ID del cliente creado']);
-        }
-        // Auditoría: registrar creación
-        if (function_exists('crm_debug_sector_save')) {
-            crm_debug_sector_save($client_id, 'created', $data);
         }
     }
 

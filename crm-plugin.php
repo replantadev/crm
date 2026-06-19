@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.15.0
+Version: 1.16.0
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.15.0');
+define('CRM_PLUGIN_VERSION', '1.16.0');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -33,43 +33,13 @@ if (!defined('CRM_GITHUB_TOKEN')) {
     define('CRM_GITHUB_TOKEN', ''); // Dejar vacío para repositorios públicos
 }
 
-// Actualizaciones automáticas desde GitHub
+// Cargar autoload de Composer (Plugin Update Checker, etc.)
 if (file_exists(CRM_PLUGIN_PATH . 'vendor/autoload.php')) {
     require_once CRM_PLUGIN_PATH . 'vendor/autoload.php';
 }
 
-if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
-    $updateChecker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-        'https://github.com/replantadev/crm/',
-        CRM_PLUGIN_FILE,
-        'crm-basico'
-    );
-    
-    // Si el repositorio es privado y hay token, usarlo para autenticación
-    if (defined('CRM_GITHUB_TOKEN') && !empty(CRM_GITHUB_TOKEN)) {
-        $updateChecker->setAuthentication(CRM_GITHUB_TOKEN);
-    }
-    
-    // Configurar la rama principal
-    $updateChecker->setBranch('master');
-    
-    // Hook para limpiar archivos duplicados después de actualizar
-    $updateChecker->addFilter('upgrader_process_complete', function() {
-        // Función de limpieza automática de archivos duplicados
-        crm_cleanup_duplicate_files();
-        
-        // Limpiar caché de WordPress después de actualizar
-        if (function_exists('wp_cache_flush')) {
-            wp_cache_flush();
-        }
-        
-        // Limpiar opciones transitorias del plugin
-        delete_transient('crm_plugin_cache');
-        
-        // Forzar regeneración de archivos estáticos
-        update_option('crm_last_update', time());
-    });
-}
+// Sistema de actualizaciones desde GitHub (PUC v5).
+require_once CRM_PLUGIN_PATH . 'includes/updater.php';
 
 // Función de limpieza automática de archivos duplicados
 function crm_cleanup_duplicate_files() {
@@ -88,14 +58,20 @@ function crm_cleanup_duplicate_files() {
     }
 }
 
-// Helpers internos (seguridad, roles, uploads). Se cargan ANTES que el resto.
+// Helpers internos (seguridad, roles, uploads, logger). Se cargan ANTES que el resto.
 require_once CRM_PLUGIN_PATH . 'includes/security.php';
 require_once CRM_PLUGIN_PATH . 'includes/roles.php';
 require_once CRM_PLUGIN_PATH . 'includes/uploads-handler.php';
+require_once CRM_PLUGIN_PATH . 'includes/logger.php';
 
 // Incluir archivos del plugin
 require_once CRM_PLUGIN_PATH . 'acceso.php';
 require_once CRM_PLUGIN_PATH . 'shortcodes.php';
+
+// Página de administración WP (menú "CRM"). Solo en wp-admin.
+if (is_admin()) {
+    require_once CRM_PLUGIN_PATH . 'includes/admin-page.php';
+}
 
 // Incluir páginas de ayuda
 if (file_exists(CRM_PLUGIN_PATH . 'includes/guia-comerciales.php')) {
@@ -2877,96 +2853,8 @@ add_option('crm_email_settings', [
     'test_mode' => false
 ]);
 
-/**
- * Registra una acción en el log del CRM con organización mensual
- */
-function crm_log_action($action_type, $details, $client_id = null, $user_id = null) {
-    global $wpdb;
-    
-    $user_id = $user_id ?: get_current_user_id();
-    $user = get_userdata($user_id);
-    
-    // Crear tabla del mes actual si no existe
-    $current_month = current_time('Y_m');
-    $table_name = $wpdb->prefix . 'crm_activity_log_' . $current_month;
-    
-    crm_create_monthly_log_table($current_month);
-    
-    $wpdb->insert(
-        $table_name,
-        [
-            'user_id' => $user_id,
-            'user_name' => $user ? $user->display_name : 'Sistema',
-            'action_type' => $action_type,
-            'details' => $details,
-            'client_id' => $client_id,
-            'created_at' => current_time('mysql'),
-            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'
-        ]
-    );
-}
-
-/**
- * Crear tabla de log mensual si no existe
- */
-function crm_create_monthly_log_table($year_month) {
-    global $wpdb;
-    
-    $table_name = $wpdb->prefix . 'crm_activity_log_' . $year_month;
-    
-    $charset_collate = $wpdb->get_charset_collate();
-    
-    $sql = "CREATE TABLE IF NOT EXISTS $table_name (
-        id mediumint(9) NOT NULL AUTO_INCREMENT,
-        user_id bigint(20) NOT NULL,
-        user_name varchar(255) NOT NULL,
-        action_type varchar(100) NOT NULL,
-        details text NOT NULL,
-        client_id bigint(20) DEFAULT NULL,
-        created_at datetime NOT NULL,
-        ip_address varchar(45) NOT NULL,
-        PRIMARY KEY (id),
-        KEY user_id (user_id),
-        KEY action_type (action_type),
-        KEY client_id (client_id),
-        KEY created_at (created_at)
-    ) $charset_collate;";
-    
-    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-    dbDelta($sql);
-}
-
-/**
- * Obtener todos los meses disponibles de logs
- */
-function crm_get_available_log_months() {
-    global $wpdb;
-    
-    $tables = $wpdb->get_results("SHOW TABLES LIKE '{$wpdb->prefix}crm_activity_log_%'", ARRAY_N);
-    $months = [];
-    
-    foreach ($tables as $table) {
-        $table_name = $table[0];
-        if (preg_match('/_log_(\d{4}_\d{2})$/', $table_name, $matches)) {
-            $year_month = $matches[1];
-            $date = DateTime::createFromFormat('Y_m', $year_month);
-            if ($date) {
-                $months[] = [
-                    'value' => $year_month,
-                    'label' => $date->format('F Y'),
-                    'table' => $table_name
-                ];
-            }
-        }
-    }
-    
-    // Ordenar por fecha descendente (más reciente primero)
-    usort($months, function($a, $b) {
-        return strcmp($b['value'], $a['value']);
-    });
-    
-    return $months;
-}
+// El sistema de logs (crm_log_action, crm_create_monthly_log_table,
+// crm_get_available_log_months) vive ahora en includes/logger.php.
 
 /**
  * Obtener logs de un mes específico
@@ -3234,6 +3122,9 @@ function crm_plugin_activation() {
     crm_create_clients_table();
     crm_update_clients_table_structure(); // Actualizar estructura de tabla de clientes
     crm_protect_backup_directory();
+    if (function_exists('crm_logger_schedule_cron')) {
+        crm_logger_schedule_cron();
+    }
     update_option('crm_plugin_version', CRM_PLUGIN_VERSION, false);
     update_option('crm_roles_installed_version', CRM_PLUGIN_VERSION, false);
 }
@@ -3246,6 +3137,9 @@ function crm_plugin_deactivation() {
     crm_remove_admin_caps_from_wp_admin();
     delete_option('crm_roles_installed_version');
     wp_clear_scheduled_hook('crm_daily_maintenance');
+    if (function_exists('crm_logger_unschedule_cron')) {
+        crm_logger_unschedule_cron();
+    }
 }
 register_deactivation_hook(__FILE__, 'crm_plugin_deactivation');
 

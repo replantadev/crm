@@ -31,15 +31,30 @@ $options_to_delete = [
     'crm_email_settings',
     'crm_login_page_id',
     'crm_post_login_page_id',
+    'crm_logs_retention_days',
+    'crm_logs_retention_months',
+    'crm_last_update_at',
+    'crm_last_update_check',
 ];
 foreach ($options_to_delete as $opt) {
     delete_option($opt);
     delete_site_option($opt);
 }
 
+// Limpiar marcadores de versión de esquema por mes (crm_log_schema_YYYY_MM).
+global $wpdb;
+$schema_opts = $wpdb->get_col(
+    $wpdb->prepare(
+        "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+        $wpdb->esc_like('crm_log_schema_') . '%'
+    )
+);
+foreach ((array) $schema_opts as $opt) {
+    delete_option($opt);
+}
+
 // Borrar tablas solo si el usuario lo pide explícitamente
 if (defined('CRM_DROP_TABLES_ON_UNINSTALL') && CRM_DROP_TABLES_ON_UNINSTALL) {
-    global $wpdb;
     $wpdb->query("DROP TABLE IF EXISTS `{$wpdb->prefix}crm_clients`");
     $log_tables = $wpdb->get_col(
         $wpdb->prepare(
@@ -54,3 +69,4 @@ if (defined('CRM_DROP_TABLES_ON_UNINSTALL') && CRM_DROP_TABLES_ON_UNINSTALL) {
 
 // Limpiar tareas programadas
 wp_clear_scheduled_hook('crm_daily_maintenance');
+wp_clear_scheduled_hook('crm_logs_daily_maintenance');

@@ -126,12 +126,12 @@ function crm_admin_render_dashboard() {
     ?>
     <div class="crm-grid">
         <div class="crm-card">
-            <h2>📋 Clientes</h2>
+            <h2>Clientes</h2>
             <p class="crm-metric"><?php echo number_format_i18n($total_clients); ?></p>
             <p class="description">Total registrados en el CRM</p>
         </div>
         <div class="crm-card">
-            <h2>📦 Versión</h2>
+            <h2>Versión</h2>
             <p class="crm-metric"><?php echo esc_html($version); ?></p>
             <p class="description">
                 <?php if ($last_update_at): ?>
@@ -142,14 +142,14 @@ function crm_admin_render_dashboard() {
             </p>
         </div>
         <div class="crm-card">
-            <h2>🗓 Logs</h2>
+            <h2>Logs</h2>
             <p class="crm-metric"><?php echo count($months); ?> meses</p>
             <p class="description">
                 Retención: <?php echo (int) $retention_days; ?> días · <?php echo (int) $retention_months; ?> meses
             </p>
         </div>
         <div class="crm-card">
-            <h2>⚠️ Errores este mes</h2>
+            <h2>Errores este mes</h2>
             <p class="crm-metric">
                 <?php echo (int) (($level_counts['error'] ?? 0) + ($level_counts['critical'] ?? 0)); ?>
             </p>
@@ -288,7 +288,7 @@ function crm_admin_render_logs() {
                 'crm_export_logs_csv'
             );
             ?>
-            <a class="button" href="<?php echo esc_url($export_url); ?>">📥 Exportar CSV</a>
+            <a class="button" href="<?php echo esc_url($export_url); ?>">Exportar CSV</a>
         </p>
     </form>
 
@@ -409,7 +409,7 @@ function crm_admin_render_updates() {
     </table>
 
     <p>
-        <button id="crm-check-updates" class="button button-primary">🔄 Buscar actualizaciones ahora</button>
+        <button id="crm-check-updates" class="button button-primary">Buscar actualizaciones ahora</button>
         <a class="button" href="<?php echo esc_url(admin_url('plugins.php')); ?>">Ir a Plugins</a>
         <span id="crm-check-result" class="description" style="margin-left:12px"></span>
     </p>
@@ -487,7 +487,7 @@ function crm_admin_render_settings() {
         ?>
     </p>
     <p>
-        <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=crm_run_logs_maintenance'), 'crm_run_logs_maintenance')); ?>">▶ Ejecutar mantenimiento ahora</a>
+        <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=crm_run_logs_maintenance'), 'crm_run_logs_maintenance')); ?>">Ejecutar mantenimiento ahora</a>
     </p>
     <?php
     crm_admin_page_footer();

@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.16.1
+Version: 1.16.2
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.16.1');
+define('CRM_PLUGIN_VERSION', '1.16.2');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -383,13 +383,13 @@ function crm_formulario_alta_cliente()
         : null;
 
     $estado_actual        = $client_data['estado']              ?? 'borrador';
-    $estado_por_sector    = maybe_unserialize($client_data['estado_por_sector']   ?? []);
-    $facturas             = maybe_unserialize($client_data['facturas']            ?? []);
-    $presupuestos         = maybe_unserialize($client_data['presupuesto']         ?? []);
-    $contratos_firmados   = maybe_unserialize($client_data['contratos_firmados']  ?? []);
-    $contratos_generados  = maybe_unserialize($client_data['contratos_generados'] ?? []);
-    $intereses            = maybe_unserialize($client_data['intereses']           ?? []);
-    $presupuestos_aceptados = maybe_unserialize($client_data['presupuestos_aceptados'] ?? []);
+    $estado_por_sector    = crm_safe_unserialize_array($client_data['estado_por_sector']   ?? '');
+    $facturas             = crm_safe_unserialize_array($client_data['facturas']            ?? '');
+    $presupuestos         = crm_safe_unserialize_array($client_data['presupuesto']         ?? '');
+    $contratos_firmados   = crm_safe_unserialize_array($client_data['contratos_firmados']  ?? '');
+    $contratos_generados  = crm_safe_unserialize_array($client_data['contratos_generados'] ?? '');
+    $intereses            = crm_safe_unserialize_array($client_data['intereses']           ?? '');
+    $presupuestos_aceptados = crm_safe_unserialize_array($client_data['presupuestos_aceptados'] ?? '');
 
     // Arrays asegurados
     $sectores      = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
@@ -1403,8 +1403,12 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
                 $e = 'contratos_generados';
             }
 
-            // 5) flujo contratos firmados
-            if ($e === 'contratos_generados' && ! empty($contratos_existentes[$s])) {
+            // 5) Estado terminal: si hay contratos firmados subidos para este sector,
+            //    el flujo está completo y el estado es 'contratos_firmados', sobrescribiendo
+            //    cualquier paso intermedio o reversión previa (regla 1.7). Tener un
+            //    contrato firmado físico implica que el presupuesto fue aceptado aunque
+            //    el admin no haya vuelto a marcar la checkbox al editar.
+            if (!empty($contratos_existentes[$s])) {
                 $e = 'contratos_firmados';
             }
         }
@@ -1464,13 +1468,24 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         $all_sectors = array_unique(array_merge($intereses, array_keys($existing_presupuestos)));
         
         foreach ($all_sectors as $sector) {
-            $tiene_contrato = in_array($sector, $contratos_generados);
-            
+            // Un sector se considera "contratado" si está en la lista de contratos
+            // generados (checkbox) o si ya tiene contratos firmados subidos.
+            // En ambos casos el presupuesto aceptado es un prerrequisito implícito
+            // y no se puede revocar.
+            $tiene_contrato = in_array($sector, $contratos_generados, true)
+                || !empty($contratos_existentes[$sector]);
+
             if (isset($admin_input[$sector])) {
                 // Admin marcó este sector
                 $presupuestos_aceptados_final[$sector] = true;
             } elseif ($tiene_contrato && isset($existing_presupuestos[$sector])) {
                 // Tiene contrato y estaba marcado antes - conservar (no se puede desmarcar)
+                $presupuestos_aceptados_final[$sector] = true;
+            } elseif (!empty($contratos_existentes[$sector])) {
+                // Tiene contratos firmados subidos pero nunca se marcó como aceptado
+                // (caso típico: admin sube directamente firmados sin pasar por la
+                // checkbox de aceptación). Forzamos la marca para mantener consistencia
+                // con el nuevo estado terminal 'contratos_firmados'.
                 $presupuestos_aceptados_final[$sector] = true;
             }
             // Si no está marcado por admin y no tiene contrato, se desmarca/no se incluye

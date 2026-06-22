@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.16.3
+Version: 1.16.4
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.16.3');
+define('CRM_PLUGIN_VERSION', '1.16.4');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -1763,20 +1763,78 @@ function crm_enviar_notificacion_comercial($client_id, $client_data, $action_det
 }
 
 /**
- * Función de debugging para el flujo de guardado por sector
+ * Función de debugging para el flujo de guardado por sector.
+ *
+ * Está DESACTIVADA por defecto en producción para no escribir PII en los
+ * logs de actividad. Para habilitarla puntualmente (p.ej. al investigar
+ * una incidencia de máquina de estados), añadir en `wp-config.php`:
+ *
+ *     define('CRM_DEBUG_SECTOR_SAVE', true);
+ *
+ * Aunque esté habilitada, sólo se persiste un subconjunto de campos
+ * relacionados con la máquina de estados (estado, estado_por_sector,
+ * presupuestos_aceptados, contratos_generados, contratos_firmados, fechas).
+ * Cualquier campo con datos personales (nombre, email, teléfono, dirección,
+ * comentarios, etc.) se descarta antes de guardar.
  */
 function crm_debug_sector_save($client_id, $action, $data) {
-    if (!current_user_can('crm_admin')) return; // Solo para debug de admin
-    
+    if (!defined('CRM_DEBUG_SECTOR_SAVE') || !CRM_DEBUG_SECTOR_SAVE) {
+        return;
+    }
+    if (!current_user_can('crm_admin')) {
+        return;
+    }
+
+    // Lista blanca de claves seguras (sin PII) relacionadas con el flujo de estado.
+    $safe_keys = [
+        'estado',
+        'estado_por_sector',
+        'presupuestos_aceptados',
+        'presupuesto',
+        'contratos_generados',
+        'contratos_firmados',
+        'facturas',
+        'fecha_envio_por_sector',
+        'usuario_envio_por_sector',
+        'intereses',
+        'tipo',
+        'enviado_por',
+        'fecha_enviado',
+        'editado_por',
+        'actualizado_en',
+        'actualizado_por',
+    ];
+
+    $sanitize = function ($payload) use ($safe_keys) {
+        if (!is_array($payload)) {
+            return null;
+        }
+        $out = [];
+        foreach ($safe_keys as $k) {
+            if (array_key_exists($k, $payload)) {
+                $out[$k] = $payload[$k];
+            }
+        }
+        return $out;
+    };
+
+    $clean = [];
+    if (is_array($data) && (isset($data['old']) || isset($data['new']))) {
+        $clean['old'] = isset($data['old']) ? $sanitize($data['old']) : null;
+        $clean['new'] = isset($data['new']) ? $sanitize($data['new']) : null;
+    } else {
+        $clean = $sanitize($data);
+    }
+
     $debug_info = [
         'timestamp' => current_time('Y-m-d H:i:s'),
-        'action' => $action,
+        'action'    => $action,
         'client_id' => $client_id,
-        'user' => wp_get_current_user()->display_name,
-        'data' => $data
+        'user_id'   => get_current_user_id(),
+        'data'      => $clean,
     ];
-    
-    crm_log_action('debug_sector_save', json_encode($debug_info), $client_id);
+
+    crm_log_action('debug_sector_save', wp_json_encode($debug_info), $client_id);
 }
 
 

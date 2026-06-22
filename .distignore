@@ -29,3 +29,9 @@ crm-scriptv2.js
 crm-plugin.php.disabled
 crm.php.disabled
 shortcodes.php.disabled
+build-dist.ps1
+
+# Backups locales (no incluir en el ZIP de distribución)
+crm-backup-*
+*-backup-*
+backup-*

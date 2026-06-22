@@ -36,3 +36,8 @@ wp-content/cache/
 .idea/
 *.sublime-project
 *.sublime-workspace
+
+# Backups (no commitear nunca copias del propio plugin)
+crm-backup-*/
+*-backup-*/
+backup-*/

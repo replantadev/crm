@@ -227,17 +227,17 @@ function crm_app_shell_render_topbar() {
  */
 add_action('admin_menu', function () {
     add_submenu_page(
-        'crm-plugin',
+        'crm-dashboard',
         'Aspecto / App Shell',
         'Aspecto (App Shell)',
-        'manage_options',
+        'crm_admin',
         'crm-app-shell',
         'crm_app_shell_render_admin'
     );
 }, 20);
 
 function crm_app_shell_render_admin() {
-    if (!current_user_can('manage_options')) {
+    if (!current_user_can('crm_admin')) {
         wp_die('Acceso denegado');
     }
 

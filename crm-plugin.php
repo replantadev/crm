@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.19.1
+Version: 1.19.2
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.19.1');
+define('CRM_PLUGIN_VERSION', '1.19.2');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -231,6 +231,46 @@ function crm_get_estado_label($estado) {
 }
 
 /**
+ * Estados de decisión por sector (v1.19.2). Reflejan por qué un sector no
+ * avanza al cierre aunque ya tenga presupuesto. Son ortogonales al `estado`.
+ *
+ * @return array<string, array{label:string, color:string, icon:string}>
+ */
+function crm_get_decisiones_sector() {
+    return [
+        ''                       => ['label' => 'Sin bloqueo',          'color' => 'neutral', 'icon' => 'check-circle'],
+        'pendiente_financiacion' => ['label' => 'Pendiente financiación','color' => 'warn',    'icon' => 'scales'],
+        'pendiente_competencia'  => ['label' => 'Pendiente competencia', 'color' => 'violet',  'icon' => 'magnifying'],
+        'decision_pendiente'     => ['label' => 'Decisión pendiente',    'color' => 'accent',  'icon' => 'pencil'],
+        'pendiente_visita'       => ['label' => 'Pendiente visita',      'color' => 'accent',  'icon' => 'map-pin'],
+    ];
+}
+
+/**
+ * Renderiza un badge para un estado de decisión.
+ *
+ * @return string HTML
+ */
+function crm_render_decision_badge($valor, $size = 'sm') {
+    if ($valor === '' || $valor === null) {
+        return '';
+    }
+    $map = crm_get_decisiones_sector();
+    if (!isset($map[$valor])) {
+        return '';
+    }
+    $cfg = $map[$valor];
+    $icon = function_exists('crm_icon') ? crm_icon($cfg['icon'], $size === 'md' ? 14 : 12) : '';
+    return sprintf(
+        '<span class="crm-pill crm-pill--%1$s crm-pill--%2$s">%3$s%4$s</span>',
+        esc_attr($cfg['color']),
+        esc_attr($size),
+        $icon,
+        esc_html($cfg['label'])
+    );
+}
+
+/**
  * Devuelve las 52 provincias oficiales de España (nombres INE).
  *
  * @deprecated Usa `crm_get_provincias_oficiales()` que además devuelve códigos INE.
@@ -401,6 +441,7 @@ function crm_formulario_alta_cliente()
     $presupuestos_aceptados = crm_safe_unserialize_array($client_data['presupuestos_aceptados'] ?? '');
     $estimado_consumo     = crm_safe_unserialize_array($client_data['estimado_consumo']    ?? '');
     $entrada_vigor_por_sector = crm_safe_unserialize_array($client_data['entrada_vigor_por_sector'] ?? '');
+    $decision_por_sector  = crm_safe_unserialize_array($client_data['decision_por_sector'] ?? '');
 
     // Arrays asegurados
     $sectores      = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
@@ -413,6 +454,7 @@ function crm_formulario_alta_cliente()
     $presupuestos_aceptados = is_array($presupuestos_aceptados) ? $presupuestos_aceptados : [];
     $estimado_consumo    = is_array($estimado_consumo)   ? $estimado_consumo   : [];
     $entrada_vigor_por_sector = is_array($entrada_vigor_por_sector) ? $entrada_vigor_por_sector : [];
+    $decision_por_sector = is_array($decision_por_sector) ? $decision_por_sector : [];
 
     // Encolar el script JavaScript y localizar datos
     wp_enqueue_script('crm-municipios', CRM_PLUGIN_URL . 'js/municipios-spain.js', array(), CRM_PLUGIN_VERSION, true);
@@ -462,7 +504,7 @@ function crm_formulario_alta_cliente()
                     <?php endif; ?>
                     
                     <!-- Solo para comerciales - información condensada -->
-                    <?php if(!current_user_can('crm_admin')): ?>
+                    <?php if(!crm_user_is_admin()): ?>
                         <div class="crm-header-comercial-info">
                             <span class="comercial-asignado">👤 <?php 
                                 if($client_id && isset($client_data['delegado'])) {
@@ -480,7 +522,7 @@ function crm_formulario_alta_cliente()
             </div>
             
             <!-- Badges de estado por sector - solo para comerciales -->
-            <?php if(!current_user_can('crm_admin') && $client_id): ?>
+            <?php if(!crm_user_is_admin() && $client_id): ?>
                 <div class="crm-header-badges">
                     <?php
                     $sectores = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
@@ -881,9 +923,14 @@ function crm_formulario_alta_cliente()
                             <?php echo function_exists('crm_icon') ? crm_icon(crm_icon_for_sector($sector), 18) : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                             <span><?php echo esc_html($secLabel); ?></span>
                             <?php echo function_exists('crm_badge') ? crm_badge($estado_sec, 'sm') : ('<small>(' . esc_html(str_replace('_', ' ', $estado_sec)) . ')</small>'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                            <?php
+                            // v1.19.2 — badge de estado de decisión (si hay)
+                            $decision_actual = isset($decision_por_sector[$sector]) ? (string) $decision_por_sector[$sector] : '';
+                            echo crm_render_decision_badge($decision_actual, 'sm'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                            ?>
                         </h4>
 
-                        <?php if (current_user_can('crm_admin')): ?>
+                        <?php if (crm_user_is_admin()): ?>
                             <button
                                 type="button"
                                 class="remove-interest-btn"
@@ -924,7 +971,7 @@ function crm_formulario_alta_cliente()
                             <button type="button" class="upload-btn" data-sector="<?php echo esc_attr($sector); ?>" data-tipo="presupuesto">Subir presupuesto</button>
                             
                             <!-- Checkbox presupuesto aceptado (visible si hay presupuestos o comercial) -->
-                            <?php if (!current_user_can('crm_admin')): 
+                            <?php if (!crm_user_is_admin()):
                                 $presupuesto_aceptado_checked = isset($presupuestos_aceptados[$sector]) ? 'checked' : '';
                                 $show_checkbox = !empty($filesP) ? 'block' : 'none';
                             ?>
@@ -945,6 +992,27 @@ function crm_formulario_alta_cliente()
                                     </small>
                                 </div>
                             <?php endif; ?>
+                        </div>
+
+                        <!-- v1.19.2 — Estado de decisión (comercial + admin) -->
+                        <div class="decision-section" data-sector="<?php echo esc_attr($sector); ?>" style="margin-top:14px; padding:10px 12px; background:#fffdf6; border:1px solid #f1e5b8; border-radius:6px;">
+                            <label for="decision-<?php echo esc_attr($sector); ?>" style="display:block; font-weight:600; color:#7a5a00; margin-bottom:4px;">
+                                <?php echo function_exists('crm_icon') ? crm_icon('clock', 14) : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                                Estado de decisión
+                            </label>
+                            <small style="color:#666; display:block; margin-bottom:6px;">
+                                Indica por qué este sector no avanza (bloqueo o pendiente). Es independiente del estado principal.
+                            </small>
+                            <select name="decision[<?php echo esc_attr($sector); ?>]"
+                                    id="decision-<?php echo esc_attr($sector); ?>"
+                                    class="decision-select"
+                                    style="width:100%; max-width:340px;">
+                                <?php foreach (crm_get_decisiones_sector() as $dec_val => $dec_cfg): ?>
+                                    <option value="<?php echo esc_attr($dec_val); ?>" <?php selected($decision_actual, $dec_val); ?>>
+                                        <?php echo esc_html($dec_cfg['label']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
 
                         <!-- Estimado de consumo del cliente (por sector) -->
@@ -1001,7 +1069,7 @@ function crm_formulario_alta_cliente()
                         <?php
                         // v1.18: entrada en vigor por sector (solo admin)
                         $ev_actual = isset($entrada_vigor_por_sector[$sector]) ? (string) $entrada_vigor_por_sector[$sector] : '';
-                        if (current_user_can('crm_admin')):
+                        if (crm_user_is_admin()):
                         ?>
                         <div class="entrada-vigor-section" data-sector="<?php echo esc_attr($sector); ?>">
                             <label for="entrada-vigor-<?php echo esc_attr($sector); ?>">
@@ -1021,7 +1089,7 @@ function crm_formulario_alta_cliente()
                         <?php endif; ?>
 
                         <!-- Botón sectorial para Comerciales -->
-                        <?php if (! current_user_can('crm_admin')): 
+                        <?php if (! crm_user_is_admin()):
                             $show_button = isset($presupuestos_aceptados[$sector]) ? 'block' : 'none';
                         ?>
                             <div class="send-sector-wrapper" style="display: <?php echo $show_button; ?>;" data-sector="<?php echo esc_attr($sector); ?>">
@@ -1053,7 +1121,7 @@ function crm_formulario_alta_cliente()
 
 
                         <!-- Controles Admin -->
-                        <?php if (current_user_can('crm_admin')): ?>
+                        <?php if (crm_user_is_admin()): ?>
                             <div class="admin-controls">
                                 <label>
                                     <input type="checkbox" name="contratos_generados[]" value="<?php echo esc_attr($sector); ?>" <?php echo $genChecked; ?>>
@@ -1111,7 +1179,7 @@ function crm_formulario_alta_cliente()
 
         <!-- ——— Acciones Globales ——— -->
         <div class="crm-global-actions">
-            <?php if (current_user_can('crm_admin')): ?>
+            <?php if (crm_user_is_admin()): ?>
                 <button type="submit" name="crm_guardar_cliente" class="crm-btn">
                     <i class="fas fa-save" style="margin-right: 8px;"></i>Guardar ficha
                 </button>
@@ -1748,6 +1816,30 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         }
     }
 
+    // v1.19.2: estado de decisión por sector (comercial Y admin)
+    $decision_out = isset($client['decision_por_sector'])
+        ? (maybe_unserialize($client['decision_por_sector']) ?: [])
+        : [];
+    if (!is_array($decision_out)) {
+        $decision_out = [];
+    }
+    if (isset($_POST['decision']) && is_array($_POST['decision'])) {
+        $decisiones_validas = array_keys(crm_get_decisiones_sector());
+        $sectores_validos_dec = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
+        foreach ((array) $_POST['decision'] as $sec_dec => $val_dec) {
+            $sec_dec = sanitize_key($sec_dec);
+            $val_dec = sanitize_text_field(wp_unslash((string) $val_dec));
+            if (!in_array($sec_dec, $sectores_validos_dec, true)) {
+                continue;
+            }
+            if ($val_dec === '' || !in_array($val_dec, $decisiones_validas, true)) {
+                unset($decision_out[$sec_dec]);
+                continue;
+            }
+            $decision_out[$sec_dec] = $val_dec;
+        }
+    }
+
     // v1.18: aviso de duplicado (no bloquea, solo se loguea en notas si es nuevo)
     $dup_warning = null;
     if (!$is_update && function_exists('crm_find_duplicate_clients')) {
@@ -1786,6 +1878,7 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         'origen_lead'               => $origen_in,
         'es_cliente_activo'         => $cliente_activo_in,
         'entrada_vigor_por_sector'  => maybe_serialize($entrada_vigor_out),
+        'decision_por_sector'       => maybe_serialize($decision_out),
         'editado_por'               => get_current_user_id(),
         'actualizado_en'            => current_time('mysql'),
         'actualizado_por'           => get_current_user_id(),
@@ -3447,6 +3540,7 @@ function crm_create_clients_table() {
         origen_lead varchar(32) NOT NULL DEFAULT 'directo',
         es_cliente_activo tinyint(1) NOT NULL DEFAULT 0,
         entrada_vigor_por_sector longtext DEFAULT NULL,
+        decision_por_sector longtext DEFAULT NULL,
         lead_meta longtext DEFAULT NULL,
         reenvios int(11) DEFAULT 0,
         PRIMARY KEY (id),
@@ -3538,6 +3632,7 @@ function crm_update_clients_table_structure() {
         'origen_lead' => "VARCHAR(32) NOT NULL DEFAULT 'directo'",
         'es_cliente_activo' => "TINYINT(1) NOT NULL DEFAULT 0",
         'entrada_vigor_por_sector' => "LONGTEXT DEFAULT NULL",
+        'decision_por_sector' => "LONGTEXT DEFAULT NULL",
         'lead_meta' => "LONGTEXT DEFAULT NULL",
     ];
     

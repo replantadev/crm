@@ -597,6 +597,7 @@ function crm_admin_render_leads_mk() {
 
     // Botón para forzar sync manual desde wp-admin
     $sync_action = wp_nonce_url(admin_url('admin-post.php?action=crm_leads_mk_run_sync'), 'crm_leads_mk_run_sync');
+    $sync_action_force = wp_nonce_url(admin_url('admin-post.php?action=crm_leads_mk_run_sync&force=1'), 'crm_leads_mk_run_sync');
     ?>
     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
         <input type="hidden" name="action" value="crm_leads_mk_save">
@@ -684,6 +685,7 @@ function crm_admin_render_leads_mk() {
     <h2>Sincronización manual</h2>
     <p>
         <a class="button button-primary" href="<?php echo esc_url($sync_action); ?>">Sincronizar ahora</a>
+        <a class="button" href="<?php echo esc_url($sync_action_force); ?>" onclick="return confirm('Vaciará el cursor de IDs procesados y reimportará todas las filas del Sheet desde cero (los duplicados existentes se detectarán por email/teléfono). ¿Continuar?');" style="margin-left:8px;">Forzar resincronización (ignorar cursor)</a>
     </p>
     <p>
         <a class="button" href="<?php echo esc_url(home_url('/asignacion-leads-mk/')); ?>" target="_blank">Abrir cola de asignación (frontend)</a>
@@ -699,13 +701,26 @@ function crm_admin_leads_mk_run_sync_post() {
         wp_die('Sin permisos', 403);
     }
     check_admin_referer('crm_leads_mk_run_sync');
+    $force = !empty($_GET['force']) || !empty($_POST['force']);
     $msg = 'ok';
     if (function_exists('crm_leads_sheets_run_sync')) {
-        $res = crm_leads_sheets_run_sync(false);
+        $res = crm_leads_sheets_run_sync($force);
         if (is_wp_error($res)) {
             $msg = 'error: ' . $res->get_error_message();
         } else {
-            $msg = sprintf('ok: %d nuevos · %d dup · %d omitidos', $res['inserted'] ?? 0, $res['dupes'] ?? 0, $res['skipped'] ?? 0);
+            $msg = sprintf(
+                '%s%d nuevos · %d dup · %d omitidos (sin id: %d · ya procesados: %d · errores: %d)',
+                $force ? '[FORZADO] ' : '',
+                $res['inserted'] ?? 0,
+                $res['dupes'] ?? 0,
+                $res['skipped'] ?? 0,
+                $res['no_id'] ?? 0,
+                $res['already'] ?? 0,
+                $res['errors'] ?? 0
+            );
+            if (!empty($res['headers'])) {
+                $msg .= ' · cabeceras: ' . implode(', ', array_slice((array) $res['headers'], 0, 12));
+            }
         }
     } else {
         $msg = 'error: módulo sheets no cargado';

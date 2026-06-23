@@ -13,6 +13,29 @@ if (!defined('ABSPATH')) {
 }
 
 /**
+ * Devuelve true si el usuario (actual por defecto) es administrador del CRM
+ * por **rol explícito** (administrator o crm_admin), no por capability.
+ *
+ * Se usa para que un usuario con SOLO rol "comercial" jamás vea los
+ * controles del administrador, aunque por algún plugin externo se le
+ * hubiese inyectado la capability `crm_admin`.
+ *
+ * @param int|null $user_id ID de usuario; null para el actual.
+ */
+function crm_user_is_admin($user_id = null) {
+    if ($user_id === null) {
+        $user = wp_get_current_user();
+    } else {
+        $user = get_user_by('id', (int) $user_id);
+    }
+    if (!$user || empty($user->ID) || empty($user->roles)) {
+        return false;
+    }
+    $admin_roles = ['administrator', 'crm_admin'];
+    return (bool) array_intersect($admin_roles, (array) $user->roles);
+}
+
+/**
  * Capacidades base del rol comercial.
  */
 function crm_comercial_caps() {

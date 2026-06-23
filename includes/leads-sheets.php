@@ -243,9 +243,14 @@ function crm_leads_sheets_run_sync($force = false) {
     $headers = array_map(function ($h) { return strtolower(trim((string) $h)); }, $rows[0]);
     $cursor  = $force ? [] : (array) ($s['cursor_ids'] ?? []);
     $inserted = 0;
-    $skipped  = 0;
+    $no_id    = 0;
+    $already  = 0;
+    $errors   = 0;
     $dupes    = 0;
     $new_ids  = [];
+
+    // Posibles nombres de columna para el ID del lead (orden de preferencia)
+    $id_keys = ['id', 'lead_id', 'lead id', 'leadid', 'lead', 'idlead', 'id_lead', 'lead-id'];
 
     for ($i = 1; $i < count($rows); $i++) {
         $row = $rows[$i];
@@ -253,13 +258,31 @@ function crm_leads_sheets_run_sync($force = false) {
         foreach ($headers as $idx => $h) {
             $assoc[$h] = isset($row[$idx]) ? trim((string) $row[$idx]) : '';
         }
-        $lead_id = $assoc['id'] ?? '';
+        // 1) Intentar resolver el ID con varios alias
+        $lead_id = '';
+        foreach ($id_keys as $k) {
+            if (!empty($assoc[$k])) {
+                $lead_id = (string) $assoc[$k];
+                break;
+            }
+        }
+        // 2) Fallback: id sintético a partir de email o teléfono + nombre.
+        //    Garantiza dedupe estable aunque la hoja no traiga columna ID.
         if ($lead_id === '') {
-            $skipped++;
+            $email = (string) ($assoc['email'] ?? ($assoc['correo'] ?? ($assoc['e-mail'] ?? '')));
+            $tel   = (string) ($assoc['telefono'] ?? ($assoc['teléfono'] ?? ($assoc['phone'] ?? ($assoc['móvil'] ?? ($assoc['movil'] ?? '')))));
+            $nom   = (string) ($assoc['nombre_y_apellidos'] ?? ($assoc['nombre'] ?? ($assoc['name'] ?? '')));
+            $seed  = strtolower(trim($email . '|' . preg_replace('/\D+/', '', $tel) . '|' . $nom));
+            if ($seed !== '||') {
+                $lead_id = 'auto_' . substr(md5($seed), 0, 16);
+            }
+        }
+        if ($lead_id === '') {
+            $no_id++;
             continue;
         }
         if (in_array((string) $lead_id, $cursor, true)) {
-            $skipped++;
+            $already++;
             continue;
         }
         $result = crm_leads_sheets_insert_row($assoc);
@@ -270,18 +293,32 @@ function crm_leads_sheets_run_sync($force = false) {
             $inserted++;
             $new_ids[] = (string) $lead_id;
         } else {
-            $skipped++;
+            $errors++;
         }
     }
 
+    $skipped = $no_id + $already + $errors;
+    $status_detail = sprintf(
+        'ok: %d nuevos, %d dup, %d omitidos (sin id: %d · ya procesados: %d · errores: %d)',
+        $inserted, $dupes, $skipped, $no_id, $already, $errors
+    );
+
     crm_leads_sheets_save_settings([
         'last_sync'   => time(),
-        'last_status' => sprintf('ok: %d nuevos, %d dup, %d omitidos', $inserted, $dupes, $skipped),
+        'last_status' => $status_detail,
         'last_count'  => $inserted,
         'cursor_ids'  => array_merge($cursor, $new_ids),
     ]);
 
-    return ['inserted' => $inserted, 'skipped' => $skipped, 'dupes' => $dupes];
+    return [
+        'inserted' => $inserted,
+        'skipped'  => $skipped,
+        'dupes'    => $dupes,
+        'no_id'    => $no_id,
+        'already'  => $already,
+        'errors'   => $errors,
+        'headers'  => $headers,
+    ];
 }
 
 /**

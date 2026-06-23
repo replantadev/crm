@@ -331,6 +331,71 @@ function crm_guia_admin_shortcode() {
             </div>
         </section>
 
+        <section id="novedades-1-18" class="help-section">
+            <h2>Novedades v1.18 (administración)</h2>
+            <div class="help-content">
+                <h3>Cambios clave a partir de la versión 1.18.0</h3>
+
+                <div class="feature-box">
+                    <h4>Leads de marketing desde Google Sheets</h4>
+                    <ul>
+                        <li>Nueva fuente de leads automática: el plugin lee una hoja de Google Sheets (Meta/Facebook Lead Ads, etc.) <strong>cada hora</strong> mediante una <em>cuenta de servicio</em> (Service Account JWT RS256, sin Composer).</li>
+                        <li>Configurable desde <code>CRM → Leads MK</code>: <em>Spreadsheet ID</em>, <em>Rango</em> (p. ej. <code>Hoja1!A:Z</code>) y <em>Service Account JSON</em>. El JSON se almacena <strong>cifrado con AUTH_KEY</strong> (AES‑256‑CBC) en <code>wp_options</code>.</li>
+                        <li>Mapeo: <code>nombre_y_apellidos → cliente_nombre</code>, <code>correo_electrónico → email_cliente</code>, <code>número_de_teléfono → telefono</code>, <code>created_time → fecha</code>. El resto del lead (campaña, anuncio, plataforma, formulario, is_organic…) se guarda en la nueva columna JSON <code>lead_meta</code>.</li>
+                        <li>Cursor por <code>id</code> de fila para no reimportar; dedupe automática contra clientes existentes por <strong>teléfono normalizado o email</strong> (no se duplican fichas).</li>
+                        <li>Cron horario <code>crm_leads_sheets_sync_cron</code> + botón "Sincronizar ahora" en el panel.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Cola de asignación de leads — shortcode <code>[asignacion_leads_mk]</code></h4>
+                    <ul>
+                        <li>Pega el shortcode en la página interna que quieras. Solo lo ve el rol <code>crm_admin</code>.</li>
+                        <li>Lista los leads no asignados (<code>origen_lead = 'lead_mk'</code>, sin <code>user_id</code>) con filtros: búsqueda libre y sector global.</li>
+                        <li>Por fila puedes: <strong>asignar a un comercial</strong> (opcionalmente con sector preseleccionado), <strong>marcar como contacto frío</strong> o <strong>borrar el lead</strong> con sus notas.</li>
+                        <li>Al asignar se envía email al comercial (si está activado) y se registra una nota automática en el timeline.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Detección de duplicados al dar de alta</h4>
+                    <ul>
+                        <li>En el formulario de alta, al cambiar <em>teléfono</em> o <em>email</em> se consulta el backend y se muestra un aviso amarillo "⚠ Posible duplicado" con la lista de fichas que ya tienen ese contacto.</li>
+                        <li>Normalización: teléfono comparado por sus últimos 9 dígitos (descarta <code>+34</code>, espacios, guiones); email en minúsculas y validado.</li>
+                        <li>Aviso <strong>no bloqueante</strong>: el admin puede crear el cliente igualmente; la respuesta del guardado incluye los duplicados detectados.</li>
+                        <li>Los comerciales solo ven duplicados que ya tienen asignados (o sin asignar). Los del resto del equipo aparecen como "[no visible]".</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Origen del lead y clientes activos</h4>
+                    <ul>
+                        <li>Nuevo campo <code>origen_lead</code> en cada cliente con 5 valores: <em>Directo, Lead MK, Contacto frío, Referido, Web</em>.</li>
+                        <li>Casilla <strong>"Es cliente activo"</strong> visible solo para administradores en la ficha.</li>
+                        <li>La tabla <code>todas-las-altas-de-cliente</code> añade dos filtros nuevos: <em>Origen</em> y un check <em>Sólo activos</em>.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Entrada en vigor por sector (manual)</h4>
+                    <ul>
+                        <li>Cada sector contratado tiene ahora un campo de fecha <strong>"Entrada en vigor"</strong> que rellena el administrador a mano cuando lo decide.</li>
+                        <li>Los comerciales lo ven en modo lectura (no pueden modificarlo).</li>
+                        <li>Se guarda como JSON en la columna <code>entrada_vigor_por_sector</code>.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Notificación al asignar cliente</h4>
+                    <ul>
+                        <li>Cuando el admin asigna o reasigna un cliente/lead a un comercial, se envía un email automático con: nombre del cliente, origen, campaña (si aplica) y enlace directo a la ficha.</li>
+                        <li>Configurable en <code>CRM → Leads MK</code>: activar/desactivar, remitente (nombre + email).</li>
+                        <li>El envío queda registrado como nota tipo <em>sistema</em> en el timeline del cliente.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
         <section id="novedades-1-17" class="help-section">
             <h2>Novedades v1.17 (administración)</h2>
             <div class="help-content">

@@ -4619,3 +4619,164 @@ button.aceptar-presupuesto{background:#25C685;color:#fff;font-size:12px;margin:4
     margin-top: 6px;
     padding: 10px;
 }
+/* ===========================================================================
+ * v1.18 — Leads MK, dedupe, entrada en vigor
+ * ======================================================================== */
+
+/* Aviso visual de posibles duplicados en el formulario */
+.crm-dup-warning {
+    background: #fff8e1;
+    border: 1px solid #f59e0b;
+    border-left: 4px solid #f59e0b;
+    color: #78350f;
+    padding: 10px 14px;
+    margin-top: 10px;
+    border-radius: 6px;
+    font-size: 13px;
+}
+.crm-dup-warning p { margin: 0 0 6px; }
+.crm-dup-warning ul { margin: 0; padding-left: 18px; }
+.crm-dup-warning li { margin: 2px 0; }
+.crm-dup-warning .crm-dup-tag {
+    background: #fde68a;
+    color: #78350f;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    margin-left: 4px;
+}
+
+/* Checkbox inline reutilizable */
+.crm-inline-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #374151;
+}
+.crm-inline-check input[type="checkbox"] {
+    margin: 0;
+}
+
+/* Bloque de entrada en vigor por sector */
+.entrada-vigor-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 6px;
+}
+.entrada-vigor-section label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #0c4a6e;
+}
+.entrada-vigor-section input[type="date"] {
+    width: 180px;
+    padding: 4px 8px;
+    font-size: 13px;
+}
+.entrada-vigor-readonly {
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: #f1f5f9;
+    border-left: 4px solid #64748b;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #334155;
+}
+
+/* Shortcode [asignacion_leads_mk] */
+.crm-leads-mk {
+    margin: 18px 0;
+    font-size: 14px;
+}
+.crm-leads-mk-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 14px;
+}
+.crm-leads-mk-header h2 {
+    margin: 0;
+    flex: 1;
+    font-size: 20px;
+}
+.crm-leads-mk-count {
+    background: #1e40af;
+    color: #fff;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+.crm-leads-mk-sync,
+.crm-leads-mk-assign,
+.crm-leads-mk-cold,
+.crm-leads-mk-delete {
+    border: 0;
+    cursor: pointer;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #fff;
+}
+.crm-leads-mk-sync   { background: #2563eb; }
+.crm-leads-mk-assign { background: #16a34a; }
+.crm-leads-mk-cold   { background: #6b7280; }
+.crm-leads-mk-delete { background: #dc2626; }
+.crm-leads-mk-sync:disabled,
+.crm-leads-mk-assign:disabled { opacity: 0.6; cursor: wait; }
+
+.crm-leads-mk-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.crm-leads-mk-filters input,
+.crm-leads-mk-filters select {
+    padding: 5px 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 13px;
+}
+.crm-leads-mk-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+}
+.crm-leads-mk-table th,
+.crm-leads-mk-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #e5e7eb;
+    text-align: left;
+    vertical-align: top;
+    font-size: 13px;
+}
+.crm-leads-mk-table th {
+    background: #f3f4f6;
+    font-weight: 600;
+    color: #111827;
+}
+.crm-leads-mk-table tr.crm-leads-mk-row--gone { display: none; }
+.crm-leads-mk-table tr:hover { background: #fafafa; }
+.crm-leads-mk-meta {
+    color: #6b7280;
+    font-size: 11px;
+}
+.crm-leads-mk-empty {
+    padding: 20px;
+    text-align: center;
+    color: #6b7280;
+    background: #f9fafb;
+    border-radius: 6px;
+}
+.crm-leads-mk-status {
+    font-size: 12px;
+    color: #4b5563;
+}

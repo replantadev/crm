@@ -81,6 +81,8 @@ document.addEventListener("DOMContentLoaded", function () {
             tbody.innerHTML = "";
             result.data.forEach(c => {
                 const tr = document.createElement("tr");
+                tr.setAttribute('data-origen', c.origen_lead || 'directo');
+                tr.setAttribute('data-activo', c.es_cliente_activo ? '1' : '0');
                 tr.innerHTML = `
           <td>${c.id}</td>
           <td data-order="${c.fecha}">${formatDates(c.fecha)}</td>
@@ -137,8 +139,12 @@ document.addEventListener("DOMContentLoaded", function () {
                         const $tr = jQuery(api.row(idx).node());
                         const estadoSel = jQuery('#dt-filter-estado').val();
                         const comSel = jQuery('#dt-filter-comercial').val();
+                        const origenSel = jQuery('#dt-filter-origen').val();
+                        const activoSel = jQuery('#dt-filter-activo').is(':checked');
                         if (estadoSel && !$tr.find(`.crm-badge.estado-${estadoSel}`).length) return false;
                         if (comSel && $tr.find('td.td-comercial').text().trim() !== comSel) return false;
+                        if (origenSel && ($tr.attr('data-origen') || '') !== origenSel) return false;
+                        if (activoSel && ($tr.attr('data-activo') || '0') !== '1') return false;
                         return true;
                     });
 
@@ -181,6 +187,23 @@ document.addEventListener("DOMContentLoaded", function () {
                         .on('change', () => api.draw());
                     comercials.forEach(name => selC.append(`<option value="${name}">${name}</option>`));
                     wrapper.append('<label>Comercial:</label>').append(selC);
+
+                    // f) Select Origen
+                    const origenes = [
+                        { v: '', t: 'Todos los orígenes' },
+                        { v: 'directo', t: 'Directo' },
+                        { v: 'lead_mk', t: 'Lead MK' },
+                        { v: 'contacto_frio', t: 'Contacto frío' },
+                        { v: 'referido', t: 'Referido' },
+                        { v: 'web', t: 'Web' },
+                    ];
+                    const selO = jQuery('<select id="dt-filter-origen"></select>').on('change', () => api.draw());
+                    origenes.forEach(o => selO.append(`<option value="${o.v}">${o.t}</option>`));
+                    wrapper.append('<label>Origen:</label>').append(selO);
+
+                    // g) Checkbox solo activos
+                    const cbA = jQuery('<input type="checkbox" id="dt-filter-activo">').on('change', () => api.draw());
+                    wrapper.append(jQuery('<label class="crm-inline-check"></label>').append(cbA).append(' Sólo activos'));
                 }
             });
 

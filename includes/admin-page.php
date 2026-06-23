@@ -38,6 +38,7 @@ function crm_register_admin_menu() {
     add_submenu_page('crm-dashboard', 'Dashboard', 'Dashboard', $cap, 'crm-dashboard', 'crm_admin_render_dashboard');
     add_submenu_page('crm-dashboard', 'Logs', 'Logs', $cap, 'crm-logs', 'crm_admin_render_logs');
     add_submenu_page('crm-dashboard', 'Actualizaciones', 'Actualizaciones', $cap, 'crm-updates', 'crm_admin_render_updates');
+    add_submenu_page('crm-dashboard', 'Leads MK', 'Leads MK', $cap, 'crm-leads-mk', 'crm_admin_render_leads_mk');
     add_submenu_page('crm-dashboard', 'Ajustes', 'Ajustes', $cap, 'crm-settings', 'crm_admin_render_settings');
 }
 
@@ -88,6 +89,7 @@ function crm_admin_render_nav() {
         'crm-dashboard' => 'Dashboard',
         'crm-logs'      => 'Logs',
         'crm-updates'   => 'Actualizaciones',
+        'crm-leads-mk'  => 'Leads MK',
         'crm-settings'  => 'Ajustes',
     ];
     echo '<h2 class="nav-tab-wrapper">';
@@ -533,3 +535,171 @@ CSS;
     wp_enqueue_style('crm-admin-inline');
     wp_add_inline_style('crm-admin-inline', $css);
 });
+
+/* ---------------------------------------------------------------------------
+ * Leads MK (Google Sheets sync + Notificaciones)
+ * ------------------------------------------------------------------------- */
+
+add_action('admin_post_crm_leads_mk_save', 'crm_admin_leads_mk_save');
+function crm_admin_leads_mk_save() {
+    if (!current_user_can('crm_admin')) {
+        wp_die('Sin permisos', 403);
+    }
+    check_admin_referer('crm_leads_mk_save');
+
+    if (function_exists('crm_leads_sheets_save_settings')) {
+        $sa_raw = isset($_POST['sa_json']) ? trim(wp_unslash($_POST['sa_json'])) : '';
+        $patch = [
+            'enabled'        => !empty($_POST['enabled']),
+            'spreadsheet_id' => isset($_POST['spreadsheet_id']) ? sanitize_text_field($_POST['spreadsheet_id']) : '',
+            'range'          => isset($_POST['range']) ? sanitize_text_field($_POST['range']) : 'A:Z',
+        ];
+        // Solo actualizar sa_json si el textarea trae JSON nuevo (no vacío y parseable)
+        if ($sa_raw !== '' && $sa_raw !== '****') {
+            $decoded = json_decode($sa_raw, true);
+            if (is_array($decoded) && !empty($decoded['client_email']) && !empty($decoded['private_key'])) {
+                $patch['sa_json'] = $sa_raw;
+            }
+        }
+        crm_leads_sheets_save_settings($patch);
+    }
+
+    if (function_exists('crm_notif_save_settings')) {
+        crm_notif_save_settings([
+            'assignment_enabled' => !empty($_POST['notif_assignment']),
+            'from_name'          => isset($_POST['from_name']) ? sanitize_text_field($_POST['from_name']) : '',
+            'from_email'         => isset($_POST['from_email']) ? sanitize_email($_POST['from_email']) : '',
+        ]);
+    }
+
+    wp_safe_redirect(add_query_arg(['page' => 'crm-leads-mk', 'saved' => 1], admin_url('admin.php')));
+    exit;
+}
+
+function crm_admin_render_leads_mk() {
+    if (!current_user_can('crm_admin')) {
+        wp_die('Sin permisos');
+    }
+    $sheets = function_exists('crm_leads_sheets_get_settings') ? crm_leads_sheets_get_settings() : [];
+    $notif  = function_exists('crm_notif_get_settings') ? crm_notif_get_settings() : [];
+
+    crm_admin_page_header('CRM · Leads MK / Sheets');
+
+    if (!empty($_GET['saved'])) {
+        echo '<div class="notice notice-success is-dismissible"><p>Ajustes guardados.</p></div>';
+    }
+    if (!empty($_GET['sync'])) {
+        $sync_msg = sanitize_text_field(wp_unslash($_GET['sync']));
+        $kind = strpos($sync_msg, 'error') === 0 ? 'error' : 'success';
+        echo '<div class="notice notice-' . esc_attr($kind) . ' is-dismissible"><p>Sync: ' . esc_html($sync_msg) . '</p></div>';
+    }
+
+    // Botón para forzar sync manual desde wp-admin
+    $sync_action = wp_nonce_url(admin_url('admin-post.php?action=crm_leads_mk_run_sync'), 'crm_leads_mk_run_sync');
+    ?>
+    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+        <input type="hidden" name="action" value="crm_leads_mk_save">
+        <?php wp_nonce_field('crm_leads_mk_save'); ?>
+
+        <h2>Google Sheets — origen de leads</h2>
+        <table class="form-table">
+            <tr>
+                <th><label for="enabled">Activo</label></th>
+                <td>
+                    <label><input type="checkbox" name="enabled" id="enabled" value="1" <?php checked(!empty($sheets['enabled'])); ?>>
+                        Sincronizar automáticamente cada hora</label>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="spreadsheet_id">Spreadsheet ID</label></th>
+                <td>
+                    <input type="text" class="regular-text" name="spreadsheet_id" id="spreadsheet_id"
+                           value="<?php echo esc_attr($sheets['spreadsheet_id'] ?? ''); ?>"
+                           placeholder="1mdhsmagqUsyzN9wJMkkm4TK2ua3sOARRVirQ0FMO2ZA">
+                    <p class="description">ID que aparece en la URL del Sheet: <code>docs.google.com/spreadsheets/d/<strong>{ID}</strong>/edit</code></p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="range">Rango</label></th>
+                <td>
+                    <input type="text" name="range" id="range" value="<?php echo esc_attr($sheets['range'] ?? 'A:Z'); ?>" placeholder="Hoja1!A:Z">
+                </td>
+            </tr>
+            <tr>
+                <th><label for="sa_json">Service Account JSON</label></th>
+                <td>
+                    <textarea name="sa_json" id="sa_json" rows="8" class="large-text code"
+                              placeholder='{ "type": "service_account", "project_id": "...", "client_email": "...", "private_key": "-----BEGIN PRIVATE KEY-----..." }'><?php echo !empty($sheets['sa_json']) ? '****' : ''; ?></textarea>
+                    <p class="description">Pega el JSON completo de la cuenta de servicio con permisos de lectura del Sheet. Se almacena cifrado con <code>AUTH_KEY</code>. Deja <code>****</code> para no modificar el actual.</p>
+                </td>
+            </tr>
+            <tr>
+                <th>Última sincronización</th>
+                <td>
+                    <?php if (!empty($sheets['last_sync'])): ?>
+                        <code><?php echo esc_html(date_i18n('d/m/Y H:i', (int) $sheets['last_sync'])); ?></code> · <?php echo esc_html($sheets['last_status'] ?? ''); ?>
+                    <?php else: ?>
+                        <em>Nunca ejecutada</em>
+                    <?php endif; ?>
+                </td>
+            </tr>
+        </table>
+
+        <h2>Notificaciones por email</h2>
+        <table class="form-table">
+            <tr>
+                <th><label for="notif_assignment">Asignación de cliente</label></th>
+                <td>
+                    <label><input type="checkbox" name="notif_assignment" id="notif_assignment" value="1" <?php checked(!empty($notif['assignment_enabled'])); ?>>
+                        Avisar al comercial cuando se le asigne un cliente o lead</label>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="from_name">Remitente (nombre)</label></th>
+                <td><input type="text" class="regular-text" name="from_name" id="from_name" value="<?php echo esc_attr($notif['from_name'] ?? ''); ?>"></td>
+            </tr>
+            <tr>
+                <th><label for="from_email">Remitente (email)</label></th>
+                <td>
+                    <input type="email" class="regular-text" name="from_email" id="from_email" value="<?php echo esc_attr($notif['from_email'] ?? ''); ?>">
+                    <p class="description">Si está vacío se usa el del sitio.</p>
+                </td>
+            </tr>
+        </table>
+
+        <?php submit_button('Guardar ajustes'); ?>
+    </form>
+
+    <h2>Sincronización manual</h2>
+    <p>
+        <a class="button button-primary" href="<?php echo esc_url($sync_action); ?>">Sincronizar ahora</a>
+    </p>
+    <p>
+        <a class="button" href="<?php echo esc_url(home_url('/asignacion-leads-mk/')); ?>" target="_blank">Abrir cola de asignación (frontend)</a>
+        — recuerda crear una página con el shortcode <code>[asignacion_leads_mk]</code>.
+    </p>
+    <?php
+    crm_admin_page_footer();
+}
+
+add_action('admin_post_crm_leads_mk_run_sync', 'crm_admin_leads_mk_run_sync_post');
+function crm_admin_leads_mk_run_sync_post() {
+    if (!current_user_can('crm_admin')) {
+        wp_die('Sin permisos', 403);
+    }
+    check_admin_referer('crm_leads_mk_run_sync');
+    $msg = 'ok';
+    if (function_exists('crm_leads_sheets_run_sync')) {
+        $res = crm_leads_sheets_run_sync(false);
+        if (is_wp_error($res)) {
+            $msg = 'error: ' . $res->get_error_message();
+        } else {
+            $msg = sprintf('ok: %d nuevos · %d dup · %d omitidos', $res['inserted'] ?? 0, $res['dupes'] ?? 0, $res['skipped'] ?? 0);
+        }
+    } else {
+        $msg = 'error: módulo sheets no cargado';
+    }
+    wp_safe_redirect(add_query_arg(['page' => 'crm-leads-mk', 'sync' => rawurlencode($msg)], admin_url('admin.php')));
+    exit;
+}
+

@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.17.0
+Version: 1.18.0
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.17.0');
+define('CRM_PLUGIN_VERSION', '1.18.0');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -65,7 +65,10 @@ require_once CRM_PLUGIN_PATH . 'includes/data.php';
 require_once CRM_PLUGIN_PATH . 'includes/uploads-handler.php';
 require_once CRM_PLUGIN_PATH . 'includes/logger.php';
 require_once CRM_PLUGIN_PATH . 'includes/notes.php';
-
+require_once CRM_PLUGIN_PATH . 'includes/duplicates.php';
+require_once CRM_PLUGIN_PATH . 'includes/leads-sheets.php';
+require_once CRM_PLUGIN_PATH . 'includes/notifications.php';
+require_once CRM_PLUGIN_PATH . 'includes/leads-mk-shortcode.php';
 // Incluir archivos del plugin
 require_once CRM_PLUGIN_PATH . 'acceso.php';
 require_once CRM_PLUGIN_PATH . 'shortcodes.php';
@@ -391,6 +394,7 @@ function crm_formulario_alta_cliente()
     $intereses            = crm_safe_unserialize_array($client_data['intereses']           ?? '');
     $presupuestos_aceptados = crm_safe_unserialize_array($client_data['presupuestos_aceptados'] ?? '');
     $estimado_consumo     = crm_safe_unserialize_array($client_data['estimado_consumo']    ?? '');
+    $entrada_vigor_por_sector = crm_safe_unserialize_array($client_data['entrada_vigor_por_sector'] ?? '');
 
     // Arrays asegurados
     $sectores      = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
@@ -402,12 +406,14 @@ function crm_formulario_alta_cliente()
     $estado_por_sector   = is_array($estado_por_sector)  ? $estado_por_sector  : [];
     $presupuestos_aceptados = is_array($presupuestos_aceptados) ? $presupuestos_aceptados : [];
     $estimado_consumo    = is_array($estimado_consumo)   ? $estimado_consumo   : [];
+    $entrada_vigor_por_sector = is_array($entrada_vigor_por_sector) ? $entrada_vigor_por_sector : [];
 
     // Encolar el script JavaScript y localizar datos
     wp_enqueue_script('crm-municipios', CRM_PLUGIN_URL . 'js/municipios-spain.js', array(), CRM_PLUGIN_VERSION, true);
     wp_enqueue_script('crm-uploads',  CRM_PLUGIN_URL . 'js/crm-uploads.js',  array(), CRM_PLUGIN_VERSION, true);
     wp_enqueue_script('crm-scriptv2', CRM_PLUGIN_URL . 'js/crm-scriptv7.js', array('jquery', 'crm-municipios', 'crm-uploads'), CRM_PLUGIN_VERSION, true);
     wp_enqueue_script('crm-notes', CRM_PLUGIN_URL . 'js/crm-notes.js', array('jquery'), CRM_PLUGIN_VERSION, true);
+    wp_enqueue_script('crm-duplicates', CRM_PLUGIN_URL . 'js/crm-duplicates.js', array(), CRM_PLUGIN_VERSION, true);
 
     // Pasar al loader de municipios la URL del bundle JSON (asset estático
     // generado desde el diccionario oficial del INE con tools/build-municipios.ps1).
@@ -669,12 +675,37 @@ function crm_formulario_alta_cliente()
                         </option>
                     <?php endforeach; ?>
                 </select>
+
+                <?php
+                $origen_actual = isset($client_data['origen_lead']) ? (string) $client_data['origen_lead'] : 'directo';
+                $cliente_activo = !empty($client_data['es_cliente_activo']);
+                $origenes = [
+                    'directo'        => 'Directo (alta manual)',
+                    'lead_mk'        => 'Lead Marketing (campaña Meta/Google)',
+                    'contacto_frio'  => 'Contacto frío',
+                    'referido'       => 'Referido / recomendación',
+                    'web'            => 'Web / formulario',
+                ];
+                ?>
+                <label for="origen_lead">Origen del lead:</label>
+                <select name="origen_lead" id="origen_lead">
+                    <?php foreach ($origenes as $v => $lbl): ?>
+                        <option value="<?php echo esc_attr($v); ?>" <?php selected($origen_actual, $v); ?>><?php echo esc_html($lbl); ?></option>
+                    <?php endforeach; ?>
+                </select>
+
+                <label class="crm-inline-check" for="es_cliente_activo">
+                    <input type="checkbox" name="es_cliente_activo" id="es_cliente_activo" value="1" <?php checked($cliente_activo); ?>>
+                    Cliente activo (ya contratado / en cartera)
+                </label>
             </div>
         </div>
         <?php else: ?>
         <!-- Para comerciales: campos ocultos con sus datos -->
         <input type="hidden" name="delegado" value="<?php echo esc_attr(isset($client_data['delegado']) ? $client_data['delegado'] : wp_get_current_user()->display_name); ?>">
         <input type="hidden" name="email_comercial" value="<?php echo esc_attr(isset($client_data['email_comercial']) ? $client_data['email_comercial'] : wp_get_current_user()->user_email); ?>">
+        <input type="hidden" name="origen_lead" value="<?php echo esc_attr($client_data['origen_lead'] ?? 'directo'); ?>">
+        <input type="hidden" name="es_cliente_activo" value="<?php echo !empty($client_data['es_cliente_activo']) ? '1' : '0'; ?>">
         <?php endif; ?>
 
         <!-- Datos del Cliente -->
@@ -918,6 +949,28 @@ function crm_formulario_alta_cliente()
                                     </select>
                                 </div>
                             </div>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php
+                        // v1.18: entrada en vigor por sector (solo admin)
+                        $ev_actual = isset($entrada_vigor_por_sector[$sector]) ? (string) $entrada_vigor_por_sector[$sector] : '';
+                        if (current_user_can('crm_admin')):
+                        ?>
+                        <div class="entrada-vigor-section" data-sector="<?php echo esc_attr($sector); ?>">
+                            <label for="entrada-vigor-<?php echo esc_attr($sector); ?>">
+                                <strong>Entrada en vigor:</strong>
+                                <small>Fecha desde la que el servicio queda activo (solo informativa).</small>
+                            </label>
+                            <input type="date"
+                                   id="entrada-vigor-<?php echo esc_attr($sector); ?>"
+                                   name="entrada_vigor[<?php echo esc_attr($sector); ?>]"
+                                   value="<?php echo esc_attr($ev_actual); ?>">
+                        </div>
+                        <?php elseif ($ev_actual !== ''): ?>
+                        <div class="entrada-vigor-readonly">
+                            <strong>Entrada en vigor:</strong>
+                            <span><?php echo esc_html($ev_actual); ?></span>
                         </div>
                         <?php endif; ?>
 
@@ -1612,6 +1665,52 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
     // $estimado_out ya se sanitizó arriba (justo después de $env_sectores)
     // para poder validar "factura O estimado" al enviar un sector.
 
+    // v1.18: origen del lead + flag cliente activo. Solo el admin puede modificarlos
+    // libremente; el comercial mantiene el valor previo a través del input hidden.
+    $origen_in = isset($_POST['origen_lead']) ? sanitize_key($_POST['origen_lead']) : '';
+    $origenes_validos = ['directo', 'lead_mk', 'contacto_frio', 'referido', 'web'];
+    if (!in_array($origen_in, $origenes_validos, true)) {
+        $origen_in = $client['origen_lead'] ?? 'directo';
+    }
+    $cliente_activo_in = !empty($_POST['es_cliente_activo']) ? 1 : 0;
+    if (!current_user_can('crm_admin')) {
+        // Comerciales no pueden tocar el flag de "cliente activo"
+        $cliente_activo_in = isset($client['es_cliente_activo']) ? (int) $client['es_cliente_activo'] : 0;
+    }
+
+    // v1.18: entrada_vigor por sector (solo admin)
+    $entrada_vigor_out = isset($client['entrada_vigor_por_sector'])
+        ? (maybe_unserialize($client['entrada_vigor_por_sector']) ?: [])
+        : [];
+    if (current_user_can('crm_admin') && isset($_POST['entrada_vigor']) && is_array($_POST['entrada_vigor'])) {
+        $sectores_validos_ev = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
+        foreach ($_POST['entrada_vigor'] as $sec_ev => $fecha_ev) {
+            $sec_ev = sanitize_key($sec_ev);
+            if (!in_array($sec_ev, $sectores_validos_ev, true)) {
+                continue;
+            }
+            $fecha_ev = trim((string) $fecha_ev);
+            if ($fecha_ev === '') {
+                unset($entrada_vigor_out[$sec_ev]);
+                continue;
+            }
+            // Aceptar Y-m-d
+            $dt = DateTime::createFromFormat('Y-m-d', $fecha_ev);
+            if ($dt && $dt->format('Y-m-d') === $fecha_ev) {
+                $entrada_vigor_out[$sec_ev] = $fecha_ev;
+            }
+        }
+    }
+
+    // v1.18: aviso de duplicado (no bloquea, solo se loguea en notas si es nuevo)
+    $dup_warning = null;
+    if (!$is_update && function_exists('crm_find_duplicate_clients')) {
+        $dups_pre = crm_find_duplicate_clients($telefono, $email_cliente, 0, 3);
+        if (!empty($dups_pre)) {
+            $dup_warning = $dups_pre;
+        }
+    }
+
     // preparar array de guardado
     $data = [
         'delegado'                  => sanitize_text_field($_POST['delegado']),
@@ -1638,6 +1737,9 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         'estado_por_sector'         => maybe_serialize($new_estado),
         'fecha_envio_por_sector'    => maybe_serialize($fechas_envio),
         'usuario_envio_por_sector'  => maybe_serialize($users_envio),
+        'origen_lead'               => $origen_in,
+        'es_cliente_activo'         => $cliente_activo_in,
+        'entrada_vigor_por_sector'  => maybe_serialize($entrada_vigor_out),
         'editado_por'               => get_current_user_id(),
         'actualizado_en'            => current_time('mysql'),
         'actualizado_por'           => get_current_user_id(),
@@ -1742,6 +1844,10 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         $uid_new = (int) ($data['user_id']   ?? 0);
         if ($uid_old !== $uid_new) {
             crm_notes_log_assignment($client_id, $uid_old, $uid_new);
+            // v1.18: notificar por email al nuevo comercial
+            if ($uid_new > 0 && function_exists('crm_notif_assignment_send')) {
+                crm_notif_assignment_send($client_id, $uid_new);
+            }
         }
     }
 
@@ -1843,7 +1949,12 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         crm_enviar_notificacion_comercial($client_id, $data, $action_details);
     }
 
-    wp_send_json_success(['redirect_url' => $redirect]);
+    $response = ['redirect_url' => $redirect];
+    if (!empty($dup_warning)) {
+        $response['duplicates'] = $dup_warning;
+        $response['message']    = 'Cliente guardado. Posible duplicado detectado.';
+    }
+    wp_send_json_success($response);
 }
 
 /**
@@ -2683,7 +2794,7 @@ function crm_obtener_todas_altas()
     $table_name = $wpdb->prefix . "crm_clients";
 
     $clientes = $wpdb->get_results("
-        SELECT c.id, c.fecha, c.user_id, c.cliente_nombre, c.empresa, c.direccion, c.poblacion, c.intereses, c.email_cliente, c.facturas, c.presupuesto, c.contratos_generados, c.contratos_firmados, c.estado, c.estado_por_sector, c.reenvios, c.actualizado_en, c.actualizado_por, c.fecha_envio_por_sector, c.usuario_envio_por_sector, u.display_name AS comercial, u2.display_name AS actualizado_por_nombre
+        SELECT c.id, c.fecha, c.user_id, c.cliente_nombre, c.empresa, c.direccion, c.poblacion, c.intereses, c.email_cliente, c.facturas, c.presupuesto, c.contratos_generados, c.contratos_firmados, c.estado, c.estado_por_sector, c.reenvios, c.actualizado_en, c.actualizado_por, c.fecha_envio_por_sector, c.usuario_envio_por_sector, c.origen_lead, c.es_cliente_activo, u.display_name AS comercial, u2.display_name AS actualizado_por_nombre
         FROM $table_name c
         LEFT JOIN {$wpdb->users} u ON c.user_id = u.ID
         LEFT JOIN {$wpdb->users} u2 ON c.actualizado_por = u2.ID
@@ -3254,9 +3365,9 @@ function crm_create_clients_table() {
     
     $sql = "CREATE TABLE $table_name (
         id int(11) NOT NULL AUTO_INCREMENT,
-        delegado varchar(255) NOT NULL,
-        user_id bigint(20) UNSIGNED NOT NULL,
-        email_comercial varchar(255) NOT NULL,
+        delegado varchar(255) DEFAULT '',
+        user_id bigint(20) UNSIGNED DEFAULT NULL,
+        email_comercial varchar(255) DEFAULT '',
         fecha datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
         cliente_nombre varchar(255) NOT NULL,
         empresa varchar(255) NOT NULL,
@@ -3287,13 +3398,20 @@ function crm_create_clients_table() {
         usuario_envio_por_sector text NOT NULL,
         presupuestos_aceptados text DEFAULT NULL,
         estimado_consumo longtext DEFAULT NULL,
+        origen_lead varchar(32) NOT NULL DEFAULT 'directo',
+        es_cliente_activo tinyint(1) NOT NULL DEFAULT 0,
+        entrada_vigor_por_sector longtext DEFAULT NULL,
+        lead_meta longtext DEFAULT NULL,
         reenvios int(11) DEFAULT 0,
         PRIMARY KEY (id),
         KEY cliente_nombre (cliente_nombre),
         KEY telefono (telefono),
         KEY email_comercial (email_comercial),
         KEY creado_por (creado_por),
-        KEY estado (estado)
+        KEY estado (estado),
+        KEY origen_lead (origen_lead),
+        KEY es_cliente_activo (es_cliente_activo),
+        KEY user_id (user_id)
     ) $charset_collate;";
     
     require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
@@ -3371,6 +3489,10 @@ function crm_update_clients_table_structure() {
         'actualizado_por' => "BIGINT(20) DEFAULT NULL",
         'presupuestos_aceptados' => "TEXT DEFAULT NULL",
         'estimado_consumo' => "LONGTEXT DEFAULT NULL",
+        'origen_lead' => "VARCHAR(32) NOT NULL DEFAULT 'directo'",
+        'es_cliente_activo' => "TINYINT(1) NOT NULL DEFAULT 0",
+        'entrada_vigor_por_sector' => "LONGTEXT DEFAULT NULL",
+        'lead_meta' => "LONGTEXT DEFAULT NULL",
     ];
     
     foreach ($required_columns as $column => $definition) {
@@ -3381,7 +3503,35 @@ function crm_update_clients_table_structure() {
             error_log("CRM: Columna '$column' agregada a la tabla $table_name");
         }
     }
-    
+
+    // v1.18: permitir leads sin asignar (user_id / delegado / email_comercial pueden ser NULL/vacíos)
+    $cols_to_relax = [
+        'user_id'         => "BIGINT(20) UNSIGNED DEFAULT NULL",
+        'delegado'        => "VARCHAR(255) DEFAULT ''",
+        'email_comercial' => "VARCHAR(255) DEFAULT ''",
+    ];
+    foreach ($cols_to_relax as $col => $definition) {
+        $col_info = $wpdb->get_row("SHOW COLUMNS FROM $table_name LIKE '$col'");
+        if ($col_info && stripos($col_info->Null, 'NO') === 0 && stripos($col_info->Default ?? '', 'NULL') === false) {
+            $wpdb->query("ALTER TABLE $table_name MODIFY COLUMN $col $definition");
+            error_log("CRM: Columna '$col' relajada a permitir vacío/NULL");
+        }
+    }
+
+    // v1.18: índices nuevos
+    $existing_indexes = $wpdb->get_col("SHOW INDEX FROM $table_name", 2); // Key_name
+    $needed_indexes = [
+        'origen_lead'       => "ALTER TABLE $table_name ADD INDEX origen_lead (origen_lead)",
+        'es_cliente_activo' => "ALTER TABLE $table_name ADD INDEX es_cliente_activo (es_cliente_activo)",
+        'user_id'           => "ALTER TABLE $table_name ADD INDEX user_id (user_id)",
+    ];
+    foreach ($needed_indexes as $idx => $sql_idx) {
+        if (!in_array($idx, $existing_indexes, true)) {
+            $wpdb->query($sql_idx);
+            error_log("CRM: Índice '$idx' creado en $table_name");
+        }
+    }
+
     error_log("CRM: Migración de tabla completada");
 }
 

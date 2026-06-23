@@ -199,6 +199,36 @@ function crm_guia_comerciales_shortcode() {
             </div>
         </section>
 
+        <section id="novedades-1-18" class="help-section">
+            <h2>Novedades v1.18</h2>
+            <div class="help-content">
+                <h3>Qué cambia para ti como comercial</h3>
+                <div class="feature-box">
+                    <h4>Te pueden asignar leads directos</h4>
+                    <ul>
+                        <li>Cuando el equipo de marketing recibe un lead nuevo (Meta, Google, etc.), aparece en la cola del administrador.</li>
+                        <li>Si te lo asignan, recibirás un <strong>email automático</strong> con el nombre del cliente, la campaña de procedencia y un enlace directo a la ficha.</li>
+                        <li>Estos clientes aparecen en tu listado con el origen <em>Lead MK</em>.</li>
+                    </ul>
+                </div>
+                <div class="feature-box">
+                    <h4>Aviso de duplicados al dar de alta</h4>
+                    <ul>
+                        <li>Al rellenar el teléfono o el email de un cliente nuevo, si el sistema detecta que ya existe una ficha con ese contacto, verás un aviso amarillo con la lista.</li>
+                        <li>Solo verás los duplicados de fichas que tienes asignadas o que aún no tiene nadie. El resto aparece como "[no visible]".</li>
+                        <li>El aviso <strong>no impide guardar</strong>; sirve para que avises al admin si crees que es un duplicado real.</li>
+                    </ul>
+                </div>
+                <div class="feature-box">
+                    <h4>Origen del lead y entrada en vigor</h4>
+                    <ul>
+                        <li>Cada ficha tiene ahora un campo <em>Origen</em> (Directo, Lead MK, Contacto frío, Referido, Web) que rellena el admin.</li>
+                        <li>Cuando un contrato entra en vigor, el admin marcará la fecha en cada sector y tú podrás verla en la ficha (modo lectura).</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
         <section id="novedades-1-17" class="help-section">
             <h2>Novedades v1.17</h2>
             <div class="help-content">

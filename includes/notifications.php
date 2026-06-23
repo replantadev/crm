@@ -94,10 +94,11 @@ function crm_notif_assignment_send($client_id, $new_user_id) {
     $body .= "<p style=\"color:#666;font-size:12px\">Mensaje automático del CRM. No responder a este correo.</p>";
 
     $headers = ['Content-Type: text/html; charset=UTF-8'];
-    $from_name  = $settings['from_name']  ?: get_bloginfo('name');
-    $from_email = $settings['from_email'] ?: get_bloginfo('admin_email');
-    if ($from_email) {
-        $headers[] = sprintf('From: %s <%s>', $from_name, $from_email);
+    // El remitente lo gestiona el propio WordPress (o WP Mail SMTP si está instalado).
+    // No forzamos cabecera From: para no interferir con la configuración SMTP del sitio.
+    if (!empty($settings['from_email'])) {
+        $from_name  = $settings['from_name'] ?: get_bloginfo('name');
+        $headers[]  = sprintf('From: %s <%s>', $from_name, $settings['from_email']);
     }
 
     $sent = wp_mail($user->user_email, $subject, $body, $headers);

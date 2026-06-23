@@ -567,8 +567,9 @@ function crm_admin_leads_mk_save() {
     if (function_exists('crm_notif_save_settings')) {
         crm_notif_save_settings([
             'assignment_enabled' => !empty($_POST['notif_assignment']),
-            'from_name'          => isset($_POST['from_name']) ? sanitize_text_field($_POST['from_name']) : '',
-            'from_email'         => isset($_POST['from_email']) ? sanitize_email($_POST['from_email']) : '',
+            // El remitente lo aporta WordPress (o WP Mail SMTP si está instalado). No se sobrescribe desde el CRM.
+            'from_name'          => '',
+            'from_email'         => '',
         ]);
     }
 
@@ -630,7 +631,22 @@ function crm_admin_render_leads_mk() {
                 <td>
                     <textarea name="sa_json" id="sa_json" rows="8" class="large-text code"
                               placeholder='{ "type": "service_account", "project_id": "...", "client_email": "...", "private_key": "-----BEGIN PRIVATE KEY-----..." }'><?php echo !empty($sheets['sa_json']) ? '****' : ''; ?></textarea>
-                    <p class="description">Pega el JSON completo de la cuenta de servicio con permisos de lectura del Sheet. Se almacena cifrado con <code>AUTH_KEY</code>. Deja <code>****</code> para no modificar el actual.</p>
+                    <p class="description">
+                        Pega el JSON completo de la cuenta de servicio con permisos de lectura del Sheet.
+                        Se almacena <strong>cifrado con <code>AUTH_KEY</code></strong>. Deja <code>****</code> para no modificarlo.
+                    </p>
+                    <details style="margin-top:6px;">
+                        <summary style="cursor:pointer;font-weight:600;">¿Cómo obtener el Service Account JSON?</summary>
+                        <ol style="margin-top:8px;line-height:1.5;">
+                            <li>Entra en <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a> con la cuenta del cliente (o crea un proyecto nuevo).</li>
+                            <li>Ve a <em>APIs &amp; Services → Library</em> y activa <strong>Google Sheets API</strong>.</li>
+                            <li>Ve a <em>IAM &amp; Admin → Service Accounts → Create service account</em>. Nombre: por ejemplo <code>crm-sheets-reader</code>. No hace falta darle rol de proyecto.</li>
+                            <li>Abre la cuenta de servicio creada → pestaña <em>Keys</em> → <em>Add Key → Create new key → JSON</em>. Se descarga un fichero <code>.json</code>.</li>
+                            <li>Copia el correo <code>client_email</code> del JSON (algo como <code>crm-sheets-reader@&lt;proyecto&gt;.iam.gserviceaccount.com</code>) y <strong>compártele el Google Sheet en modo Lector</strong> desde el botón <em>Compartir</em> de Sheets.</li>
+                            <li>Pega aquí el <strong>contenido completo del JSON</strong> y guarda.</li>
+                        </ol>
+                        <p style="margin-top:6px;"><em>El JSON contiene una clave privada: trátalo como un secreto. El plugin lo guarda cifrado con AES-256-CBC + AUTH_KEY.</em></p>
+                    </details>
                 </td>
             </tr>
             <tr>
@@ -652,17 +668,12 @@ function crm_admin_render_leads_mk() {
                 <td>
                     <label><input type="checkbox" name="notif_assignment" id="notif_assignment" value="1" <?php checked(!empty($notif['assignment_enabled'])); ?>>
                         Avisar al comercial cuando se le asigne un cliente o lead</label>
-                </td>
-            </tr>
-            <tr>
-                <th><label for="from_name">Remitente (nombre)</label></th>
-                <td><input type="text" class="regular-text" name="from_name" id="from_name" value="<?php echo esc_attr($notif['from_name'] ?? ''); ?>"></td>
-            </tr>
-            <tr>
-                <th><label for="from_email">Remitente (email)</label></th>
-                <td>
-                    <input type="email" class="regular-text" name="from_email" id="from_email" value="<?php echo esc_attr($notif['from_email'] ?? ''); ?>">
-                    <p class="description">Si está vacío se usa el del sitio.</p>
+                    <p class="description">
+                        Los correos se envían con el sistema de email del propio sitio: si tienes instalado
+                        <a href="https://wordpress.org/plugins/wp-mail-smtp/" target="_blank" rel="noopener">WP Mail SMTP</a>
+                        (u otro plugin equivalente) los enviará por su SMTP; en caso contrario se usa la función nativa
+                        <code>wp_mail()</code> de WordPress. No es necesario configurar remitente aquí: se respeta el del sitio.
+                    </p>
                 </td>
             </tr>
         </table>

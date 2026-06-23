@@ -1050,7 +1050,11 @@ function crm_rendimiento_comercial_widget() {
                 <?php endforeach; ?>
             </div>
 
-            <?php if (current_user_can('crm_admin')): ?>
+            <?php
+            $current_user_obj = wp_get_current_user();
+            $roles_actuales   = (array) ($current_user_obj->roles ?? []);
+            $es_admin_crm     = current_user_can('administrator') || in_array('crm_admin', $roles_actuales, true);
+            if ($es_admin_crm): ?>
                 <div class="widget-actions-compact">
                     <a href="/resumen" class="action-link-compact">Ver Resumen</a>
                     <a href="/asignar-leads/" class="action-link-compact">Asignar Leads</a>

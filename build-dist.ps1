@@ -37,7 +37,8 @@ try {
         'tests','docs','README.md',
         'DASHBOARD-COMPLETO.html','GUIA-IMPLEMENTACION.html','calendar.png',
         'crm-scriptv2.js','crm-plugin.php.disabled','crm.php.disabled','shortcodes.php.disabled',
-        'build-dist.ps1'
+        'build-dist.ps1',
+        'tools'
     )
     foreach ($p in $ignoreExact) {
         $t = Join-Path $exportDir $p

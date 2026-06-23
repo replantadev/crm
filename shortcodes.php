@@ -579,6 +579,7 @@ function crm_admin_panel_widget() {
                 <div style="display: flex; flex-direction: column; gap: 10px;">
                     <a href="/todas-las-altas-de-cliente/" class="crm-btn">📋 Ver Todos los Clientes</a>
                     <a href="/resumen/" class="crm-btn crm-btn-secondary">📊 Resumen de Comerciales</a>
+                    <a href="/asignar-leads/" class="crm-btn crm-btn-secondary">🎯 Asignar Leads de Marketing</a>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 10px;">
                     <button type="button" id="export-data-btn" class="crm-btn">📁 Exportar Datos</button>
@@ -1052,6 +1053,7 @@ function crm_rendimiento_comercial_widget() {
             <?php if (current_user_can('crm_admin')): ?>
                 <div class="widget-actions-compact">
                     <a href="/resumen" class="action-link-compact">Ver Resumen</a>
+                    <a href="/asignar-leads/" class="action-link-compact">Asignar Leads</a>
                     <a href="/panel-de-control" class="action-link-compact">Control</a>
                 </div>
             <?php endif; ?>

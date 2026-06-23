@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.18.2
+Version: 1.19.0
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.18.2');
+define('CRM_PLUGIN_VERSION', '1.19.0');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -69,6 +69,10 @@ require_once CRM_PLUGIN_PATH . 'includes/duplicates.php';
 require_once CRM_PLUGIN_PATH . 'includes/leads-sheets.php';
 require_once CRM_PLUGIN_PATH . 'includes/notifications.php';
 require_once CRM_PLUGIN_PATH . 'includes/leads-mk-shortcode.php';
+// v1.19.0 — Sistema de diseño v2 (iconos, badges, app shell)
+require_once CRM_PLUGIN_PATH . 'includes/icons.php';
+require_once CRM_PLUGIN_PATH . 'includes/ui-helpers.php';
+require_once CRM_PLUGIN_PATH . 'includes/app-shell.php';
 // Incluir archivos del plugin
 require_once CRM_PLUGIN_PATH . 'acceso.php';
 require_once CRM_PLUGIN_PATH . 'shortcodes.php';
@@ -95,6 +99,8 @@ add_action('wp_enqueue_scripts', 'crm_enqueue_styles');
 function crm_enqueue_styles()
 {
     wp_enqueue_style('crm-styles', CRM_PLUGIN_URL . 'crm-styles.css', [], CRM_PLUGIN_VERSION);
+    // v1.19.0 — sistema de diseño v2 (cargado siempre, después del CSS legacy)
+    wp_enqueue_style('crm-design-v2', CRM_PLUGIN_URL . 'assets/css/crm-design-v2.css', ['crm-styles'], CRM_PLUGIN_VERSION);
     
     // Cargar estilos para documentación en páginas que contengan los shortcodes de guías
     global $post;
@@ -414,6 +420,8 @@ function crm_formulario_alta_cliente()
     wp_enqueue_script('crm-scriptv2', CRM_PLUGIN_URL . 'js/crm-scriptv7.js', array('jquery', 'crm-municipios', 'crm-uploads'), CRM_PLUGIN_VERSION, true);
     wp_enqueue_script('crm-notes', CRM_PLUGIN_URL . 'js/crm-notes.js', array('jquery'), CRM_PLUGIN_VERSION, true);
     wp_enqueue_script('crm-duplicates', CRM_PLUGIN_URL . 'js/crm-duplicates.js', array(), CRM_PLUGIN_VERSION, true);
+    // v1.19.0 — Tabs de sectores (vertical desktop / horizontal mobile)
+    wp_enqueue_script('crm-sector-tabs', CRM_PLUGIN_URL . 'js/crm-sector-tabs.js', array('crm-scriptv2'), CRM_PLUGIN_VERSION, true);
 
     // Pasar al loader de municipios la URL del bundle JSON (asset estático
     // generado desde el diccionario oficial del INE con tools/build-municipios.ps1).
@@ -713,38 +721,55 @@ function crm_formulario_alta_cliente()
             <h3>Datos del Cliente</h3>
             <div class="datos-container">
                 <div class="form-group full-width">
-                    <input type="text" name="cliente_nombre" placeholder="Nombre del Cliente" required value="<?php echo esc_attr($client_data['cliente_nombre'] ?? ''); ?>">
+                    <div class="crm-field">
+                        <input type="text" name="cliente_nombre" id="cliente_nombre" placeholder=" " required value="<?php echo esc_attr($client_data['cliente_nombre'] ?? ''); ?>">
+                        <label for="cliente_nombre">Nombre del Cliente</label>
+                    </div>
                 </div>
                 <div class="form-group full-width">
-                    <input type="text" name="empresa" placeholder="Empresa" value="<?php echo esc_attr($client_data['empresa'] ?? ''); ?>">
+                    <div class="crm-field">
+                        <input type="text" name="empresa" id="empresa" placeholder=" " value="<?php echo esc_attr($client_data['empresa'] ?? ''); ?>">
+                        <label for="empresa">Empresa</label>
+                    </div>
                 </div>
                 <div class="form-group full-width">
-                    <input type="text" name="direccion" placeholder="Dirección" value="<?php echo esc_attr($client_data['direccion'] ?? ''); ?>">
+                    <div class="crm-field">
+                        <input type="text" name="direccion" id="direccion" placeholder=" " value="<?php echo esc_attr($client_data['direccion'] ?? ''); ?>">
+                        <label for="direccion">Dirección</label>
+                    </div>
                 </div>
                 <div class="form-group half-width">
-                    <input type="tel" 
-                           name="telefono" 
-                           id="telefono" 
-                           placeholder="Teléfono (ej: 987 123 456)" 
-                           value="<?php echo esc_attr($client_data['telefono'] ?? ''); ?>"
-                           pattern="^(\+34\s?)?[6789]\d{2}\s?\d{3}\s?\d{3}$"
-                           title="Ingrese un teléfono español válido (móvil: 6XX/7XX XXX XXX, fijo: 9XX XXX XXX)"
-                           maxlength="15">
-                    <small class="phone-help">Móvil: 6XX/7XX XXX XXX | Fijo: 9XX XXX XXX</small>
+                    <div class="crm-field">
+                        <input type="tel" 
+                               name="telefono" 
+                               id="telefono" 
+                               placeholder=" " 
+                               value="<?php echo esc_attr($client_data['telefono'] ?? ''); ?>"
+                               pattern="^(\+34\s?)?[6789]\d{2}\s?\d{3}\s?\d{3}$"
+                               title="Ingrese un teléfono español válido (móvil: 6XX/7XX XXX XXX, fijo: 9XX XXX XXX)"
+                               maxlength="15">
+                        <label for="telefono">Teléfono</label>
+                    </div>
+                    <small class="phone-help">Móvil: 6XX/7XX XXX XXX · Fijo: 9XX XXX XXX</small>
                 </div>
                 <div class="form-group half-width">
-                    <input type="email" 
-                           name="email_cliente" 
-                           placeholder="Email del cliente" 
-                           value="<?php echo esc_attr($client_data['email_cliente'] ?? ''); ?>"
-                           required
-                           pattern="[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$"
-                           title="Ingrese un email válido (ejemplo: usuario@dominio.com)"
-                           maxlength="100">
+                    <div class="crm-field">
+                        <input type="email" 
+                               name="email_cliente" 
+                               id="email_cliente" 
+                               placeholder=" " 
+                               value="<?php echo esc_attr($client_data['email_cliente'] ?? ''); ?>"
+                               required
+                               pattern="[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$"
+                               title="Ingrese un email válido (ejemplo: usuario@dominio.com)"
+                               maxlength="100">
+                        <label for="email_cliente">Email del cliente</label>
+                    </div>
                 </div>
                 <div class="form-group half-width">
-                    <select name="provincia" id="provincia" required class="form-select">
-                        <option value="" disabled <?php echo !isset($client_data['provincia']) || empty($client_data['provincia']) ? 'selected' : ''; ?>>Seleccionar Provincia</option>
+                    <div class="crm-field">
+                        <select name="provincia" id="provincia" required class="form-select<?php echo !empty($client_data['provincia']) ? ' has-value' : ''; ?>">
+                            <option value="" disabled <?php echo !isset($client_data['provincia']) || empty($client_data['provincia']) ? 'selected' : ''; ?>>Seleccionar provincia</option>
                         <?php
                         // Fuente única de verdad: includes/data.php (52 provincias INE
                         // oficiales). El nombre guardado en BD puede usar formas
@@ -772,31 +797,42 @@ function crm_formulario_alta_cliente()
                         }
                         ?>
                     </select>
+                        <label for="provincia">Provincia</label>
+                    </div>
                     <small class="province-help">Seleccione la provincia oficial</small>
                 </div>
                 <div class="form-group half-width">
                     <div class="autocomplete-container">
-                        <input type="text" 
-                               name="poblacion" 
-                               id="poblacion" 
-                               placeholder="Población (empiece a escribir...)" 
-                               value="<?php echo esc_attr($client_data['poblacion'] ?? ''); ?>"
-                               class="form-input-autocomplete"
-                               autocomplete="off">
+                        <div class="crm-field">
+                            <input type="text" 
+                                   name="poblacion" 
+                                   id="poblacion" 
+                                   placeholder=" " 
+                                   value="<?php echo esc_attr($client_data['poblacion'] ?? ''); ?>"
+                                   class="form-input-autocomplete"
+                                   autocomplete="off">
+                            <label for="poblacion">Población</label>
+                        </div>
                         <div id="poblacion-suggestions" class="autocomplete-suggestions"></div>
                         <small class="population-help">Escriba el nombre del municipio</small>
                     </div>
                 </div>
                 <div class="form-group half-width">
-                    <select name="tipo" required>
-                        <option value="" disabled <?php echo !isset($client_data['tipo']) || empty($client_data['tipo']) ? 'selected' : ''; ?>>Tipo</option>
-                        <option value="Residencial" <?php echo isset($client_data['tipo']) && $client_data['tipo'] === 'Residencial' ? 'selected' : ''; ?>>Residencial</option>
-                        <option value="Autónomo" <?php echo isset($client_data['tipo']) && $client_data['tipo'] === 'Autónomo' ? 'selected' : ''; ?>>Autónomo</option>
-                        <option value="Empresa" <?php echo isset($client_data['tipo']) && $client_data['tipo'] === 'Empresa' ? 'selected' : ''; ?>>Empresa</option>
-                    </select>
+                    <div class="crm-field">
+                        <select name="tipo" id="tipo" required class="<?php echo !empty($client_data['tipo']) ? 'has-value' : ''; ?>">
+                            <option value="" disabled <?php echo !isset($client_data['tipo']) || empty($client_data['tipo']) ? 'selected' : ''; ?>>Selecciona tipo</option>
+                            <option value="Residencial" <?php echo isset($client_data['tipo']) && $client_data['tipo'] === 'Residencial' ? 'selected' : ''; ?>>Residencial</option>
+                            <option value="Autónomo" <?php echo isset($client_data['tipo']) && $client_data['tipo'] === 'Autónomo' ? 'selected' : ''; ?>>Autónomo</option>
+                            <option value="Empresa" <?php echo isset($client_data['tipo']) && $client_data['tipo'] === 'Empresa' ? 'selected' : ''; ?>>Empresa</option>
+                        </select>
+                        <label for="tipo">Tipo de cliente</label>
+                    </div>
                 </div>
                 <div class="form-group full-width">
-                    <textarea name="comentarios" placeholder="Comentarios"><?php echo esc_textarea($client_data['comentarios'] ?? ''); ?></textarea>
+                    <div class="crm-field">
+                        <textarea name="comentarios" id="comentarios" placeholder=" "><?php echo esc_textarea($client_data['comentarios'] ?? ''); ?></textarea>
+                        <label for="comentarios">Comentarios</label>
+                    </div>
                 </div>
             </div>
         </div>
@@ -806,11 +842,20 @@ function crm_formulario_alta_cliente()
             <h3>Intereses del Cliente</h3>
             <div class="intereses-container">
                 <?php
-
+                $sector_labels_intereses = [
+                    'luz'                => 'Luz',
+                    'gas'                => 'Gas',
+                    'telecomunicaciones' => 'Telecom',
+                    'alarmas'            => 'Alarmas',
+                    'agua'               => 'Agua',
+                    'asesoria'           => 'Asesoría',
+                ];
                 foreach ($sectores as $sector) {
-                    $checked = in_array($sector, $intereses) ? 'checked' : '';
-                    echo "<input type='checkbox' id='interes-{$sector}' name='intereses[]' value='{$sector}' {$checked}>";
-                    echo "<label for='interes-{$sector}'>" . ucfirst($sector) . "</label>";
+                    $checked = in_array($sector, $intereses, true) ? 'checked' : '';
+                    $label   = $sector_labels_intereses[$sector] ?? ucfirst($sector);
+                    $icon    = function_exists('crm_icon') ? crm_icon(crm_icon_for_sector($sector), 14) : '';
+                    echo "<input type='checkbox' id='interes-{$sector}' name='intereses[]' value='" . esc_attr($sector) . "' {$checked}>";
+                    echo "<label for='interes-{$sector}'>{$icon}<span>" . esc_html($label) . "</span></label>"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
                 }
                 ?>
             </div>
@@ -832,9 +877,10 @@ function crm_formulario_alta_cliente()
             ?>
                 <div class="crm-card sector-card sector-<?php echo esc_attr($sector); ?>" style="display:none;">
                     <div class="card-header">
-                        <h4 style="display:inline-block; margin-right:0.5em;">
-                            <?php echo esc_html($secLabel); ?>
-                            <small>(<?php echo esc_html(str_replace('_', ' ', $estado_sec)); ?>)</small>
+                        <h4 style="display:inline-flex; align-items:center; gap:8px; margin-right:0.5em;">
+                            <?php echo function_exists('crm_icon') ? crm_icon(crm_icon_for_sector($sector), 18) : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                            <span><?php echo esc_html($secLabel); ?></span>
+                            <?php echo function_exists('crm_badge') ? crm_badge($estado_sec, 'sm') : ('<small>(' . esc_html(str_replace('_', ' ', $estado_sec)) . ')</small>'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                         </h4>
 
                         <?php if (current_user_can('crm_admin')): ?>

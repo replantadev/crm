@@ -199,6 +199,29 @@ function crm_guia_comerciales_shortcode() {
             </div>
         </section>
 
+        <section id="novedades-1-19" class="help-section">
+            <h2>Novedades v1.19</h2>
+            <div class="help-content">
+                <h3>Lo nuevo para ti</h3>
+                <div class="feature-box">
+                    <h4>Ficha de cliente reorganizada</h4>
+                    <ul>
+                        <li>Los sectores ahora son <strong>pestañas</strong>: pinchas en "Luz", "Gas", "Telecom"… y se abre el panel correspondiente. Se acabó el scroll infinito.</li>
+                        <li>Los intereses son chips clicables con icono; un solo clic activa o desactiva.</li>
+                        <li>Los campos del formulario (nombre, dirección, teléfono…) tienen etiquetas flotantes — la etiqueta sube cuando escribes.</li>
+                    </ul>
+                </div>
+                <div class="feature-box">
+                    <h4>Estados con colores y forma</h4>
+                    <p>Las etiquetas de estado por sector (Borrador, Enviado, Presupuesto aceptado, Contrato generado, Contrato firmado) son más claras: cada una con su icono y color.</p>
+                </div>
+                <div class="feature-box">
+                    <h4>Vista limpia tipo aplicación</h4>
+                    <p>Si tu administrador activa el modo "App Shell", al entrar a una página del CRM verás una barra superior negra con todos los accesos (Alta, Mis altas, Panel…), sin el menú y márgenes del tema. Más espacio para trabajar.</p>
+                </div>
+            </div>
+        </section>
+
         <section id="novedades-1-18" class="help-section">
             <h2>Novedades v1.18</h2>
             <div class="help-content">

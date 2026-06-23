@@ -331,6 +331,65 @@ function crm_guia_admin_shortcode() {
             </div>
         </section>
 
+        <section id="novedades-1-19" class="help-section">
+            <h2>Novedades v1.19 (rediseño UI)</h2>
+            <div class="help-content">
+                <h3>Cambios clave a partir de la versión 1.19.0</h3>
+
+                <div class="feature-box">
+                    <h4>Nuevo sistema de diseño hi-tech</h4>
+                    <ul>
+                        <li>Paleta neutra + marca <strong>#191919 (negro)</strong>, acento azul y estados (esmeralda/ámbar/violeta).</li>
+                        <li>Tipografía system-ui / Inter, 14px base, espaciados densos al estilo Linear / Vercel.</li>
+                        <li>Iconos vectoriales <strong>Phosphor Icons</strong> en sectores, badges, navegación y acciones.</li>
+                        <li>Badges nuevos con icono y color por estado: <em>Borrador, Enviado, Presupuesto aceptado, Contrato generado, Contrato firmado</em>.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Sectores como pestañas (tabs)</h4>
+                    <ul>
+                        <li>Los sectores activos del cliente se muestran como pestañas verticales en escritorio y horizontales en móvil.</li>
+                        <li>Cada pestaña abre el panel del sector correspondiente, ya no hay scroll infinito de tarjetas apiladas.</li>
+                        <li>Al activar o desactivar un interés, la pestaña aparece o desaparece automáticamente.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Intereses como chips</h4>
+                    <ul>
+                        <li>El bloque "Intereses del Cliente" pasa de checkboxes a chips toggle con icono, mucho más visual y rápido.</li>
+                        <li>Los checkboxes siguen existiendo pero ocultos, así no se rompe el guardado.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Formulario con etiquetas flotantes</h4>
+                    <p>Los campos del cliente (nombre, empresa, dirección, teléfono, email, provincia, población, tipo) usan ahora <em>floating labels</em>: el placeholder sube y se convierte en etiqueta cuando hay valor o foco.</p>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Modo "App Shell" (opcional)</h4>
+                    <p>Las páginas del CRM (alta de cliente, mis altas, todas las altas, resumen, asignar leads, panel de control) pueden mostrarse como una aplicación a pantalla completa, sin el header ni el footer del tema Astra y con una barra superior propia.</p>
+                    <ul>
+                        <li>Se configura desde <strong>CRM → Aspecto (App Shell)</strong>.</li>
+                        <li>Toggle "Activar App Shell" + lista de slugs de páginas a las que aplicar el modo app.</li>
+                        <li>Si lo desactivas, todo vuelve al tema Astra normal sin tocar nada más.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Cómo activar el App Shell (paso a paso)</h4>
+                    <ol>
+                        <li>Ve a <strong>WP-Admin → CRM → Aspecto (App Shell)</strong>.</li>
+                        <li>Marca "Activar App Shell".</li>
+                        <li>Comprueba que los slugs de tus páginas CRM están en la lista (uno por línea).</li>
+                        <li>Guarda y abre cualquier página del CRM: verás la barra superior negra con el menú integrado.</li>
+                    </ol>
+                </div>
+            </div>
+        </section>
+
         <section id="novedades-1-18" class="help-section">
             <h2>Novedades v1.18 (administración)</h2>
             <div class="help-content">

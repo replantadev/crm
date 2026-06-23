@@ -164,12 +164,19 @@ function crm_redact_post_for_log(array $post) {
 /**
  * Lista canónica de tipos de archivo permitidos para subidas del CRM.
  *
+ * Incluye los formatos que un iPad/iPhone produce por defecto al usar la
+ * cámara desde Safari (HEIC/HEIF) y WebP, además de los clásicos JPEG/PNG
+ * para escaneos y PDF para presupuestos/contratos.
+ *
  * @return array<string,string> mime => extensión
  */
 function crm_get_allowed_upload_types() {
     return [
         'jpg|jpeg|jpe' => 'image/jpeg',
         'png'          => 'image/png',
+        'webp'         => 'image/webp',
+        'heic'         => 'image/heic',
+        'heif'         => 'image/heif',
         'pdf'          => 'application/pdf',
     ];
 }

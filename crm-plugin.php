@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.16.5
+Version: 1.17.0
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.16.5');
+define('CRM_PLUGIN_VERSION', '1.17.0');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -61,8 +61,10 @@ function crm_cleanup_duplicate_files() {
 // Helpers internos (seguridad, roles, uploads, logger). Se cargan ANTES que el resto.
 require_once CRM_PLUGIN_PATH . 'includes/security.php';
 require_once CRM_PLUGIN_PATH . 'includes/roles.php';
+require_once CRM_PLUGIN_PATH . 'includes/data.php';
 require_once CRM_PLUGIN_PATH . 'includes/uploads-handler.php';
 require_once CRM_PLUGIN_PATH . 'includes/logger.php';
+require_once CRM_PLUGIN_PATH . 'includes/notes.php';
 
 // Incluir archivos del plugin
 require_once CRM_PLUGIN_PATH . 'acceso.php';
@@ -160,7 +162,7 @@ function crm_enqueue_chartjs()
 function crm_get_estados_sector()
 {
     return [
-        'borrador'            => ['label' => 'Borrador',            'color' => '#B0B7C3'],
+        'borrador'            => ['label' => 'Sin enviar',          'color' => '#B0B7C3'],
         'enviado'             => ['label' => 'Enviado',             'color' => '#2AA8F2'],
         'presupuesto_generado' => ['label' => 'Presupuesto Generado', 'color' => '#FF9500'],
         'presupuesto_aceptado' => ['label' => 'Presupuesto Aceptado', 'color' => '#25C685'],
@@ -202,7 +204,7 @@ function crm_get_orden_estados()
  */
 function crm_get_estado_label($estado) {
     $labels = [
-        'borrador' => 'Borrador',
+        'borrador' => 'Sin enviar',
         'enviado' => 'Enviado',
         'pendiente_revision' => 'Pendiente Revisión',
         'aceptado' => 'Aceptado',
@@ -220,26 +222,24 @@ function crm_get_estado_label($estado) {
 }
 
 /**
- * Obtiene las 50 provincias oficiales de España
+ * Devuelve las 52 provincias oficiales de España (nombres INE).
+ *
+ * @deprecated Usa `crm_get_provincias_oficiales()` que además devuelve códigos INE.
+ * @return string[]
  */
 function crm_get_provincias_espana() {
-    return [
-        'Álava', 'Albacete', 'Alicante', 'Almería', 'Asturias', 'Ávila', 'Badajoz', 'Barcelona',
-        'Burgos', 'Cáceres', 'Cádiz', 'Cantabria', 'Castellón', 'Ciudad Real', 'Córdoba', 'Cuenca',
-        'Girona', 'Granada', 'Guadalajara', 'Guipúzcoa', 'Huelva', 'Huesca', 'Islas Baleares', 'Jaén',
-        'La Coruña', 'La Rioja', 'Las Palmas', 'León', 'Lleida', 'Lugo', 'Madrid', 'Málaga',
-        'Murcia', 'Navarra', 'Orense', 'Palencia', 'Pontevedra', 'Salamanca', 'Santa Cruz de Tenerife',
-        'Segovia', 'Sevilla', 'Soria', 'Tarragona', 'Teruel', 'Toledo', 'Valencia', 'Valladolid',
-        'Vizcaya', 'Zamora', 'Zaragoza'
-    ];
+    $names = [];
+    foreach (crm_get_provincias_oficiales() as $p) {
+        $names[] = $p['name'];
+    }
+    return $names;
 }
 
 /**
- * Valida si una provincia es válida
+ * Valida si una provincia es válida (acepta nombres oficiales y aliases legacy).
  */
 function crm_validate_provincia($provincia) {
-    $provincias_validas = crm_get_provincias_espana();
-    return in_array($provincia, $provincias_validas, true);
+    return crm_es_provincia_oficial($provincia);
 }
 
 /**
@@ -390,6 +390,7 @@ function crm_formulario_alta_cliente()
     $contratos_generados  = crm_safe_unserialize_array($client_data['contratos_generados'] ?? '');
     $intereses            = crm_safe_unserialize_array($client_data['intereses']           ?? '');
     $presupuestos_aceptados = crm_safe_unserialize_array($client_data['presupuestos_aceptados'] ?? '');
+    $estimado_consumo     = crm_safe_unserialize_array($client_data['estimado_consumo']    ?? '');
 
     // Arrays asegurados
     $sectores      = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
@@ -400,16 +401,26 @@ function crm_formulario_alta_cliente()
     $intereses           = is_array($intereses)          ? $intereses          : [];
     $estado_por_sector   = is_array($estado_por_sector)  ? $estado_por_sector  : [];
     $presupuestos_aceptados = is_array($presupuestos_aceptados) ? $presupuestos_aceptados : [];
+    $estimado_consumo    = is_array($estimado_consumo)   ? $estimado_consumo   : [];
 
     // Encolar el script JavaScript y localizar datos
     wp_enqueue_script('crm-municipios', CRM_PLUGIN_URL . 'js/municipios-spain.js', array(), CRM_PLUGIN_VERSION, true);
-    wp_enqueue_script('crm-scriptv2', CRM_PLUGIN_URL . 'js/crm-scriptv7.js', array('jquery', 'crm-municipios'), CRM_PLUGIN_VERSION, true);
-    
+    wp_enqueue_script('crm-uploads',  CRM_PLUGIN_URL . 'js/crm-uploads.js',  array(), CRM_PLUGIN_VERSION, true);
+    wp_enqueue_script('crm-scriptv2', CRM_PLUGIN_URL . 'js/crm-scriptv7.js', array('jquery', 'crm-municipios', 'crm-uploads'), CRM_PLUGIN_VERSION, true);
+    wp_enqueue_script('crm-notes', CRM_PLUGIN_URL . 'js/crm-notes.js', array('jquery'), CRM_PLUGIN_VERSION, true);
+
+    // Pasar al loader de municipios la URL del bundle JSON (asset estático
+    // generado desde el diccionario oficial del INE con tools/build-municipios.ps1).
+    wp_localize_script('crm-municipios', 'crmMunicipiosData', array(
+        'url' => CRM_PLUGIN_URL . 'assets/data/municipios-es.json',
+    ));
+
     wp_localize_script('crm-scriptv2', 'crmData', array(
-        'ajaxurl' => admin_url('admin-ajax.php'),
-        'nonce'   => wp_create_nonce('crm_alta_cliente_nonce'),
-        'is_admin' => current_user_can('crm_admin'),
+        'ajaxurl'        => admin_url('admin-ajax.php'),
+        'nonce'          => wp_create_nonce('crm_alta_cliente_nonce'),
+        'is_admin'       => current_user_can('crm_admin'),
         'current_estado' => $estado_actual,
+        'pluginUrl'      => CRM_PLUGIN_URL,
     ));
 
     ob_start();
@@ -447,7 +458,7 @@ function crm_formulario_alta_cliente()
                                 }
                             ?></span>
                             <?php if($estado_actual === 'borrador'): ?>
-                                <span class="borrador-info">📝 Borrador</span>
+                                <span class="borrador-info">Sin enviar</span>
                             <?php endif; ?>
                         </div>
                     <?php endif; ?>
@@ -546,28 +557,18 @@ function crm_formulario_alta_cliente()
         }
         
         function searchMunicipalities(query, provincia) {
-            // Usar el sistema robusto de municipios
-            if (window.CRM_Municipios) {
-                const municipalities = window.CRM_Municipios.buscarMunicipios(query, provincia);
-                showSuggestions(municipalities);
-            } else {
-                // Fallback: sistema básico para León si no está cargado el sistema completo
-                const leonMunicipalities = [
-                    'León', 'Ponferrada', 'San Andrés del Rabanedo', 'Villaquilambre', 'Astorga',
-                    'La Bañeza', 'Valencia de Don Juan', 'Sahagún', 'Villablino', 'Bembibre',
-                    'Cacabelos', 'Toral de los Guzmanes', 'Mansilla de las Mulas', 'Boñar'
-                ];
-                
-                if (provincia === 'León') {
-                    const filtered = leonMunicipalities.filter(municipality => 
-                        municipality.toLowerCase().includes(query.toLowerCase())
-                    ).slice(0, 10);
-                    showSuggestions(filtered);
-                } else {
-                    // Para otras provincias, permitir entrada libre
-                    hideSuggestions();
-                }
+            // Sistema único basado en el bundle INE (assets/data/municipios-es.json).
+            if (!window.CRM_Municipios) {
+                hideSuggestions();
+                return;
             }
+            Promise.resolve(window.CRM_Municipios.buscarMunicipios(query, provincia))
+                .then(function (municipalities) {
+                    showSuggestions(municipalities || []);
+                })
+                .catch(function () {
+                    hideSuggestions();
+                });
         }
         
         function showSuggestions(suggestions) {
@@ -634,7 +635,7 @@ function crm_formulario_alta_cliente()
                 <p><a class="atras" href="/todas-las-altas-de-cliente/"> ⬅️Regresar Atrás</a></p>
                 <p>Estado: <strong class="estado <?php echo $estado_actual; ?>"><?php echo crm_get_estado_label($estado_actual); ?></strong></p>
                 <?php if ($estado_actual === 'borrador'): ?>
-                    <p><small>Este cliente está guardado como borrador. Aún no se ha enviado para revisión.</small></p>
+                    <p><small>Esta ficha aún no se ha enviado al administrador para revisión.</small></p>
                 <?php endif; ?>
                 <?php
                 // en crm_formulario_alta_cliente(), antes de ob_start():
@@ -714,22 +715,29 @@ function crm_formulario_alta_cliente()
                     <select name="provincia" id="provincia" required class="form-select">
                         <option value="" disabled <?php echo !isset($client_data['provincia']) || empty($client_data['provincia']) ? 'selected' : ''; ?>>Seleccionar Provincia</option>
                         <?php
-                        // Lista oficial de las 50 provincias de España ordenadas alfabéticamente
-                        $provincias_espana = [
-                            'Álava', 'Albacete', 'Alicante', 'Almería', 'Asturias', 'Ávila', 'Badajoz', 'Barcelona',
-                            'Burgos', 'Cáceres', 'Cádiz', 'Cantabria', 'Castellón', 'Ciudad Real', 'Córdoba', 'Cuenca',
-                            'Girona', 'Granada', 'Guadalajara', 'Guipúzcoa', 'Huelva', 'Huesca', 'Islas Baleares', 'Jaén',
-                            'La Coruña', 'La Rioja', 'Las Palmas', 'León', 'Lleida', 'Lugo', 'Madrid', 'Málaga',
-                            'Murcia', 'Navarra', 'Orense', 'Palencia', 'Pontevedra', 'Salamanca', 'Santa Cruz de Tenerife',
-                            'Segovia', 'Sevilla', 'Soria', 'Tarragona', 'Teruel', 'Toledo', 'Valencia', 'Valladolid',
-                            'Vizcaya', 'Zamora', 'Zaragoza'
-                        ];
-                        
-                        $provincia_actual = $client_data['provincia'] ?? 'León'; // León por defecto
-                        
-                        foreach ($provincias_espana as $provincia) {
-                            $selected = ($provincia_actual === $provincia) ? 'selected' : '';
-                            echo "<option value='" . esc_attr($provincia) . "' $selected>" . esc_html($provincia) . "</option>";
+                        // Fuente única de verdad: includes/data.php (52 provincias INE
+                        // oficiales). El nombre guardado en BD puede usar formas
+                        // antiguas; lo normalizamos antes de marcar el selected para
+                        // que cargue correctamente en edición.
+                        $provincia_guardada = $client_data['provincia'] ?? '';
+                        $provincia_actual   = crm_normalize_provincia($provincia_guardada !== '' ? $provincia_guardada : 'León');
+
+                        // Ordenar alfabéticamente por nombre (collation español sin acentos).
+                        $provincias_oficiales = crm_get_provincias_oficiales();
+                        usort($provincias_oficiales, function ($a, $b) {
+                            $strip = function ($s) {
+                                if (class_exists('Normalizer')) {
+                                    $s = \Normalizer::normalize($s, \Normalizer::FORM_D);
+                                    $s = preg_replace('/\p{M}+/u', '', $s);
+                                }
+                                return function_exists('mb_strtolower') ? mb_strtolower($s, 'UTF-8') : strtolower($s);
+                            };
+                            return strcmp($strip($a['name']), $strip($b['name']));
+                        });
+
+                        foreach ($provincias_oficiales as $prov) {
+                            $selected = ($provincia_actual === $prov['name']) ? 'selected' : '';
+                            echo "<option value='" . esc_attr($prov['name']) . "' $selected>" . esc_html($prov['name']) . "</option>";
                         }
                         ?>
                     </select>
@@ -786,6 +794,10 @@ function crm_formulario_alta_cliente()
                 $filesP     = $presupuestos[$sector]   ?? [];
                 $filesCF    = $contratos_firmados[$sector] ?? [];
                 $genChecked = in_array($sector, $contratos_generados) ? 'checked' : '';
+                $estimado_sec = isset($estimado_consumo[$sector]) && is_array($estimado_consumo[$sector])
+                    ? $estimado_consumo[$sector]
+                    : ['rango' => '', 'valor' => '', 'unidad' => ''];
+                $opt_sec      = crm_get_estimado_opciones()[$sector] ?? null;
             ?>
                 <div class="crm-card sector-card sector-<?php echo esc_attr($sector); ?>" style="display:none;">
                     <div class="card-header">
@@ -857,6 +869,57 @@ function crm_formulario_alta_cliente()
                                 </div>
                             <?php endif; ?>
                         </div>
+
+                        <!-- Estimado de consumo del cliente (por sector) -->
+                        <?php if ($opt_sec): ?>
+                        <div class="estimado-consumo-section" data-sector="<?php echo esc_attr($sector); ?>">
+                            <strong>Estimado de consumo:</strong>
+                            <p class="estimado-help">
+                                Indica un rango aproximado <em>y/o</em> el valor exacto si lo conoces.
+                                Sirve como alternativa a la factura para poder enviar el sector al administrador.
+                            </p>
+                            <div class="estimado-row">
+                                <div class="estimado-field estimado-rango">
+                                    <label for="estimado-rango-<?php echo esc_attr($sector); ?>">Rango</label>
+                                    <select name="estimado[<?php echo esc_attr($sector); ?>][rango]"
+                                            id="estimado-rango-<?php echo esc_attr($sector); ?>"
+                                            class="estimado-rango-select">
+                                        <option value="">— Seleccionar rango —</option>
+                                        <?php foreach ($opt_sec['rangos'] as $r): ?>
+                                            <option value="<?php echo esc_attr($r['id']); ?>"
+                                                <?php selected(($estimado_sec['rango'] ?? ''), $r['id']); ?>>
+                                                <?php echo esc_html($r['label']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="estimado-field estimado-valor">
+                                    <label for="estimado-valor-<?php echo esc_attr($sector); ?>">Valor exacto</label>
+                                    <input type="number"
+                                           step="0.01"
+                                           min="0"
+                                           inputmode="decimal"
+                                           name="estimado[<?php echo esc_attr($sector); ?>][valor]"
+                                           id="estimado-valor-<?php echo esc_attr($sector); ?>"
+                                           placeholder="<?php echo esc_attr($opt_sec['placeholder_valor']); ?>"
+                                           value="<?php echo esc_attr($estimado_sec['valor'] ?? ''); ?>">
+                                </div>
+                                <div class="estimado-field estimado-unidad">
+                                    <label for="estimado-unidad-<?php echo esc_attr($sector); ?>">Unidad</label>
+                                    <select name="estimado[<?php echo esc_attr($sector); ?>][unidad]"
+                                            id="estimado-unidad-<?php echo esc_attr($sector); ?>">
+                                        <option value="">— Unidad —</option>
+                                        <?php foreach ($opt_sec['unidades'] as $u): ?>
+                                            <option value="<?php echo esc_attr($u['id']); ?>"
+                                                <?php selected(($estimado_sec['unidad'] ?? ''), $u['id']); ?>>
+                                                <?php echo esc_html($u['label']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
 
                         <!-- Botón sectorial para Comerciales -->
                         <?php if (! current_user_can('crm_admin')): 
@@ -939,6 +1002,14 @@ function crm_formulario_alta_cliente()
         </div>
 
 
+        <!-- ——— Historial y notas (v1.17.0) ——— -->
+        <?php if ($client_id && function_exists('crm_notes_render_block')): ?>
+            <div class="crm-section crm-section-notes">
+                <?php echo crm_notes_render_block((int) $client_id); ?>
+            </div>
+        <?php endif; ?>
+
+
         <!-- ——— Acciones Globales ——— -->
         <div class="crm-global-actions">
             <?php if (current_user_can('crm_admin')): ?>
@@ -955,7 +1026,7 @@ function crm_formulario_alta_cliente()
                         <polyline points="17,21 17,13 7,13 7,21"></polyline>
                         <polyline points="7,3 7,8 15,8"></polyline>
                     </svg>
-                    Guardar borrador
+                    Guardar ficha
                 </button>
             <?php endif; ?>
         </div>
@@ -1299,6 +1370,44 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
 
     $env_sectores = crm_sanitize_sectores_list((array) ($_POST['enviar_sector'] ?? []));
 
+    // Sanitizar el estimado de consumo aquí (necesario antes del loop de
+    // estado para poder validar "factura O estimado" al enviar un sector).
+    $estimado_in  = (array) ($_POST['estimado'] ?? []);
+    $estimado_out = [];
+    foreach ($estimado_in as $sector_key => $vals) {
+        $sector_key = sanitize_key($sector_key);
+        $clean = crm_sanitize_estimado_sector($sector_key, (array) $vals);
+        if ($clean !== null) {
+            $estimado_out[$sector_key] = $clean;
+        }
+    }
+
+    // —— Validación v1.17: para enviar un sector al admin debe haber al
+    // menos una factura subida O un estimado de consumo informado en
+    // ese sector. Sin alguno de los dos no tiene sentido enviarlo.
+    // (El admin sí puede forzar el estado con `forzar_estado`).
+    $is_send_now = current_filter() === 'wp_ajax_crm_enviar_cliente_ajax';
+    $forzar_now  = current_user_can('crm_admin') && ! empty($_POST['forzar_estado']);
+    if ($is_send_now && !$forzar_now && !empty($env_sectores)) {
+        $faltantes = [];
+        foreach ($env_sectores as $s_env) {
+            $tiene_factura  = !empty($facturas_existentes[$s_env]);
+            $tiene_estimado = isset($estimado_out[$s_env])
+                && (!empty($estimado_out[$s_env]['rango'])
+                    || (isset($estimado_out[$s_env]['valor']) && $estimado_out[$s_env]['valor'] !== null));
+            if (!$tiene_factura && !$tiene_estimado) {
+                $faltantes[] = ucfirst($s_env);
+            }
+        }
+        if (!empty($faltantes)) {
+            wp_send_json_error([
+                'message' => 'Para enviar al administrador necesitas adjuntar una factura o indicar el estimado de consumo en: '
+                    . implode(', ', $faltantes) . '.',
+                'sectores_faltantes' => $faltantes,
+            ]);
+        }
+    }
+
     // Solo actualizar fecha y usuario para sectores que se están enviando AHORA
     foreach ($env_sectores as $s) {
         $fechas_envio[$s] = current_time('d/m/Y H:i');
@@ -1446,6 +1555,11 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
     if (!empty($provincia) && !crm_validate_provincia($provincia)) {
         wp_send_json_error(['message' => 'La provincia seleccionada no es válida. Por favor, seleccione una provincia oficial de España.']);
     }
+    // Normalizar a la forma INE oficial para que la BD quede consistente
+    // y los lookups contra el bundle de municipios funcionen siempre.
+    if (!empty($provincia)) {
+        $provincia = crm_normalize_provincia($provincia);
+    }
 
     // Validación específica de la población
     $poblacion = sanitize_text_field($_POST['poblacion']);
@@ -1495,6 +1609,9 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         $presupuestos_aceptados_final = (array)($_POST['presupuesto_aceptado'] ?? []);
     }
 
+    // $estimado_out ya se sanitizó arriba (justo después de $env_sectores)
+    // para poder validar "factura O estimado" al enviar un sector.
+
     // preparar array de guardado
     $data = [
         'delegado'                  => sanitize_text_field($_POST['delegado']),
@@ -1516,6 +1633,7 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         'contratos_firmados'        => maybe_serialize($contratos_existentes),
         'contratos_generados'       => maybe_serialize($contratos_generados),
         'presupuestos_aceptados'    => maybe_serialize($presupuestos_aceptados_final),
+        'estimado_consumo'          => maybe_serialize($estimado_out),
         'estado'                    => $estado,
         'estado_por_sector'         => maybe_serialize($new_estado),
         'fecha_envio_por_sector'    => maybe_serialize($fechas_envio),
@@ -1562,6 +1680,68 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         // Auditoría: registrar creación
         if (function_exists('crm_debug_sector_save')) {
             crm_debug_sector_save($client_id, 'created', $data);
+        }
+    }
+
+    // ========== AUTO-NOTAS (bitácora del cliente) ==========
+    // Solo registramos auto-notas en updates (en el insert inicial todo
+    // sería "estado borrador → borrador"). Las notas manuales se gestionan
+    // por su propio endpoint AJAX (crm_note_add).
+    if (function_exists('crm_notes_add') && $is_update) {
+        // 1) Cambios de estado por sector.
+        foreach ($new_estado as $s => $e_new) {
+            $e_old = $old_estado[$s] ?? 'borrador';
+            if ($e_old !== $e_new) {
+                crm_notes_log_state_change($client_id, $s, $e_old, $e_new);
+            }
+        }
+
+        // 2) Archivos nuevos (factura/presupuesto/contrato_firmado).
+        $tipos_archivo = [
+            'facturas'           => 'factura',
+            'presupuesto'        => 'presupuesto',
+            'contratos_firmados' => 'contrato_firmado',
+        ];
+        $maps_nuevos = [
+            'facturas'           => $facturas_existentes,
+            'presupuesto'        => $presu_existentes,
+            'contratos_firmados' => $contratos_existentes,
+        ];
+        foreach ($tipos_archivo as $col => $tipo_label) {
+            $previo = maybe_unserialize($client[$col] ?? 'a:0:{}');
+            $previo = is_array($previo) ? $previo : [];
+            foreach ((array) $maps_nuevos[$col] as $sec => $urls) {
+                if (!is_array($urls)) {
+                    continue;
+                }
+                $previas = isset($previo[$sec]) && is_array($previo[$sec]) ? $previo[$sec] : [];
+                $nuevas  = array_values(array_diff($urls, $previas));
+                foreach ($nuevas as $url) {
+                    crm_notes_log_file_upload($client_id, $sec, $tipo_label, $url);
+                }
+                $borradas = array_values(array_diff($previas, $urls));
+                foreach ($borradas as $url) {
+                    crm_notes_add([
+                        'client_id'     => $client_id,
+                        'sector'        => $sec,
+                        'tipo'          => 'file_remove',
+                        'texto'         => sprintf(
+                            'Eliminado %s de %s: %s',
+                            esc_html($tipo_label),
+                            ucfirst($sec),
+                            esc_html(basename($url))
+                        ),
+                        'source_action' => 'auto_file_remove',
+                    ]);
+                }
+            }
+        }
+
+        // 3) Reasignación de comercial (solo si admin la cambió).
+        $uid_old = (int) ($client['user_id'] ?? 0);
+        $uid_new = (int) ($data['user_id']   ?? 0);
+        if ($uid_old !== $uid_new) {
+            crm_notes_log_assignment($client_id, $uid_old, $uid_new);
         }
     }
 
@@ -2235,7 +2415,7 @@ function crm_lista_altas()
         // Función para obtener etiquetas de estado
         function getEstadoLabel(estado) {
             const labels = {
-                'borrador': 'Borrador',
+                'borrador': 'Sin enviar',
                 'enviado': 'Enviado',
                 'presupuesto_generado': 'Presupuesto Generado',
                 'presupuesto_aceptado': 'Presupuesto Aceptado',
@@ -3105,6 +3285,8 @@ function crm_create_clients_table() {
         estado_por_sector longtext,
         fecha_envio_por_sector text NOT NULL,
         usuario_envio_por_sector text NOT NULL,
+        presupuestos_aceptados text DEFAULT NULL,
+        estimado_consumo longtext DEFAULT NULL,
         reenvios int(11) DEFAULT 0,
         PRIMARY KEY (id),
         KEY cliente_nombre (cliente_nombre),
@@ -3187,7 +3369,8 @@ function crm_update_clients_table_structure() {
         'provincia' => "VARCHAR(100) DEFAULT 'León'",
         'comentarios' => "TEXT",
         'actualizado_por' => "BIGINT(20) DEFAULT NULL",
-        'presupuestos_aceptados' => "TEXT DEFAULT NULL"
+        'presupuestos_aceptados' => "TEXT DEFAULT NULL",
+        'estimado_consumo' => "LONGTEXT DEFAULT NULL",
     ];
     
     foreach ($required_columns as $column => $definition) {
@@ -3208,12 +3391,16 @@ function crm_plugin_activation() {
     crm_migrate_to_monthly_logs();
     crm_create_clients_table();
     crm_update_clients_table_structure(); // Actualizar estructura de tabla de clientes
+    if (function_exists('crm_notes_install_table')) {
+        crm_notes_install_table();
+    }
     crm_protect_backup_directory();
     if (function_exists('crm_logger_schedule_cron')) {
         crm_logger_schedule_cron();
     }
     update_option('crm_plugin_version', CRM_PLUGIN_VERSION, false);
     update_option('crm_roles_installed_version', CRM_PLUGIN_VERSION, false);
+    update_option('crm_notes_installed_version', CRM_PLUGIN_VERSION, false);
 }
 
 /**

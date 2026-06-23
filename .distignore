@@ -35,3 +35,7 @@ build-dist.ps1
 crm-backup-*
 *-backup-*
 backup-*
+
+# v1.17 build artifacts
+tools
+

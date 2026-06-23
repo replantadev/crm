@@ -41,3 +41,7 @@ wp-content/cache/
 crm-backup-*/
 *-backup-*/
 backup-*/
+
+# Bundle source de municipios (se descarga al construir)
+tools/ine-municipios.xlsx
+

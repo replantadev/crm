@@ -4213,3 +4213,409 @@ button.aceptar-presupuesto{background:#25C685;color:#fff;font-size:12px;margin:4
     background-size: 10px;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.4);
 }
+
+
+/* ==========================================================================
+   v1.17.0 - Estimado de consumo por sector
+   ========================================================================== */
+.estimado-consumo-section {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 3px solid #3b82f6;
+    border-radius: 6px;
+}
+.estimado-consumo-section strong {
+    display: block;
+    color: #1e3a8a;
+    font-size: 0.95em;
+    margin-bottom: 4px;
+}
+.estimado-consumo-section .estimado-help {
+    margin: 0 0 10px 0;
+    font-size: 0.82em;
+    color: #64748b;
+    line-height: 1.4;
+}
+.estimado-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px;
+}
+.estimado-field { display: flex; flex-direction: column; min-width: 0; }
+.estimado-field label {
+    font-size: 0.75em;
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+.estimado-field select,
+.estimado-field input[type="number"] {
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 0.9em;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    background: #fff;
+    box-sizing: border-box;
+    min-height: 38px;
+}
+.estimado-field select:focus,
+.estimado-field input[type="number"]:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+@media (max-width: 640px) {
+    .estimado-row { grid-template-columns: 1fr; }
+}
+
+/* ==========================================================================
+   v1.17.0 - Notas / Timeline del cliente
+   ========================================================================== */
+.crm-section-notes { margin-top: 24px; }
+.crm-notes-block {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 18px 20px;
+}
+.crm-notes-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.crm-notes-header h3 {
+    margin: 0;
+    font-size: 1.1em;
+    color: #1e3a8a;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.crm-notes-header h3::before {
+    content: '';
+    width: 4px; height: 18px;
+    background: #3b82f6;
+    border-radius: 2px;
+}
+.crm-notes-search {
+    position: relative;
+    flex: 1;
+    max-width: 320px;
+    min-width: 200px;
+}
+.crm-notes-search-input {
+    width: 100%;
+    padding: 7px 30px 7px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 20px;
+    font-size: 0.9em;
+    box-sizing: border-box;
+    min-height: 36px;
+}
+.crm-notes-search-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+}
+.crm-notes-search-clear {
+    position: absolute;
+    right: 8px; top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    font-size: 18px;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 2px 6px;
+}
+.crm-notes-search-clear:hover { color: #ef4444; }
+
+.crm-notes-add {
+    margin-bottom: 18px;
+    padding: 12px;
+    background: #f8fafc;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+}
+.crm-note-textarea {
+    width: 100%;
+    min-height: 64px;
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    font-size: 0.92em;
+    box-sizing: border-box;
+    resize: vertical;
+    font-family: inherit;
+}
+.crm-note-textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+}
+.crm-note-add-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.crm-note-sector-select {
+    flex: 1;
+    min-width: 160px;
+    padding: 6px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    font-size: 0.88em;
+    min-height: 34px;
+}
+.crm-note-add-btn {
+    padding: 8px 16px;
+    background: #3b82f6;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+    min-height: 34px;
+}
+.crm-note-add-btn:hover  { background: #2563eb; }
+.crm-note-add-btn:disabled { background: #94a3b8; cursor: wait; }
+
+.crm-notes-timeline { position: relative; }
+.crm-notes-empty,
+.crm-notes-search-empty {
+    text-align: center;
+    color: #94a3b8;
+    font-style: italic;
+    padding: 24px 12px;
+    margin: 0;
+}
+.crm-notes-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    position: relative;
+}
+.crm-notes-list::before {
+    content: '';
+    position: absolute;
+    left: 12px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: linear-gradient(to bottom, #e2e8f0 0%, #e2e8f0 95%, transparent);
+}
+
+.crm-note {
+    position: relative;
+    padding: 10px 12px 10px 36px;
+    margin-bottom: 10px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    transition: box-shadow 0.15s;
+}
+.crm-note:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+.crm-note::before {
+    content: '';
+    position: absolute;
+    left: 6px; top: 14px;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #94a3b8;
+    border: 3px solid #fff;
+    box-shadow: 0 0 0 1px #e2e8f0;
+}
+.crm-note--manual::before          { background: #3b82f6; }
+.crm-note--state_change::before    { background: #f59e0b; }
+.crm-note--file_upload::before     { background: #10b981; }
+.crm-note--file_remove::before     { background: #ef4444; }
+.crm-note--assignment::before      { background: #8b5cf6; }
+.crm-note--presupuesto_aceptado::before { background: #06b6d4; }
+.crm-note--contrato_generado::before    { background: #14b8a6; }
+
+.crm-note-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+    font-size: 0.78em;
+}
+.crm-note-tipo {
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+.crm-note-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 0.9em;
+    font-weight: 600;
+}
+.crm-note-badge-sector { background: #dbeafe; color: #1e40af; }
+.crm-note-badge-estado { background: #fef3c7; color: #92400e; }
+.crm-note-fecha {
+    color: #94a3b8;
+    margin-left: auto;
+    cursor: help;
+}
+.crm-note-delete {
+    background: none;
+    border: none;
+    color: #cbd5e1;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0 4px;
+}
+.crm-note-delete:hover { color: #ef4444; }
+.crm-note-body {
+    color: #1f2937;
+    font-size: 0.9em;
+    line-height: 1.45;
+    word-break: break-word;
+}
+.crm-note-body a { color: #2563eb; text-decoration: underline; }
+.crm-note-footer {
+    margin-top: 6px;
+    font-size: 0.75em;
+    color: #64748b;
+}
+.crm-note-autor::before { content: '\2014 '; }
+
+@media (max-width: 640px) {
+    .crm-notes-block { padding: 14px; }
+    .crm-notes-header { flex-direction: column; align-items: stretch; }
+    .crm-notes-search { max-width: none; }
+    .crm-note-add-row { flex-direction: column; align-items: stretch; }
+    .crm-note-add-btn,
+    .crm-note-sector-select { width: 100%; }
+}
+
+/* ==========================================================================
+   v1.17.0 - Uploader v8 (dropzone, progress)
+   ========================================================================== */
+.upload-section { position: relative; }
+.upload-input-hidden,
+.crm-upload-input-hidden {
+    position: absolute !important;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0 0 0 0); border: 0;
+}
+.crm-dropzone {
+    margin-top: 8px;
+    padding: 14px 12px;
+    border: 2px dashed #cbd5e1;
+    border-radius: 8px;
+    background: #f8fafc;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    text-align: left;
+}
+.crm-dropzone:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+}
+.upload-section.crm-dropzone-dragover {
+    background: #eff6ff;
+}
+.upload-section.crm-dropzone-dragover .crm-dropzone {
+    border-color: #3b82f6;
+    background: #dbeafe;
+    color: #1e3a8a;
+}
+.crm-dropzone-inner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.crm-dropzone-icon {
+    flex-shrink: 0;
+    color: #3b82f6;
+}
+.crm-dropzone-text strong {
+    display: block;
+    font-size: 0.92em;
+    color: #1e293b;
+    margin-bottom: 2px;
+}
+.crm-dropzone-text small {
+    display: block;
+    font-size: 0.78em;
+    color: #64748b;
+    line-height: 1.4;
+}
+
+.crm-upload-progress-list {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.crm-upload-progress {
+    padding: 6px 10px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    font-size: 0.82em;
+    transition: opacity 0.4s;
+}
+.crm-upload-progress.crm-upload-fadeout { opacity: 0; }
+.crm-upload-progress-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+.crm-upload-name {
+    color: #1e293b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+.crm-upload-state {
+    color: #64748b;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+.crm-upload-bar {
+    width: 100%;
+    height: 4px;
+    background: #e2e8f0;
+    border-radius: 2px;
+    overflow: hidden;
+}
+.crm-upload-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: #3b82f6;
+    transition: width 0.2s linear;
+}
+.crm-upload-done .crm-upload-bar-fill { background: #10b981; }
+.crm-upload-error .crm-upload-bar-fill { background: #ef4444; }
+.crm-upload-retry .crm-upload-bar-fill { background: #f59e0b; }
+.crm-upload-error .crm-upload-state    { color: #b91c1c; }
+.crm-upload-retry .crm-upload-state    { color: #b45309; }
+.crm-upload-done .crm-upload-state     { color: #047857; }
+
+/* En sectores con bastantes archivos el dropzone se vuelve compacto. */
+.upload-section .uploaded-file + .crm-dropzone {
+    margin-top: 6px;
+    padding: 10px;
+}

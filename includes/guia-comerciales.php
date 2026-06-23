@@ -139,12 +139,12 @@ function crm_guia_comerciales_shortcode() {
                 <div class="feature-box">
                     <h4>Estados del cliente:</h4>
                     <ul>
-                        <li><strong>Borrador:</strong> Cliente creado pero no enviado</li>
-                        <li><strong>Enviado:</strong> Comercial completó y envió datos al admin</li>
-                        <li><strong>Presupuesto Generado:</strong> Comercial subió presupuesto al sistema</li>
-                        <li><strong>Presupuesto Aceptado:</strong> Cliente acepta la propuesta</li>
-                        <li><strong>Contratos Generados:</strong> Admin prepara contratos para firma</li>
-                        <li><strong>Contratos Firmados:</strong> Proceso completado</li>
+                        <li><strong>Sin enviar:</strong> Ficha creada pero todavía no se envió al administrador.</li>
+                        <li><strong>Enviado:</strong> Has enviado el sector al admin para que lo revise.</li>
+                        <li><strong>Presupuesto Generado:</strong> Has subido el presupuesto al sistema.</li>
+                        <li><strong>Presupuesto Aceptado:</strong> El cliente aceptó la propuesta.</li>
+                        <li><strong>Contratos Generados:</strong> El admin preparó contratos para firma.</li>
+                        <li><strong>Contratos Firmados:</strong> Proceso completado.</li>
                     </ul>
 
                     <div class="tip-box">
@@ -194,6 +194,65 @@ function crm_guia_comerciales_shortcode() {
                         <li>Asegúrate que se lean todos los datos importantes</li>
                         <li>Si tienes varias páginas, súbelas todas</li>
                         <li>Usa nombres descriptivos si es posible</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section id="novedades-1-17" class="help-section">
+            <h2>Novedades v1.17</h2>
+            <div class="help-content">
+                <h3>Mejoras pensadas para trabajo en campo</h3>
+
+                <div class="feature-box">
+                    <h4>Subir archivos (iPad, móvil, escritorio)</h4>
+                    <ul>
+                        <li>El nuevo sistema sube los archivos <strong>automáticamente</strong> en cuanto los seleccionas, sin tener que pulsar "Subir factura".</li>
+                        <li>Puedes seleccionar <strong>varios archivos a la vez</strong> y se subirán en paralelo.</li>
+                        <li>Verás una <strong>barra de progreso</strong> por archivo y un OK verde cuando termina.</li>
+                        <li>Si la red falla, el sistema <strong>reintenta hasta 3 veces</strong> automáticamente.</li>
+                        <li>Desde iPad/iPhone, al tocar la zona de subida puedes elegir <strong>cámara o galería</strong>.</li>
+                        <li>Acepta JPG, PNG, HEIC (cámara de iPhone), WebP y PDF · hasta 32 MB por archivo.</li>
+                        <li>También puedes <strong>arrastrar y soltar</strong> archivos sobre la zona azul punteada.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Estimado de consumo del cliente</h4>
+                    <p>En cada sector (Energía, Alarmas, Teleco, Seguros, Renovables) ahora aparece un bloque "Estimado de consumo" con tres campos:</p>
+                    <ul>
+                        <li><strong>Rango</strong>: selecciona el tramo que se ajusta al cliente (por ejemplo "1.000 – 3.000 kWh/año").</li>
+                        <li><strong>Valor exacto</strong>: si el cliente te dice un número concreto, escríbelo aquí (admite decimales con coma o punto).</li>
+                        <li><strong>Unidad</strong>: kWh/año, €/mes, kWp, etc. — las opciones cambian según el sector.</li>
+                    </ul>
+                    <p>El estimado <strong>permite enviar el sector al administrador aunque todavía no tengas la factura</strong>. Es la alternativa cuando el cliente no la tiene a mano.</p>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Enviar un sector al administrador</h4>
+                    <ul>
+                        <li>Para enviar un sector ahora se exige <strong>al menos una factura subida O el estimado de consumo</strong> informado.</li>
+                        <li>Sin alguno de los dos, el sistema te avisa y no envía nada.</li>
+                        <li>Si solo quieres dejar la ficha guardada para continuar más tarde, usa <strong>"Guardar ficha"</strong>: ya no existe el botón "Guardar borrador".</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Historial y notas del cliente</h4>
+                    <ul>
+                        <li>Debajo de los sectores tienes un <strong>historial completo</strong> del cliente: cambios de estado, archivos subidos, reasignaciones y tus propias notas manuales.</li>
+                        <li>Puedes <strong>añadir notas</strong> escritas en cualquier momento; opcionalmente las puedes vincular a un sector concreto.</li>
+                        <li>Usa el <strong>buscador del historial</strong> para encontrar notas por palabra clave (por ejemplo "vuelve a llamar" o un nombre).</li>
+                        <li>Atajo: <em>Cmd/Ctrl + Enter</em> dentro del campo de nota la guarda directamente.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Provincias y poblaciones</h4>
+                    <ul>
+                        <li>La lista de provincias y poblaciones ya cubre <strong>toda España</strong> (8.132 municipios oficiales del INE), no solo León.</li>
+                        <li>Empieza a escribir el nombre y el sistema te sugiere coincidencias dentro de la provincia que hayas seleccionado.</li>
+                        <li>Si te falta algún municipio (caso muy raro), avisa al administrador para que regenere el bundle del INE.</li>
                     </ul>
                 </div>
             </div>

@@ -161,7 +161,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     // d) Select Estado (solo 4 básicos)
                     const estados = [
                         { v: '', t: 'Todos los estados' },
-                        { v: 'borrador', t: 'Borrador' },
+                        { v: 'borrador', t: 'Sin enviar' },
                         { v: 'presupuesto_aceptado', t: 'Presupuesto Aceptado' },
                         { v: 'contratos_generados', t: 'Contratos Generados' },
                         { v: 'contratos_firmados', t: 'Contratos Firmados' },
@@ -237,7 +237,7 @@ document.addEventListener("DOMContentLoaded", function () {
         };
 
         const label = {
-            borrador: 'Borrador',
+            borrador: 'Sin enviar',
             enviado: 'Enviado',
             presupuesto_generado: 'Presupuesto Generado',
             presupuesto_aceptado: 'Presupuesto Aceptado',

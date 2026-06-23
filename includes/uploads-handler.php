@@ -10,10 +10,15 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Tamaño máximo de subida (10 MB).
+ * Tamaño máximo de subida (32 MB).
+ *
+ * Se eligió 32 MB para soportar PDFs escaneados de varias páginas
+ * (contratos, presupuestos largos) y fotos HEIC/JPEG de alta resolución
+ * tomadas desde iPad/iPhone sin compresión previa. El cliente JS valida
+ * el mismo umbral antes de subir para evitar tráfico inútil.
  */
 function crm_uploads_max_size() {
-    return 10 * 1024 * 1024;
+    return 32 * 1024 * 1024;
 }
 
 /**
@@ -39,7 +44,7 @@ function crm_handle_secure_upload(array $file, $tipo) {
         return new WP_Error('crm_upload_empty', __('El archivo está vacío.', 'crm-basico'));
     }
     if ((int) $file['size'] > crm_uploads_max_size()) {
-        return new WP_Error('crm_upload_too_big', __('El archivo excede el tamaño permitido de 10 MB.', 'crm-basico'));
+        return new WP_Error('crm_upload_too_big', __('El archivo excede el tamaño permitido de 32 MB.', 'crm-basico'));
     }
 
     if (!isset($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
@@ -51,8 +56,18 @@ function crm_handle_secure_upload(array $file, $tipo) {
     $filename  = sanitize_file_name($file['name'] ?? '');
     $checked   = wp_check_filetype_and_ext($file['tmp_name'], $filename, $allowed);
 
-    if (empty($checked['ext']) || empty($checked['type']) || !in_array($checked['type'], $allowed, true)) {
-        return new WP_Error('crm_upload_bad_type', __('Tipo de archivo no permitido. Solo JPEG, PNG y PDF.', 'crm-basico'));
+    // HEIC/HEIF no tienen sniffer de mime nativo en muchas instalaciones de
+    // PHP, así que aceptamos por extensión cuando el sniffer devuelve vacío.
+    $ext_lower = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    $heic_like = in_array($ext_lower, ['heic', 'heif'], true);
+    if (!$heic_like
+        && (empty($checked['ext']) || empty($checked['type']) || !in_array($checked['type'], $allowed, true))
+    ) {
+        return new WP_Error('crm_upload_bad_type', __('Tipo de archivo no permitido. Solo JPEG, PNG, WebP, HEIC y PDF.', 'crm-basico'));
+    }
+    if ($heic_like) {
+        $checked['ext']  = $ext_lower;
+        $checked['type'] = $ext_lower === 'heic' ? 'image/heic' : 'image/heif';
     }
 
     // Reescribir el nombre saneado y la extensión real detectada para evitar

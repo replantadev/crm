@@ -1030,7 +1030,7 @@ function crm_rendimiento_comercial_widget() {
             <div class="stats-grid-compact">
                 <?php 
                 $labels = array(
-                    'borrador' => 'Borrador',
+                    'borrador' => 'Sin enviar',
                     'presupuesto_aceptado' => 'Presup. Aceptado', 
                     'contratos_generados' => 'Contratos Gen.',
                     'contratos_firmados' => 'Contratos Firm.'
@@ -1089,7 +1089,7 @@ function crm_comerciales_estadisticas_widget() {
                         <tr>
                             <th>#</th>
                             <th>Comercial</th>
-                            <th>Borrador</th>
+                            <th>Sin enviar</th>
                             <th>Presup. Acept.</th>
                             <th>Contr. Gen.</th>
                             <th>Contr. Firm.</th>

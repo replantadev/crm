@@ -110,8 +110,8 @@ function crm_guia_admin_shortcode() {
                     <h4>Flujo de estados automático:</h4>
                     <div class="workflow-diagram">
                         <div class="workflow-step">
-                            <strong>Borrador</strong>
-                            <p>Cliente creado pero no enviado</p>
+                            <strong>Sin enviar</strong>
+                            <p>Ficha creada pero no enviada</p>
                         </div>
                         <div class="workflow-arrow">→</div>
                         <div class="workflow-step">
@@ -145,8 +145,8 @@ function crm_guia_admin_shortcode() {
                     <h4>Flujo detallado por sector</h4>
                     <p>Cada sector tiene su propio estado independiente. A continuación se describen los estados posibles y qué los provoca:</p>
                     <ul>
-                        <li><strong>Borrador:</strong> ficha creada o sector añadido pero no enviado.</li>
-                        <li><strong>Enviado:</strong> el comercial marca el envío del sector (o admin marca envío para el sector). Si se envía y no había estado previo, pasa de <em>borrador</em> a <em>enviado</em>.</li>
+                        <li><strong>Sin enviar:</strong> ficha creada o sector añadido pero todavía no enviado.</li>
+                        <li><strong>Enviado:</strong> el comercial marca el envío del sector (o admin marca envío para el sector). Si se envía y no había estado previo, pasa de <em>sin enviar</em> a <em>enviado</em>.</li>
                         <li><strong>Presupuesto Generado:</strong> existe un archivo de presupuesto subido para ese sector; la lógica automática actualiza <em>enviado → presupuesto_generado</em>.</li>
                         <li><strong>Presupuesto Aceptado:</strong> cuando el comercial o el admin marca la aceptación del presupuesto (checkbox). Este estado puede forzarse o marcarse automáticamente si hay contratos firmados.</li>
                         <li><strong>Contratos Generados:</strong> admin marca que ha generado los contratos (checkbox de contratos generados) o la lógica avanza desde <em>presupuesto_aceptado</em> si procede.</li>
@@ -325,7 +325,72 @@ function crm_guia_admin_shortcode() {
                         <li>Revisa logs de error regularmente</li>
                         <li>Mantén actualizado el plugin CRM</li>
                         <li>Realiza copias de seguridad de archivos subidos</li>
-                        <li>Limpia clientes en borrador antiguos periódicamente</li>
+                        <li>Limpia fichas "Sin enviar" antiguas periódicamente</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section id="novedades-1-17" class="help-section">
+            <h2>Novedades v1.17 (administración)</h2>
+            <div class="help-content">
+                <h3>Cambios clave a partir de la versión 1.17.0</h3>
+
+                <div class="feature-box">
+                    <h4>Cobertura nacional de municipios (INE)</h4>
+                    <ul>
+                        <li>El selector de provincias y poblaciones incluye los <strong>52 territorios oficiales</strong> (incluye Ceuta, Melilla, Bizkaia, Gipuzkoa, A Coruña, Ourense, Illes Balears, …) y <strong>8.132 municipios</strong> del INE.</li>
+                        <li>El bundle se genera con el script <code>tools/build-municipios.ps1</code>, que descarga y cachea <code>https://www.ine.es/daco/daco42/codmun/diccionario25.xlsx</code> en <code>tools/ine-municipios.xlsx</code> y produce <code>assets/data/municipios-es.json</code>.</li>
+                        <li>Si el INE publica una revisión nueva, basta volver a ejecutar el script y desplegar; el JSON se sirve cacheado por el navegador.</li>
+                        <li>Los nombres antiguos guardados (Vizcaya, La Coruña, Orense, Islas Baleares, Guipúzcoa, …) se normalizan automáticamente al guardar la ficha.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Historial / notas del cliente con búsqueda</h4>
+                    <ul>
+                        <li>Cada ficha incluye un <strong>timeline vertical</strong> con notas manuales y eventos automáticos: cambios de estado por sector, subidas y borrados de archivos, reasignaciones de comercial, presupuestos aceptados, contratos generados.</li>
+                        <li>Tabla nueva <code>wp_crm_notes</code> creada en la activación (InnoDB con índice <code>FULLTEXT</code>; fallback a MyISAM si el motor lo requiere).</li>
+                        <li>La búsqueda usa <strong>MATCH ... AGAINST en modo BOOLEAN</strong> con tokens prefijo (<code>palabra*</code>) y cae a <code>LIKE</code> si el FT no está disponible.</li>
+                        <li>Permisos: cualquier usuario con acceso a la ficha (admin o comercial dueño) puede leer y escribir notas; sólo el autor o un admin pueden borrarlas.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Estimado de consumo por sector</h4>
+                    <ul>
+                        <li>Nuevo campo serializado <code>estimado_consumo</code> en <code>wp_crm_clients</code> con tres controles por sector: <em>rango</em>, <em>valor exacto</em>, <em>unidad</em>.</li>
+                        <li>Catálogos definidos en <code>includes/data.php</code> (función <code>crm_get_estimado_opciones()</code>). Para añadir un rango o una unidad, edita ese array y publica una versión nueva.</li>
+                        <li>El estimado <strong>sustituye a la factura</strong> a efectos de poder enviar un sector cuando el cliente no la tiene a mano.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Validación al enviar un sector</h4>
+                    <ul>
+                        <li>Al pulsar "Enviar" en un sector el servidor exige <strong>al menos una factura subida o el estimado informado</strong>.</li>
+                        <li>El admin sigue pudiendo saltarse la validación con <em>Forzar estado</em>.</li>
+                        <li>El botón "Guardar borrador" desaparece de la UI; queda <strong>"Guardar ficha"</strong> (comercial) y <strong>"Guardar y notificar comercial"</strong> (admin, que además dispara el email). El valor interno <code>borrador</code> se mantiene en BD por compatibilidad.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Uploader de archivos rediseñado (v8)</h4>
+                    <ul>
+                        <li>Subida automática al seleccionar archivos, varios a la vez, barra de progreso por archivo y reintentos automáticos (3) con backoff exponencial.</li>
+                        <li>Soporta <strong>HEIC/HEIF</strong> (cámara iPhone), JPG, PNG, WebP y PDF; tamaño máximo <strong>32 MB</strong> por archivo.</li>
+                        <li>En móvil añade <code>capture="environment"</code> para abrir directamente la cámara trasera.</li>
+                        <li>Drag &amp; drop sobre la zona azul punteada también funciona en escritorio.</li>
+                        <li>El handler antiguo <code>upload-btn</code> queda en cortocircuito si detecta <code>window.CRM_UPLOADER_V8</code> para evitar dobles subidas.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Operación y mantenimiento</h4>
+                    <ul>
+                        <li>El plugin se actualiza automáticamente desde <code>https://github.com/replantadev/crm/</code> rama <code>master</code> vía <code>yahnis-elsts/plugin-update-checker</code>.</li>
+                        <li>El paquete distribuible se genera con <code>tools/build-dist.ps1</code> (.NET ZipArchive, rutas con barras correctas para WordPress).</li>
+                        <li>Si un comercial avisa de un municipio que no aparece: ejecuta <code>tools/build-municipios.ps1</code> con la última hoja del INE y publica una versión.</li>
                     </ul>
                 </div>
             </div>

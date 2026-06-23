@@ -280,6 +280,10 @@ function showToast(msg, tipo, duration = 4000) {
     // ————— Subida de archivos —————
     form.addEventListener("click", async e => {
         if (!e.target.matches(".upload-btn")) return;
+        // Desde v1.17 el módulo `js/crm-uploads.js` gestiona la subida
+        // (auto-upload en `change`, drag&drop, progress, retry, multi-file).
+        // Si está activo, no duplicamos el envío para evitar dobles subidas.
+        if (window.CRM_UPLOADER_V8) { return; }
         const btn = e.target;
         
         // Prevenir múltiples clics mientras se procesa

@@ -125,3 +125,30 @@ add_action('init', function () {
     crm_install_roles();
     update_option('crm_roles_installed_version', CRM_PLUGIN_VERSION, false);
 }, 5);
+
+/**
+ * Garantía dinámica: cualquier usuario con `manage_options` (el rol
+ * `administrator` de WordPress por defecto) recibe en tiempo de petición
+ * todas las capabilities del CRM sin depender del estado guardado en la
+ * tabla de roles.
+ *
+ * Esto evita el síntoma "el menú CRM no aparece tras instalar/actualizar":
+ * antes el panel de admin solo se renderizaba si el usuario tenía la
+ * capability `crm_admin` que se sincronizaba en activación. Si la
+ * activación se saltaba (silent upgrade) o la opción ya estaba guardada con
+ * la misma versión, el sync no se reejecutaba y los administradores se
+ * quedaban sin el cap. Con este filtro la cap se concede en runtime
+ * siempre, mientras el usuario sea administrador.
+ */
+add_filter('user_has_cap', function ($allcaps, $caps, $args, $user) {
+    if (empty($allcaps['manage_options'])) {
+        return $allcaps;
+    }
+    foreach (array_keys(crm_admin_caps()) as $cap) {
+        if ($cap === 'read') {
+            continue;
+        }
+        $allcaps[$cap] = true;
+    }
+    return $allcaps;
+}, 10, 4);

@@ -129,6 +129,11 @@ add_action('upgrader_process_complete', function ($upgrader, $hook_extra) {
 /**
  * Fuerza una comprobación inmediata de actualizaciones.
  *
+ * Invalida tanto la caché interna de Plugin Update Checker como el
+ * site-transient de WordPress (`update_plugins`) para que el badge de
+ * "Actualización disponible" aparezca inmediatamente en la pantalla de
+ * Plugins sin esperar al cron de 12 h.
+ *
  * @return array{checked:bool,update_available:bool,remote_version:?string}
  */
 function crm_force_update_check() {
@@ -137,9 +142,23 @@ function crm_force_update_check() {
         return ['checked' => false, 'update_available' => false, 'remote_version' => null];
     }
 
+    // 1) Vaciar el estado cacheado de PUC para forzar una consulta fresca a GitHub.
+    if (method_exists($checker, 'resetUpdateState')) {
+        $checker->resetUpdateState();
+    }
+
+    // 2) Pedir el último metadata a GitHub.
     $info = $checker->requestUpdate();
     $remote = $info && !empty($info->version) ? (string) $info->version : null;
     $current = defined('CRM_PLUGIN_VERSION') ? CRM_PLUGIN_VERSION : '0.0.0';
+
+    // 3) Forzar a WordPress a regenerar su transient de actualizaciones; PUC se
+    //    engancha a `pre_set_site_transient_update_plugins` y reinyectará la
+    //    nueva versión, con lo que el badge aparece ya en Plugins / Updates.
+    delete_site_transient('update_plugins');
+    if (function_exists('wp_update_plugins')) {
+        wp_update_plugins();
+    }
 
     update_option('crm_last_update_check', time(), false);
 

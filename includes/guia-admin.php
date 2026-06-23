@@ -331,6 +331,62 @@ function crm_guia_admin_shortcode() {
             </div>
         </section>
 
+        <section id="novedades-1-20" class="help-section">
+            <h2>Novedades v1.20 (visitas y decisión)</h2>
+            <div class="help-content">
+                <h3>Cambios clave a partir de la versión 1.20.0</h3>
+
+                <div class="feature-box">
+                    <h4>Estado de decisión por sector</h4>
+                    <p>
+                        En cada sector de la ficha aparece un campo <strong>"Estado de decisión"</strong>
+                        editable por comercial y admin. Sirve para indicar por qué un sector no avanza:
+                    </p>
+                    <ul>
+                        <li><strong>Pendiente financiación</strong> — esperando respuesta de banco / aval.</li>
+                        <li><strong>Pendiente competencia</strong> — el cliente está comparando con otra oferta.</li>
+                        <li><strong>Decisión pendiente</strong> — el cliente aún no se ha pronunciado.</li>
+                        <li><strong>Pendiente visita</strong> — falta visita comercial presencial.</li>
+                    </ul>
+                    <p>El estado aparece como <em>pill</em> al lado del estado principal del sector y se cuenta en el dashboard admin.</p>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Sistema de visitas</h4>
+                    <p>
+                        Nueva tabla <code>wp_crm_visitas</code> y página <strong>"Mi agenda"</strong> en el menú lateral.
+                        En cada ficha de cliente hay un bloque <strong>"Visitas"</strong> para agendar, listar y marcar
+                        como realizada / no presentado / cancelada.
+                    </p>
+                    <ul>
+                        <li>Comerciales ven solo sus propias visitas.</li>
+                        <li>Admin ve todas y puede asignar a cualquier comercial al crear.</li>
+                        <li>El dashboard admin incluye KPIs: visitas de hoy, próximos 7 días y total programadas.</li>
+                    </ul>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Leads MK: detección flexible de ID + forzar resync</h4>
+                    <p>
+                        El sync con Google Sheets ahora detecta columnas variantes (<code>id</code>, <code>lead_id</code>,
+                        <code>idlead</code>…) y, si falta, genera un id sintético basado en email + teléfono + nombre.
+                        El mensaje de resultado desglosa <em>nuevos · duplicados · omitidos (sin id · ya procesados · errores)</em>.
+                    </p>
+                    <p>Nuevo botón <strong>"Forzar resincronización"</strong> que ignora el cursor.</p>
+                </div>
+
+                <div class="feature-box">
+                    <h4>Helper de rol estricto</h4>
+                    <p>
+                        Los controles del administrador en la ficha ahora se renderizan en función del
+                        <strong>rol explícito</strong> del usuario (<code>administrator</code> o <code>crm_admin</code>),
+                        no de la capability <code>crm_admin</code>. Un usuario con solo rol "comercial" no verá los
+                        controles de admin aunque otro plugin le inyecte la capability.
+                    </p>
+                </div>
+            </div>
+        </section>
+
         <section id="novedades-1-19" class="help-section">
             <h2>Novedades v1.19 (rediseño UI)</h2>
             <div class="help-content">

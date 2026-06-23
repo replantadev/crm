@@ -199,6 +199,40 @@ function crm_guia_comerciales_shortcode() {
             </div>
         </section>
 
+        <section id="novedades-1-20" class="help-section">
+            <h2>Novedades v1.20</h2>
+            <div class="help-content">
+                <h3>Lo nuevo para ti</h3>
+                <div class="feature-box">
+                    <h4>Estado de decisión por sector</h4>
+                    <p>
+                        En cada sector tienes ahora un campo <strong>"Estado de decisión"</strong> para indicar por qué
+                        un sector está bloqueado o pendiente. Es independiente del estado principal (borrador / enviado / etc.)
+                        y sirve para que el admin sepa de un vistazo en qué punto está el cliente.
+                    </p>
+                    <ul>
+                        <li><strong>Pendiente financiación</strong> — estamos esperando respuesta del banco/aval.</li>
+                        <li><strong>Pendiente competencia</strong> — el cliente está comparando con otra oferta.</li>
+                        <li><strong>Decisión pendiente</strong> — el cliente aún no ha contestado.</li>
+                        <li><strong>Pendiente visita</strong> — falta visita comercial presencial.</li>
+                    </ul>
+                </div>
+                <div class="feature-box">
+                    <h4>Agenda de visitas</h4>
+                    <p>
+                        Tienes una nueva sección <strong>"Mi agenda"</strong> en el menú lateral con todas tus
+                        visitas. Desde la ficha de cada cliente, en el bloque <strong>"Visitas"</strong>:
+                    </p>
+                    <ul>
+                        <li>Pulsa <strong>"+ Agendar visita"</strong> e indica fecha, hora, duración, sector y notas.</li>
+                        <li>Cuando hagas la visita, márcala como <strong>Realizada</strong> (✓) o como <strong>No se presentó</strong> (!).</li>
+                        <li>Cancela la visita si el cliente la pospone.</li>
+                    </ul>
+                    <p>Solo ves tus propias visitas; el administrador ve las de todos los comerciales.</p>
+                </div>
+            </div>
+        </section>
+
         <section id="novedades-1-19" class="help-section">
             <h2>Novedades v1.19</h2>
             <div class="help-content">

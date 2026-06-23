@@ -181,6 +181,60 @@ function crm_admin_render_dashboard() {
             <?php endforeach; ?>
         </tbody>
     </table>
+
+    <?php
+    // v1.20.0 — KPIs de estado_decision por sector
+    if (function_exists('crm_get_decisiones_sector')) {
+        $rows = $wpdb->get_results("SELECT decision_por_sector FROM `$clients_table` WHERE decision_por_sector IS NOT NULL AND decision_por_sector <> ''", ARRAY_A);
+        $counts = [];
+        foreach ($rows as $r) {
+            $arr = maybe_unserialize($r['decision_por_sector']);
+            if (!is_array($arr)) continue;
+            foreach ($arr as $sector => $dec) {
+                if ($dec === '' || $dec === null) continue;
+                $counts[$dec] = ($counts[$dec] ?? 0) + 1;
+            }
+        }
+        $defs = crm_get_decisiones_sector();
+        unset($defs['']);
+        ?>
+        <h2 style="margin-top:24px;">Decisiones pendientes (v1.20)</h2>
+        <p class="description">Sectores con bloqueo o pendiente declarado por el comercial / admin.</p>
+        <table class="widefat striped" style="max-width:600px">
+            <thead><tr><th>Tipo de decisión</th><th style="width:120px;">Sectores</th></tr></thead>
+            <tbody>
+                <?php foreach ($defs as $key => $cfg): ?>
+                    <tr>
+                        <td><?php echo esc_html($cfg['label']); ?></td>
+                        <td><strong><?php echo (int) ($counts[$key] ?? 0); ?></strong></td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+
+        <?php
+        // KPIs de visitas
+        if (function_exists('crm_visitas_count')) {
+            $vis_hoy   = crm_visitas_count(['desde' => date('Y-m-d'), 'hasta' => date('Y-m-d')]);
+            $vis_sem   = crm_visitas_count(['desde' => date('Y-m-d'), 'hasta' => date('Y-m-d', strtotime('+7 days'))]);
+            $vis_prog  = crm_visitas_count(['estado' => 'programada']);
+            ?>
+            <h2 style="margin-top:24px;">Visitas (v1.20)</h2>
+            <table class="widefat striped" style="max-width:600px">
+                <thead><tr><th>Rango</th><th style="width:120px;">Visitas</th></tr></thead>
+                <tbody>
+                    <tr><td>Hoy</td><td><strong><?php echo (int) $vis_hoy; ?></strong></td></tr>
+                    <tr><td>Próximos 7 días</td><td><strong><?php echo (int) $vis_sem; ?></strong></td></tr>
+                    <tr><td>Total programadas</td><td><strong><?php echo (int) $vis_prog; ?></strong></td></tr>
+                </tbody>
+            </table>
+            <p style="margin-top:8px;">
+                <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=crm-mi-agenda')); ?>">Abrir agenda</a>
+            </p>
+            <?php
+        }
+    }
+    ?>
     <?php
     crm_admin_page_footer();
 }

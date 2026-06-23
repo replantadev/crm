@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.19.2
+Version: 1.20.0
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.19.2');
+define('CRM_PLUGIN_VERSION', '1.20.0');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -73,6 +73,8 @@ require_once CRM_PLUGIN_PATH . 'includes/leads-mk-shortcode.php';
 require_once CRM_PLUGIN_PATH . 'includes/icons.php';
 require_once CRM_PLUGIN_PATH . 'includes/ui-helpers.php';
 require_once CRM_PLUGIN_PATH . 'includes/app-shell.php';
+// v1.20.0 — Sistema de visitas
+require_once CRM_PLUGIN_PATH . 'includes/visitas.php';
 // Incluir archivos del plugin
 require_once CRM_PLUGIN_PATH . 'acceso.php';
 require_once CRM_PLUGIN_PATH . 'shortcodes.php';
@@ -80,6 +82,7 @@ require_once CRM_PLUGIN_PATH . 'shortcodes.php';
 // Página de administración WP (menú "CRM"). Solo en wp-admin.
 if (is_admin()) {
     require_once CRM_PLUGIN_PATH . 'includes/admin-page.php';
+    require_once CRM_PLUGIN_PATH . 'includes/agenda-page.php';
 }
 
 // Incluir páginas de ayuda
@@ -1209,6 +1212,13 @@ function crm_formulario_alta_cliente()
             </div>
         <?php endif; ?>
     </form>
+
+    <?php
+    // v1.20.0 — Bloque de visitas (fuera del form principal para evitar anidación de <form>)
+    if ($client_id && function_exists('crm_render_visitas_box')) {
+        crm_render_visitas_box((int) $client_id);
+    }
+    ?>
 
     <script>
     // Validación de email en tiempo real
@@ -3685,6 +3695,9 @@ function crm_plugin_activation() {
     if (function_exists('crm_notes_install_table')) {
         crm_notes_install_table();
     }
+    if (function_exists('crm_visitas_install_table')) {
+        crm_visitas_install_table();
+    }
     crm_protect_backup_directory();
     if (function_exists('crm_logger_schedule_cron')) {
         crm_logger_schedule_cron();
@@ -3692,6 +3705,7 @@ function crm_plugin_activation() {
     update_option('crm_plugin_version', CRM_PLUGIN_VERSION, false);
     update_option('crm_roles_installed_version', CRM_PLUGIN_VERSION, false);
     update_option('crm_notes_installed_version', CRM_PLUGIN_VERSION, false);
+    update_option('crm_visitas_installed_version', CRM_PLUGIN_VERSION, false);
 }
 
 /**
@@ -3861,6 +3875,9 @@ add_action('plugins_loaded', function() {
     $current_version = get_option('crm_plugin_version', '0.0.0');
     if (version_compare($current_version, CRM_PLUGIN_VERSION, '<')) {
         crm_update_clients_table_structure();
+        if (function_exists('crm_visitas_install_table')) {
+            crm_visitas_install_table();
+        }
         update_option('crm_plugin_version', CRM_PLUGIN_VERSION);
     }
 });

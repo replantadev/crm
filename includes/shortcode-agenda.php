@@ -30,6 +30,11 @@ function crm_shortcode_mi_agenda($atts = []) {
 
     $is_admin     = function_exists('crm_user_is_admin')     && crm_user_is_admin();
     $is_visitador = function_exists('crm_user_is_visitador') && crm_user_is_visitador();
+    $current_uid  = get_current_user_id();
+    // v1.20.15: un comercial debe ver tanto las visitas asignadas a el como
+    // las que el mismo ha creado y delegado a un visitador. Un visitador puro
+    // sigue viendo solo las suyas (las que tiene asignadas).
+    $is_comercial_no_visitador = !$is_admin && !$is_visitador;
 
     // Filtros (GET)
     $filtro_estado    = isset($_GET['estado']) ? sanitize_key($_GET['estado']) : '';
@@ -46,12 +51,24 @@ function crm_shortcode_mi_agenda($atts = []) {
         'order'   => 'ASC',
     ];
     if (!$is_admin) {
-        $args['comercial_id'] = get_current_user_id();
+        $args['comercial_id'] = $current_uid;
+        if ($is_comercial_no_visitador) {
+            // v1.20.15: incluir visitas creadas por mi (delegadas a visitadores).
+            $args['or_creado_por'] = $current_uid;
+        }
     } elseif ($filtro_comercial > 0) {
         $args['comercial_id'] = $filtro_comercial;
     }
 
     $visitas = crm_visitas_list($args);
+    // v1.20.15: fallback informativo — si la consulta esta vacia y NO es admin,
+    // miramos si hay visitas del usuario fuera del rango para sugerirle ampliar.
+    $fuera_rango = 0;
+    if (empty($visitas) && !$is_admin) {
+        $args_total = $args;
+        unset($args_total['desde'], $args_total['hasta'], $args_total['estado']);
+        $fuera_rango = crm_visitas_count($args_total);
+    }
     $estados = crm_visitas_estados();
 
     $msg = isset($_GET['crm_visita_msg']) ? sanitize_key($_GET['crm_visita_msg']) : '';
@@ -140,6 +157,13 @@ function crm_shortcode_mi_agenda($atts = []) {
         <?php if (empty($visitas)): ?>
             <p style="padding:18px; background:#fff; border:1px solid #e2e8f0; border-radius:6px;">
                 No hay visitas que coincidan con los filtros.
+                <?php if (!$is_admin && $fuera_rango > 0): ?>
+                    <br><small style="color:#92400e;">
+                        Tienes <strong><?php echo (int) $fuera_rango; ?></strong>
+                        visita<?php echo $fuera_rango === 1 ? '' : 's'; ?> fuera de este rango de fechas.
+                        Amplía el filtro de fechas para verlas.
+                    </small>
+                <?php endif; ?>
             </p>
         <?php else: ?>
             <div style="overflow-x:auto;">
@@ -155,7 +179,7 @@ function crm_shortcode_mi_agenda($atts = []) {
                         <th style="padding:10px 8px;">Sector</th>
                         <th style="padding:10px 8px;">Lugar</th>
                         <th style="padding:10px 8px;">Estado</th>
-                        <?php if ($is_admin): ?><th style="padding:10px 8px;">Asignado a</th><?php endif; ?>
+                        <?php if ($is_admin || $is_comercial_no_visitador): ?><th style="padding:10px 8px;">Asignado a</th><?php endif; ?>
                         <th style="padding:10px 8px;">Acciones</th>
                     </tr>
                 </thead>
@@ -219,8 +243,22 @@ function crm_shortcode_mi_agenda($atts = []) {
                                     <?php echo esc_html($estado_label); ?>
                                 </span>
                             </td>
-                            <?php if ($is_admin): ?>
-                                <td style="padding:10px 8px;"><?php echo $com_user ? esc_html($com_user->display_name) : '—'; ?></td>
+                            <?php if ($is_admin || $is_comercial_no_visitador): ?>
+                                <td style="padding:10px 8px;">
+                                    <?php
+                                    if (!$com_user) {
+                                        echo '—';
+                                    } elseif ((int) $com_user->ID === (int) $current_uid) {
+                                        echo '<em style="color:#64748b;">Yo</em>';
+                                    } else {
+                                        echo esc_html($com_user->display_name);
+                                        // Si soy comercial y la delegue a un visitador, marcarlo.
+                                        if ($is_comercial_no_visitador && in_array('visitador', (array) $com_user->roles, true)) {
+                                            echo ' <span style="display:inline-block; padding:1px 6px; background:#f59e0b; color:#fff; border-radius:8px; font-size:10px; font-weight:600;">visitador</span>';
+                                        }
+                                    }
+                                    ?>
+                                </td>
                             <?php endif; ?>
                             <td style="padding:10px 8px; white-space:nowrap;">
                                 <?php if ($can && $v['estado'] === 'programada'): ?>

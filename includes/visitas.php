@@ -259,6 +259,7 @@ function crm_visitas_list($args = []) {
     $defaults = [
         'client_id'    => 0,
         'comercial_id' => 0,
+        'or_creado_por'=> 0, // v1.20.15: incluir tambien visitas creadas por este usuario
         'estado'       => '',
         'desde'        => '',
         'hasta'        => '',
@@ -275,9 +276,19 @@ function crm_visitas_list($args = []) {
         $where[] = 'client_id = %d';
         $params[] = (int) $args['client_id'];
     }
-    if (!empty($args['comercial_id'])) {
+    // v1.20.15: si or_creado_por se rellena junto a comercial_id, hacemos OR.
+    // Asi un comercial ve tanto las visitas asignadas a el como las que el
+    // mismo ha creado para asignar a un visitador.
+    if (!empty($args['comercial_id']) && !empty($args['or_creado_por'])) {
+        $where[] = '(comercial_id = %d OR creado_por = %d)';
+        $params[] = (int) $args['comercial_id'];
+        $params[] = (int) $args['or_creado_por'];
+    } elseif (!empty($args['comercial_id'])) {
         $where[] = 'comercial_id = %d';
         $params[] = (int) $args['comercial_id'];
+    } elseif (!empty($args['or_creado_por'])) {
+        $where[] = 'creado_por = %d';
+        $params[] = (int) $args['or_creado_por'];
     }
     if (!empty($args['estado']) && array_key_exists($args['estado'], crm_visitas_estados())) {
         $where[] = 'estado = %s';
@@ -310,11 +321,22 @@ function crm_visitas_list($args = []) {
  */
 function crm_visitas_count($args = []) {
     global $wpdb;
-    $args = wp_parse_args($args, ['client_id' => 0, 'comercial_id' => 0, 'estado' => '', 'desde' => '', 'hasta' => '']);
+    $args = wp_parse_args($args, ['client_id' => 0, 'comercial_id' => 0, 'or_creado_por' => 0, 'estado' => '', 'desde' => '', 'hasta' => '']);
     $where = ['1=1'];
     $params = [];
     if (!empty($args['client_id']))    { $where[] = 'client_id = %d';    $params[] = (int) $args['client_id']; }
-    if (!empty($args['comercial_id'])) { $where[] = 'comercial_id = %d'; $params[] = (int) $args['comercial_id']; }
+    // v1.20.15: mismo patron OR que crm_visitas_list.
+    if (!empty($args['comercial_id']) && !empty($args['or_creado_por'])) {
+        $where[] = '(comercial_id = %d OR creado_por = %d)';
+        $params[] = (int) $args['comercial_id'];
+        $params[] = (int) $args['or_creado_por'];
+    } elseif (!empty($args['comercial_id'])) {
+        $where[] = 'comercial_id = %d';
+        $params[] = (int) $args['comercial_id'];
+    } elseif (!empty($args['or_creado_por'])) {
+        $where[] = 'creado_por = %d';
+        $params[] = (int) $args['or_creado_por'];
+    }
     if (!empty($args['estado']) && array_key_exists($args['estado'], crm_visitas_estados())) {
         $where[] = 'estado = %s';
         $params[] = $args['estado'];
@@ -991,4 +1013,143 @@ function crm_render_visitas_box($client_id) {
         </div>
     </div>
     <?php
+}
+
+/* =========================================================================
+ * WIDGET ESCRITORIO: [crm_proximas_visitas]
+ * v1.20.15 — listado compacto de próximas visitas para colocar en /crm.
+ *
+ * - admin: próximas N visitas (cualquier asignado) en los próximos 30 días.
+ * - comercial: visitas asignadas a él + visitas que ha creado (delegadas a
+ *   visitadores), próximos 30 días.
+ * - visitador: visitas asignadas a él, próximos 30 días.
+ *
+ * Atributos: limit (5), days (30), title ("Próximas visitas").
+ * ========================================================================= */
+
+add_shortcode('crm_proximas_visitas', 'crm_render_proximas_visitas_widget');
+function crm_render_proximas_visitas_widget($atts = []) {
+    if (!is_user_logged_in()) {
+        return '';
+    }
+    $atts = shortcode_atts([
+        'limit' => 5,
+        'days'  => 30,
+        'title' => 'Próximas visitas',
+    ], $atts, 'crm_proximas_visitas');
+
+    $is_admin     = function_exists('crm_user_is_admin')     && crm_user_is_admin();
+    $is_visitador = function_exists('crm_user_is_visitador') && crm_user_is_visitador();
+    $uid          = get_current_user_id();
+    $limit        = max(1, min(50, (int) $atts['limit']));
+    $days         = max(1, min(365, (int) $atts['days']));
+
+    $args = [
+        'estado'  => 'programada',
+        'desde'   => date('Y-m-d'),
+        'hasta'   => date('Y-m-d', strtotime('+' . $days . ' days')),
+        'limit'   => $limit,
+        'orderby' => 'fecha_visita',
+        'order'   => 'ASC',
+    ];
+    if (!$is_admin) {
+        $args['comercial_id'] = $uid;
+        if (!$is_visitador) {
+            // comercial: ver sus asignadas y las que delegó
+            $args['or_creado_por'] = $uid;
+        }
+    }
+    $visitas = crm_visitas_list($args);
+    $agenda_url = '';
+    $page = get_page_by_path('mi-agenda');
+    if ($page) {
+        $agenda_url = get_permalink($page);
+    } else {
+        $agenda_url = home_url('/mi-agenda/');
+    }
+
+    $sectores_lbl = [
+        'energia'            => 'Energía',
+        'alarmas'            => 'Alarmas',
+        'telecomunicaciones' => 'Telecom',
+        'seguros'            => 'Seguros',
+        'renovables'         => 'Renovables',
+    ];
+
+    ob_start();
+    ?>
+    <div class="crm-widget-compact crm-widget-proximas-visitas" style="background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:14px; margin-bottom:16px;">
+        <div class="widget-header-compact" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+            <h3 class="widget-title-compact" style="margin:0; font-size:15px; display:inline-flex; align-items:center; gap:8px;">
+                <?php echo function_exists('crm_icon') ? crm_icon('calendar', 18) : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                <?php echo esc_html($atts['title']); ?>
+            </h3>
+            <a href="<?php echo esc_url($agenda_url); ?>" style="font-size:12px; color:#475569; text-decoration:none;">Ver agenda →</a>
+        </div>
+        <?php if (empty($visitas)): ?>
+            <p style="margin:0; color:#64748b; font-size:13px;">No tienes visitas programadas en los próximos <?php echo (int) $days; ?> días.</p>
+        <?php else: ?>
+            <ul style="list-style:none; margin:0; padding:0;">
+                <?php
+                global $wpdb;
+                $client_table = $wpdb->prefix . 'crm_clients';
+                foreach ($visitas as $v):
+                    $client = $wpdb->get_row($wpdb->prepare("SELECT id, cliente_nombre, telefono FROM $client_table WHERE id = %d", (int) $v['client_id']), ARRAY_A);
+                    $com_user = $v['comercial_id'] ? get_userdata((int) $v['comercial_id']) : null;
+                    $fecha_dt = mysql2date('d/m H:i', $v['fecha_visita']);
+                    $delegada = !$is_admin && !$is_visitador && $com_user && (int) $com_user->ID !== (int) $uid;
+                    $row_bg = $delegada ? '#fff8e1' : 'transparent';
+                ?>
+                    <li style="padding:8px 6px; border-top:1px solid #f1f5f9; display:flex; gap:10px; align-items:flex-start; background:<?php echo esc_attr($row_bg); ?>;">
+                        <div style="flex:0 0 auto; min-width:70px; font-weight:600; color:#0f172a; font-size:13px;"><?php echo esc_html($fecha_dt); ?></div>
+                        <div style="flex:1 1 auto; font-size:13px;">
+                            <div style="font-weight:600; color:#0f172a;">
+                                <?php echo $client ? esc_html($client['cliente_nombre']) : 'Cliente #' . (int) $v['client_id']; ?>
+                            </div>
+                            <div style="color:#64748b; font-size:12px; margin-top:2px;">
+                                <?php if (!empty($v['sector'])): ?>
+                                    <span><?php echo esc_html($sectores_lbl[$v['sector']] ?? $v['sector']); ?></span>
+                                <?php endif; ?>
+                                <?php if (!empty($v['lugar'])): ?>
+                                    <?php if (!empty($v['sector'])): ?> · <?php endif; ?>
+                                    <span><?php echo esc_html($v['lugar']); ?></span>
+                                <?php endif; ?>
+                                <?php if ($delegada): ?>
+                                    · <span style="color:#92400e;">Delegada a <?php echo esc_html($com_user->display_name); ?></span>
+                                <?php elseif (($is_admin) && $com_user): ?>
+                                    · <span><?php echo esc_html($com_user->display_name); ?></span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php if ($client && !empty($client['telefono']) && ($is_visitador || (!$is_admin && !$is_visitador))): ?>
+                            <a href="tel:<?php echo esc_attr($client['telefono']); ?>" style="font-size:12px; color:#1d4ed8; text-decoration:none; white-space:nowrap;">
+                                <?php echo esc_html($client['telefono']); ?>
+                            </a>
+                        <?php endif; ?>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        <?php endif; ?>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+
+/**
+ * v1.20.15 — Inyecta el widget de próximas visitas al inicio del contenido
+ * de la página /crm (escritorio) si la página no ya contiene el shortcode.
+ */
+add_filter('the_content', 'crm_inject_proximas_visitas_in_escritorio', 5);
+function crm_inject_proximas_visitas_in_escritorio($content) {
+    if (is_admin() || !is_singular('page') || !is_user_logged_in()) {
+        return $content;
+    }
+    $post = get_post();
+    if (!$post || $post->post_name !== 'crm') {
+        return $content;
+    }
+    if (has_shortcode($content, 'crm_proximas_visitas')) {
+        return $content;
+    }
+    return do_shortcode('[crm_proximas_visitas]') . $content;
 }

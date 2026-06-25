@@ -1,5 +1,9 @@
 document.addEventListener("DOMContentLoaded", function () {
-    
+
+    // v1.20.8: SVG inline (Phosphor regular) en lugar de emojis para los botones de accion.
+    const SVG_PENCIL = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M227.31,73.37,182.63,28.69a16,16,0,0,0-22.62,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96A16,16,0,0,0,227.31,73.37Z"/></svg>';
+    const SVG_TRASH  = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM112,168a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0ZM160,48H96V40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8Z"/></svg>';
+
     // Toast notification function
     function showToast(message, type = 'info', duration = 3000) {
         // Remove existing toast if any
@@ -89,7 +93,7 @@ document.addEventListener("DOMContentLoaded", function () {
           <td>${buildClienteCell(c)}<br>${formatIntereses(c.intereses)}</td>
           <td class="td-comercial">
             <a href="/mis-altas-de-cliente/?user_id=${c.user_id}">
-                ${c.comercial}
+                ${c.comercial && c.comercial !== 'null' ? c.comercial : '—'}
             </a>
           </td>
 
@@ -99,11 +103,11 @@ document.addEventListener("DOMContentLoaded", function () {
            <td class="acciones-cell">
                 <div class="acciones-group">
                     <a href="/editar-cliente/?client_id=${c.id}"
-                        class="action-btn edit-btn" title="Editar cliente">
-                        <i class="icon-edit">✏️</i>
+                        class="action-btn action-btn--edit" title="Editar cliente" aria-label="Editar cliente">
+                        ${SVG_PENCIL}
                     </a>
-                    <button class="action-btn delete-btn" data-id="${c.id}" title="Eliminar cliente">
-                        <i class="icon-delete">🗑️</i>
+                    <button class="action-btn action-btn--delete" data-id="${c.id}" title="Eliminar cliente" aria-label="Eliminar cliente">
+                        ${SVG_TRASH}
                     </button>
                 </div>
             </td>

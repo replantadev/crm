@@ -1165,13 +1165,30 @@ function crm_comerciales_estadisticas_widget() {
                             }
                             
                             $total_comercial = array_sum($totales);
+                            // v1.20.8: fallback de nombre + sufijo de rol para distinguir visitador / usuarios huerfanos.
                             $user_data = get_userdata($uid);
+                            if ($user_data && !empty($user_data->display_name)) {
+                                $nombre_mostrar = $user_data->display_name;
+                            } elseif ($user_data && !empty($user_data->user_login)) {
+                                $nombre_mostrar = $user_data->user_login;
+                            } else {
+                                $nombre_mostrar = '(usuario #' . (int) $uid . ' eliminado)';
+                            }
+                            $rol_sufijo = '';
+                            if ($user_data) {
+                                $roles_u = (array) $user_data->roles;
+                                if (in_array('visitador', $roles_u, true) && !in_array('comercial', $roles_u, true)) {
+                                    $rol_sufijo = ' <span class="comercial-role-tag">Visitador</span>';
+                                } elseif (in_array('comercial', $roles_u, true) && in_array('visitador', $roles_u, true)) {
+                                    $rol_sufijo = ' <span class="comercial-role-tag">Com.+Vis.</span>';
+                                }
+                            }
                         ?>
                             <tr>
                                 <td class="text-center"><?php echo $i + 1; ?></td>
                                 <td class="comercial-name-cell">
                                     <a href="<?php echo home_url("/mis-altas-de-cliente/?user_id={$uid}"); ?>" class="comercial-link">
-                                        <?php echo esc_html($user_data->display_name); ?>
+                                        <?php echo esc_html($nombre_mostrar); ?><?php echo $rol_sufijo; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                                     </a>
                                 </td>
                                 <td class="text-center">

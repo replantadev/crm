@@ -232,7 +232,10 @@ function crm_app_shell_menu_items() {
         ],
     ];
 
-    // Resolver URLs: prioridad option > get_page_by_path(slug) > ocultar.
+    // Resolver URLs: prioridad option > get_page_by_path(slug) > fallback home_url(slug).
+    // v1.20.8: antes ocultabamos items sin pagina con `continue` lo cual hacia que el
+    // menu desapareciera para comercial/visitador si las paginas no estaban creadas.
+    // Ahora siempre devolvemos URL (fallback) y el bootstrap de paginas las crea.
     $resolved = [];
     foreach ($items as $item) {
         $url = '';
@@ -248,8 +251,13 @@ function crm_app_shell_menu_items() {
                 $url = get_permalink($page);
             }
         }
+        if ($url === '' && !empty($item['slug'])) {
+            // Fallback: la pagina puede que no exista todavia, pero el shortcode si.
+            // Usamos el slug directamente para que el menu sea consistente.
+            $url = home_url('/' . ltrim($item['slug'], '/') . '/');
+        }
         if ($url === '') {
-            continue; // No mostramos enlaces rotos.
+            continue;
         }
         $item['url'] = $url;
         $resolved[] = $item;

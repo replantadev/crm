@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.7
+Version: 1.20.8
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.7');
+define('CRM_PLUGIN_VERSION', '1.20.8');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -73,6 +73,8 @@ require_once CRM_PLUGIN_PATH . 'includes/leads-mk-shortcode.php';
 require_once CRM_PLUGIN_PATH . 'includes/icons.php';
 require_once CRM_PLUGIN_PATH . 'includes/ui-helpers.php';
 require_once CRM_PLUGIN_PATH . 'includes/app-shell.php';
+// v1.20.8 — Auto-crea las paginas requeridas (Alta, Mis altas, etc) si no existen.
+require_once CRM_PLUGIN_PATH . 'includes/page-bootstrap.php';
 // v1.20.0 — Sistema de visitas
 require_once CRM_PLUGIN_PATH . 'includes/visitas.php';// v1.20.2 — Shortcode frontend de Mi agenda + bloqueo wp-admin
 require_once CRM_PLUGIN_PATH . 'includes/shortcode-agenda.php';
@@ -2682,8 +2684,10 @@ function crm_lista_altas()
                     "className": "text-center",
                     "render": function(data, type, row) {
                         const editUrl = window.location.origin + '/editar-cliente/?client_id=' + data;
+                        // v1.20.8: SVG sobrio en vez de emoji+bg azul.
+                        const svgPencil = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M227.31,73.37,182.63,28.69a16,16,0,0,0-22.62,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96A16,16,0,0,0,227.31,73.37Z"/></svg>';
                         return '<div class="action-buttons">' +
-                               '<a href="' + editUrl + '" class="action-btn edit" title="Editar cliente" style="background: #007cba; color: white; padding: 4px 8px; border-radius: 3px; text-decoration: none; font-size: 12px;">✏️</a>' +
+                               '<a href="' + editUrl + '" class="action-btn action-btn--edit" title="Editar cliente" aria-label="Editar cliente">' + svgPencil + '</a>' +
                                '</div>';
                     },
                     "width": "80px"
@@ -2971,10 +2975,14 @@ function crm_obtener_todas_altas()
     global $wpdb;
     $table_name = $wpdb->prefix . "crm_clients";
 
+    // v1.20.8: COALESCE para evitar 'null' literal en frontend cuando el user_id
+    // del cliente no existe (usuario eliminado) o esta vacio.
     $clientes = $wpdb->get_results("
-        SELECT c.id, c.fecha, c.user_id, c.cliente_nombre, c.empresa, c.direccion, c.poblacion, c.intereses, c.email_cliente, c.facturas, c.presupuesto, c.contratos_generados, c.contratos_firmados, c.estado, c.estado_por_sector, c.reenvios, c.actualizado_en, c.actualizado_por, c.fecha_envio_por_sector, c.usuario_envio_por_sector, c.origen_lead, c.es_cliente_activo, u.display_name AS comercial, u2.display_name AS actualizado_por_nombre
+        SELECT c.id, c.fecha, c.user_id, c.cliente_nombre, c.empresa, c.direccion, c.poblacion, c.intereses, c.email_cliente, c.facturas, c.presupuesto, c.contratos_generados, c.contratos_firmados, c.estado, c.estado_por_sector, c.reenvios, c.actualizado_en, c.actualizado_por, c.fecha_envio_por_sector, c.usuario_envio_por_sector, c.origen_lead, c.es_cliente_activo,
+            COALESCE(u.display_name, '—')  AS comercial,
+            COALESCE(u2.display_name, '')  AS actualizado_por_nombre
         FROM $table_name c
-        LEFT JOIN {$wpdb->users} u ON c.user_id = u.ID
+        LEFT JOIN {$wpdb->users} u  ON c.user_id = u.ID
         LEFT JOIN {$wpdb->users} u2 ON c.actualizado_por = u2.ID
         ORDER BY c.actualizado_en DESC
     ", ARRAY_A);
@@ -3730,6 +3738,11 @@ function crm_plugin_activation() {
     crm_protect_backup_directory();
     if (function_exists('crm_logger_schedule_cron')) {
         crm_logger_schedule_cron();
+    }
+    // v1.20.8: crea paginas requeridas (Alta, Mis altas, etc) si no existen.
+    if (function_exists('crm_bootstrap_pages')) {
+        crm_bootstrap_pages();
+        update_option('crm_pages_bootstrap_version', CRM_PLUGIN_VERSION, false);
     }
     update_option('crm_plugin_version', CRM_PLUGIN_VERSION, false);
     update_option('crm_roles_installed_version', CRM_PLUGIN_VERSION, false);

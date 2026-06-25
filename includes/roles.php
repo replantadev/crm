@@ -31,8 +31,16 @@ function crm_user_is_admin($user_id = null) {
     if (!$user || empty($user->ID) || empty($user->roles)) {
         return false;
     }
+    $roles = (array) $user->roles;
+    // v1.20.10: si el usuario tiene rol comercial o visitador, NO se considera
+    // admin del CRM aunque tambien tenga administrator/crm_admin. Asi un
+    // administrador del sitio que actua como comercial no puede reasignarse
+    // clientes ni alterar el flujo (cambiar estado, origen, etc).
+    if (array_intersect(['comercial', 'visitador'], $roles)) {
+        return false;
+    }
     $admin_roles = ['administrator', 'crm_admin'];
-    return (bool) array_intersect($admin_roles, (array) $user->roles);
+    return (bool) array_intersect($admin_roles, $roles);
 }
 
 /**
@@ -233,8 +241,11 @@ function crm_filter_user_has_cap($allcaps, $caps, $args, $user) {
         return $allcaps;
     }
     $roles = (array) ($user->roles ?? []);
-    if (array_intersect(['administrator', 'crm_admin'], $roles)) {
-        return $allcaps; // usuario legitimo, no tocar
+    // v1.20.10: si el usuario tiene rol comercial o visitador, se le revocan
+    // SIEMPRE las caps admin del CRM aunque tambien tenga administrator/crm_admin.
+    $has_field_role = (bool) array_intersect(['comercial', 'visitador'], $roles);
+    if (!$has_field_role && array_intersect(['administrator', 'crm_admin'], $roles)) {
+        return $allcaps; // admin puro, no tocar
     }
     // Lista de caps que SOLO deben funcionar para administrator/crm_admin.
     $admin_only_caps = [

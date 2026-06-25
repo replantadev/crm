@@ -682,7 +682,6 @@ function crm_render_visitas_box($client_id) {
             </ul>
         </div>
     <?php endif; ?>
-    ?>
     <div class="crm-card crm-visitas-card" style="margin-top:20px;">
         <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">
             <h4 style="display:inline-flex; align-items:center; gap:8px; margin:0;">

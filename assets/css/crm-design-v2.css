@@ -675,6 +675,16 @@ body.crm-app-mode .crm-shell-main {
     display: inline-flex; align-items: center; justify-content: center;
     font-weight: 800;
     color: #fff;
+    overflow: hidden;
+}
+.crm-topbar__brand .crm-topbar__logo img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+    background: #fff;
+}
+.crm-topbar__brand:has(.crm-topbar__logo img) .crm-topbar__logo {
+    background: #fff;
 }
 .crm-topbar__nav {
     display: inline-flex;

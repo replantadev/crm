@@ -36,6 +36,8 @@ function crm_app_shell_get_settings() {
             'panel-de-control',
             'editar-cliente',
             'crm',
+            'mi-agenda',
+            'mis-leads',
         ],
         'brand_label' => 'CRM',
     ];
@@ -114,21 +116,31 @@ add_action('wp_footer', function () {
 }, 999);
 
 /**
- * Lista de items del menú del shell. Filtrable.
+ * Lista de items del menú del shell. Filtrable por rol.
+ *
+ * Cada item: label, slug, icon, opcional cap (capability requerida) y opcional
+ * `roles` (array de roles permitidos; si está, se aplica además del cap).
  *
  * @return array<int, array{label:string, url:string, icon:string, slug:string}>
  */
 function crm_app_shell_menu_items() {
     $items = [
         [
+            'label' => 'Escritorio',
+            'slug'  => 'crm',
+            'icon'  => 'house',
+        ],
+        [
             'label' => 'Alta',
             'slug'  => 'alta-de-cliente',
             'icon'  => 'plus',
+            'roles' => ['administrator', 'crm_admin', 'comercial'],
         ],
         [
             'label' => 'Mis altas',
             'slug'  => 'mis-altas-de-cliente',
             'icon'  => 'list-bullets',
+            'roles' => ['administrator', 'crm_admin', 'comercial'],
         ],
         [
             'label' => 'Todas las altas',
@@ -149,20 +161,60 @@ function crm_app_shell_menu_items() {
             'cap'   => 'crm_admin',
         ],
         [
+            'label' => 'Mis leads',
+            'slug'  => 'mis-leads',
+            'icon'  => 'target',
+            'roles' => ['comercial', 'visitador'],
+        ],
+        [
+            'label' => 'Mi agenda',
+            'slug'  => 'mi-agenda',
+            'icon'  => 'calendar',
+            'roles' => ['administrator', 'crm_admin', 'comercial', 'visitador'],
+        ],
+        [
             'label' => 'Panel',
             'slug'  => 'panel-de-control',
             'icon'  => 'gear',
+            'cap'   => 'crm_admin',
         ],
     ];
 
-    // Resolver URLs a partir del slug.
-    foreach ($items as &$item) {
+    // Resolver URLs a partir del slug. Ocultar items cuya página no exista.
+    $resolved = [];
+    foreach ($items as $item) {
         $page = get_page_by_path($item['slug']);
-        $item['url'] = $page ? get_permalink($page) : home_url('/' . $item['slug'] . '/');
+        if (!$page) {
+            continue; // No mostrar enlaces a páginas inexistentes.
+        }
+        $item['url'] = get_permalink($page);
+        $resolved[] = $item;
     }
-    unset($item);
 
-    return apply_filters('crm_app_shell_menu_items', $items);
+    return apply_filters('crm_app_shell_menu_items', $resolved);
+}
+
+/**
+ * Determina si el usuario actual puede ver un item del menú.
+ */
+function crm_app_shell_user_can_see_item(array $item) {
+    if (!empty($item['cap']) && !current_user_can($item['cap'])) {
+        return false;
+    }
+    if (!empty($item['roles'])) {
+        $user = wp_get_current_user();
+        if (!$user || !$user->ID) {
+            return false;
+        }
+        $user_roles = (array) $user->roles;
+        if (in_array('administrator', $user_roles, true) || in_array('crm_admin', $user_roles, true)) {
+            return true; // admins lo ven todo.
+        }
+        if (!array_intersect($user_roles, (array) $item['roles'])) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /**
@@ -187,18 +239,36 @@ function crm_app_shell_render_topbar() {
     $brand_label = $opts['brand_label'] !== '' ? $opts['brand_label'] : 'CRM';
     $home_url = home_url('/');
 
+    // Logo del sitio: prioriza site_icon (favicon en Ajustes › General), luego custom_logo.
+    $logo_url = function_exists('get_site_icon_url') ? get_site_icon_url(64) : '';
+    if (!$logo_url) {
+        $custom_logo_id = (int) get_theme_mod('custom_logo');
+        if ($custom_logo_id) {
+            $img = wp_get_attachment_image_src($custom_logo_id, 'thumbnail');
+            if ($img) {
+                $logo_url = $img[0];
+            }
+        }
+    }
+
     $icon = function ($name, $size = 16) {
         return function_exists('crm_icon') ? crm_icon($name, $size) : '';
     };
     ?>
     <header class="crm-topbar" role="banner">
         <a href="<?php echo esc_url($home_url); ?>" class="crm-topbar__brand">
-            <span class="crm-topbar__logo">⚡</span>
+            <span class="crm-topbar__logo">
+                <?php if ($logo_url): ?>
+                    <img src="<?php echo esc_url($logo_url); ?>" alt="" width="22" height="22" loading="eager" decoding="async">
+                <?php else: ?>
+                    <?php echo $icon('lightning', 18); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                <?php endif; ?>
+            </span>
             <span><?php echo esc_html($brand_label); ?></span>
         </a>
         <nav class="crm-topbar__nav" aria-label="Navegación CRM">
             <?php foreach (crm_app_shell_menu_items() as $item):
-                if (!empty($item['cap']) && !current_user_can($item['cap'])) {
+                if (!crm_app_shell_user_can_see_item($item)) {
                     continue;
                 }
                 $is_current = ($current_slug === $item['slug']) ? ' is-current' : '';

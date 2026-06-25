@@ -27,11 +27,33 @@ function crm_register_agenda_menu() {
     );
 }
 
+/**
+ * v1.20.1 — Al entrar al wp-admin, si el usuario es visitador, redirigir
+ * directamente a "Mi agenda" en vez del dashboard de WP (que está vacío
+ * para este rol).
+ */
+add_action('admin_init', 'crm_visitador_redirect_to_agenda');
+function crm_visitador_redirect_to_agenda() {
+    if (!function_exists('crm_user_is_visitador') || !crm_user_is_visitador()) {
+        return;
+    }
+    if (wp_doing_ajax()) {
+        return;
+    }
+    global $pagenow;
+    if ($pagenow !== 'index.php' || !empty($_GET['page'])) {
+        return;
+    }
+    wp_safe_redirect(admin_url('admin.php?page=crm-mi-agenda'));
+    exit;
+}
+
 function crm_render_agenda_page() {
     if (!is_user_logged_in()) {
         wp_die('No autorizado.');
     }
     $is_admin = function_exists('crm_user_is_admin') && crm_user_is_admin();
+    $is_visitador = function_exists('crm_user_is_visitador') && crm_user_is_visitador();
 
     // Filtros
     $filtro_estado    = isset($_GET['estado']) ? sanitize_key($_GET['estado']) : '';
@@ -95,10 +117,10 @@ function crm_render_agenda_page() {
             </label>
             <?php if ($is_admin): ?>
                 <label style="display:flex; flex-direction:column;">
-                    <span style="font-size:12px; font-weight:600;">Comercial</span>
+                    <span style="font-size:12px; font-weight:600;">Asignado a</span>
                     <?php wp_dropdown_users([
                         'name'             => 'comercial_id',
-                        'role__in'         => ['comercial', 'crm_admin', 'administrator'],
+                        'role__in'         => ['comercial', 'crm_admin', 'administrator', 'visitador'],
                         'selected'         => $filtro_comercial,
                         'show_option_all'  => 'Todos',
                     ]); ?>
@@ -138,10 +160,14 @@ function crm_render_agenda_page() {
                     <tr>
                         <th>Fecha</th>
                         <th>Cliente</th>
+                        <?php if ($is_visitador): ?>
+                            <th>Teléfono</th>
+                            <th>Dirección</th>
+                        <?php endif; ?>
                         <th>Sector</th>
                         <th>Lugar</th>
                         <th>Estado</th>
-                        <?php if ($is_admin): ?><th>Comercial</th><?php endif; ?>
+                        <?php if ($is_admin): ?><th>Asignado a</th><?php endif; ?>
                         <th>Acciones</th>
                     </tr>
                 </thead>
@@ -150,7 +176,11 @@ function crm_render_agenda_page() {
                     global $wpdb;
                     $client_table = $wpdb->prefix . 'crm_clients';
                     foreach ($visitas as $v):
-                        $client = $wpdb->get_row($wpdb->prepare("SELECT id, cliente_nombre FROM $client_table WHERE id = %d", (int) $v['client_id']), ARRAY_A);
+                        // Para visitador necesitamos datos extra del cliente (tel/direccion)
+                        $client_fields = $is_visitador
+                            ? 'id, cliente_nombre, telefono, direccion, poblacion'
+                            : 'id, cliente_nombre';
+                        $client = $wpdb->get_row($wpdb->prepare("SELECT $client_fields FROM $client_table WHERE id = %d", (int) $v['client_id']), ARRAY_A);
                         $com_user = $v['comercial_id'] ? get_userdata((int) $v['comercial_id']) : null;
                         $fecha_dt = mysql2date(get_option('date_format') . ' H:i', $v['fecha_visita']);
                         $can = crm_visita_can_manage($v);
@@ -159,14 +189,36 @@ function crm_render_agenda_page() {
                         <tr>
                             <td><strong><?php echo esc_html($fecha_dt); ?></strong></td>
                             <td>
-                                <?php if ($client): ?>
+                                <?php if ($client && !$is_visitador): ?>
                                     <a href="<?php echo esc_url(admin_url('admin.php?page=crm-dashboard&accion=editar&id=' . (int) $client['id'])); ?>">
                                         <?php echo esc_html($client['cliente_nombre']); ?>
                                     </a>
+                                <?php elseif ($client): ?>
+                                    <?php echo esc_html($client['cliente_nombre']); ?>
                                 <?php else: ?>
                                     <em>Cliente #<?php echo (int) $v['client_id']; ?></em>
                                 <?php endif; ?>
                             </td>
+                            <?php if ($is_visitador): ?>
+                                <td>
+                                    <?php if ($client && !empty($client['telefono'])): ?>
+                                        <a href="tel:<?php echo esc_attr($client['telefono']); ?>"><?php echo esc_html($client['telefono']); ?></a>
+                                    <?php else: ?>—<?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php
+                                    $addr_parts = [];
+                                    if ($client) {
+                                        if (!empty($client['direccion'])) $addr_parts[] = $client['direccion'];
+                                        if (!empty($client['poblacion'])) $addr_parts[] = $client['poblacion'];
+                                    }
+                                    $addr = implode(', ', $addr_parts);
+                                    if ($addr !== ''):
+                                    ?>
+                                        <a href="https://www.google.com/maps/search/?api=1&query=<?php echo rawurlencode($addr); ?>" target="_blank" rel="noopener"><?php echo esc_html($addr); ?></a>
+                                    <?php else: ?>—<?php endif; ?>
+                                </td>
+                            <?php endif; ?>
                             <td><?php echo $v['sector'] ? esc_html(ucfirst($v['sector'])) : '—'; ?></td>
                             <td><?php echo esc_html($v['lugar']); ?></td>
                             <td><?php echo esc_html($estado_label); ?></td>

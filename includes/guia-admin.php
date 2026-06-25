@@ -337,6 +337,26 @@ function crm_guia_admin_shortcode() {
                 <h3>Cambios clave a partir de la versión 1.20.0</h3>
 
                 <div class="feature-box">
+                    <h4>Rol "Visitador" (v1.20.1)</h4>
+                    <p>
+                        Nuevo rol <code>visitador</code> pensado para personal de campo que solo gestiona
+                        visitas a clientes:
+                    </p>
+                    <ul>
+                        <li>No ve listados de clientes, ni presupuestos, ni ajustes.</li>
+                        <li>Solo ve la página <strong>"Mi agenda"</strong> con las visitas que el admin (o un comercial) le ha asignado.</li>
+                        <li>Puede marcar cada visita como <em>Realizada</em>, <em>No se presentó</em> o <em>Cancelada</em>, pero no puede crear nuevas.</li>
+                        <li>La tabla de su agenda incluye <strong>teléfono</strong> (clicable para llamar) y <strong>dirección</strong> (clicable para abrir Google Maps).</li>
+                        <li>Al entrar al wp-admin se le redirige automáticamente a su agenda.</li>
+                    </ul>
+                    <p>
+                        <strong>Cómo crear un visitador:</strong> Usuarios → Añadir nuevo → Rol: <em>Visitador</em>.
+                        Luego desde cualquier ficha de cliente puedes asignarle visitas con el dropdown
+                        "Asignar a" (también aparecerá en la agenda admin como filtro).
+                    </p>
+                </div>
+
+                <div class="feature-box">
                     <h4>Estado de decisión por sector</h4>
                     <p>
                         En cada sector de la ficha aparece un campo <strong>"Estado de decisión"</strong>

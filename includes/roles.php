@@ -63,7 +63,36 @@ function crm_admin_caps() {
         'crm_manage_settings'   => true,
         'crm_view_logs'         => true,
         'crm_export_data'       => true,
+        'crm_manage_visits'     => true,
     ];
+}
+
+/**
+ * Capacidades base del rol visitador (v1.20.1).
+ * Solo puede ver y gestionar sus propias visitas asignadas. No abre fichas
+ * de cliente, no sube ficheros, no ve listados ni ajustes.
+ */
+function crm_visitador_caps() {
+    return [
+        'read'                  => true,
+        'crm_view_own_visits'   => true,
+        'crm_edit_own_visits'   => true,
+    ];
+}
+
+/**
+ * Devuelve true si el usuario es visitador (rol explícito).
+ */
+function crm_user_is_visitador($user_id = null) {
+    if ($user_id === null) {
+        $user = wp_get_current_user();
+    } else {
+        $user = get_user_by('id', (int) $user_id);
+    }
+    if (!$user || empty($user->ID) || empty($user->roles)) {
+        return false;
+    }
+    return in_array('visitador', (array) $user->roles, true);
 }
 
 /**
@@ -92,6 +121,18 @@ function crm_install_roles() {
     } else {
         $role = get_role('crm_admin');
         foreach (crm_admin_caps() as $cap => $grant) {
+            if ($grant) {
+                $role->add_cap($cap);
+            }
+        }
+    }
+
+    // Rol visitador (v1.20.1)
+    if (!get_role('visitador')) {
+        add_role('visitador', __('Visitador', 'crm-basico'), crm_visitador_caps());
+    } else {
+        $role = get_role('visitador');
+        foreach (crm_visitador_caps() as $cap => $grant) {
             if ($grant) {
                 $role->add_cap($cap);
             }

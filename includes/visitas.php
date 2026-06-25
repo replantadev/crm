@@ -290,7 +290,8 @@ function crm_visitas_count($args = []) {
 
 /**
  * Comprueba si el usuario actual puede ver/editar una visita concreta.
- * Admins (admin/crm_admin) pueden todo; comerciales solo las propias.
+ * Admins (admin/crm_admin) pueden todo; comerciales y visitadores solo las
+ * que tengan asignadas (comercial_id == su user_id).
  */
 function crm_visita_can_manage($visita) {
     if (function_exists('crm_user_is_admin') && crm_user_is_admin()) {
@@ -300,6 +301,18 @@ function crm_visita_can_manage($visita) {
         return ((int) $visita['comercial_id']) === get_current_user_id();
     }
     return false;
+}
+
+/**
+ * Devuelve true si el usuario actual puede CREAR visitas nuevas.
+ * Visitadores NO pueden crear; solo gestionan las asignadas por el admin
+ * o el comercial responsable del cliente.
+ */
+function crm_visita_can_create() {
+    if (function_exists('crm_user_is_visitador') && crm_user_is_visitador()) {
+        return false;
+    }
+    return is_user_logged_in();
 }
 
 /* =========================================================================
@@ -330,6 +343,9 @@ function crm_visita_handle_save() {
         }
         $res = crm_visita_update($id, $input);
     } else {
+        if (!crm_visita_can_create()) {
+            wp_die('Sin permisos para crear visitas.', '', ['response' => 403]);
+        }
         $res = crm_visita_create($input);
     }
 
@@ -389,6 +405,7 @@ function crm_render_visitas_box($client_id) {
         'renovables'         => 'Renovables',
     ];
     $is_admin = function_exists('crm_user_is_admin') && crm_user_is_admin();
+    $can_create = crm_visita_can_create();
     $current_user_id = get_current_user_id();
     ?>
     <div class="crm-card crm-visitas-card" style="margin-top:20px;">
@@ -398,9 +415,11 @@ function crm_render_visitas_box($client_id) {
                 <span>Visitas</span>
                 <span class="crm-pill crm-pill--neutral crm-pill--sm"><?php echo count($visitas); ?></span>
             </h4>
-            <button type="button" class="crm-btn crm-btn--sm" onclick="document.getElementById('crm-visita-form-<?php echo (int) $client_id; ?>').style.display='block'; this.style.display='none';">
-                + Agendar visita
-            </button>
+            <?php if ($can_create): ?>
+                <button type="button" class="crm-btn crm-btn--sm" onclick="document.getElementById('crm-visita-form-<?php echo (int) $client_id; ?>').style.display='block'; this.style.display='none';">
+                    + Agendar visita
+                </button>
+            <?php endif; ?>
         </div>
 
         <div class="card-body">
@@ -473,6 +492,7 @@ function crm_render_visitas_box($client_id) {
             <?php endif; ?>
 
             <!-- Formulario de alta -->
+            <?php if ($can_create): ?>
             <form id="crm-visita-form-<?php echo (int) $client_id; ?>"
                   method="post"
                   action="<?php echo esc_url(admin_url('admin-post.php')); ?>"
@@ -507,10 +527,10 @@ function crm_render_visitas_box($client_id) {
                     </label>
                     <?php if ($is_admin): ?>
                         <label style="grid-column:1/-1;">
-                            <span style="display:block; font-weight:600; font-size:13px;">Asignar comercial</span>
+                            <span style="display:block; font-weight:600; font-size:13px;">Asignar a</span>
                             <?php wp_dropdown_users([
                                 'name'             => 'comercial_id',
-                                'role__in'         => ['comercial', 'crm_admin', 'administrator'],
+                                'role__in'         => ['comercial', 'crm_admin', 'administrator', 'visitador'],
                                 'selected'         => $current_user_id,
                                 'show_option_none' => '— Seleccionar —',
                             ]); ?>
@@ -529,6 +549,7 @@ function crm_render_visitas_box($client_id) {
                     <button type="button" class="button" onclick="this.closest('form').style.display='none';">Cancelar</button>
                 </div>
             </form>
+            <?php endif; ?>
         </div>
     </div>
     <?php

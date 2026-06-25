@@ -118,10 +118,15 @@ add_action('wp_footer', function () {
 /**
  * Lista de items del menú del shell. Filtrable por rol.
  *
- * Cada item: label, slug, icon, opcional cap (capability requerida) y opcional
- * `roles` (array de roles permitidos; si está, se aplica además del cap).
+ * Cada item: label, slug (fallback), icon, opcional cap, opcional roles,
+ * opcional option (option_key del que leer URL custom configurable en admin).
  *
- * @return array<int, array{label:string, url:string, icon:string, slug:string}>
+ * Jerarquía por rol (verificada en v1.20.5):
+ *  - admin/crm_admin: TODOS los items.
+ *  - comercial: Escritorio, Alta, Mis altas, Mis leads, Mi agenda.
+ *  - visitador: Escritorio, Mis leads, Mi agenda.
+ *
+ * @return array<int, array<string,mixed>>
  */
 function crm_app_shell_menu_items() {
     $items = [
@@ -161,16 +166,18 @@ function crm_app_shell_menu_items() {
             'cap'   => 'crm_admin',
         ],
         [
-            'label' => 'Mis leads',
-            'slug'  => 'mis-leads',
-            'icon'  => 'target',
-            'roles' => ['comercial', 'visitador'],
+            'label'  => 'Mis leads',
+            'slug'   => 'mis-leads',
+            'option' => 'crm_url_mis_leads',
+            'icon'   => 'target',
+            'roles'  => ['comercial', 'visitador'],
         ],
         [
-            'label' => 'Mi agenda',
-            'slug'  => 'mi-agenda',
-            'icon'  => 'calendar',
-            'roles' => ['administrator', 'crm_admin', 'comercial', 'visitador'],
+            'label'  => 'Mi agenda',
+            'slug'   => 'mi-agenda',
+            'option' => 'crm_url_mi_agenda',
+            'icon'   => 'calendar',
+            'roles'  => ['administrator', 'crm_admin', 'comercial', 'visitador'],
         ],
         [
             'label' => 'Panel',
@@ -180,14 +187,26 @@ function crm_app_shell_menu_items() {
         ],
     ];
 
-    // Resolver URLs a partir del slug. Ocultar items cuya página no exista.
+    // Resolver URLs: prioridad option > get_page_by_path(slug) > ocultar.
     $resolved = [];
     foreach ($items as $item) {
-        $page = get_page_by_path($item['slug']);
-        if (!$page) {
-            continue; // No mostrar enlaces a páginas inexistentes.
+        $url = '';
+        if (!empty($item['option'])) {
+            $url = (string) get_option($item['option'], '');
+            if ($url !== '') {
+                $url = esc_url_raw($url);
+            }
         }
-        $item['url'] = get_permalink($page);
+        if ($url === '' && !empty($item['slug'])) {
+            $page = get_page_by_path($item['slug']);
+            if ($page) {
+                $url = get_permalink($page);
+            }
+        }
+        if ($url === '') {
+            continue; // No mostramos enlaces rotos.
+        }
+        $item['url'] = $url;
         $resolved[] = $item;
     }
 
@@ -196,6 +215,12 @@ function crm_app_shell_menu_items() {
 
 /**
  * Determina si el usuario actual puede ver un item del menú.
+ *
+ * Reglas:
+ *  - Si el item tiene `cap` y el usuario no la tiene → false.
+ *  - Si el item tiene `roles` y el usuario es admin/crm_admin → true (los admins lo ven todo).
+ *  - Si el item tiene `roles` y el usuario tiene al menos uno de esos roles → true.
+ *  - Si el item NO tiene `cap` ni `roles` → visible (item público para todos los logueados).
  */
 function crm_app_shell_user_can_see_item(array $item) {
     if (!empty($item['cap']) && !current_user_can($item['cap'])) {

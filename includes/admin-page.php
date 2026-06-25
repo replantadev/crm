@@ -554,6 +554,13 @@ function crm_admin_render_settings() {
                     <p class="description">Página con el shortcode <code>[crm_mi_agenda]</code>. También se usa como contenido del modal del comercial.</p>
                 </td>
             </tr>
+            <tr>
+                <th><label for="crm_url_mis_leads">URL "Mis leads" (comercial / visitador)</label></th>
+                <td>
+                    <input type="url" id="crm_url_mis_leads" name="crm_url_mis_leads" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_url_mis_leads', '')); ?>" placeholder="https://tusitio.com/mis-leads/">
+                    <p class="description">Página con el shortcode <code>[asignacion_leads_mk modo="mios"]</code>. Si la dejas vacía y no existe la página con slug <code>mis-leads</code>, el item no aparece en el menú.</p>
+                </td>
+            </tr>
         </table>
         <?php submit_button(); ?>
     </form>

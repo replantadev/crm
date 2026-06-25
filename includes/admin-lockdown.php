@@ -140,6 +140,11 @@ function crm_register_redirect_urls_setting() {
         'sanitize_callback' => 'esc_url_raw',
         'default'           => '',
     ]);
+    register_setting('crm_settings', 'crm_url_mis_leads', [
+        'type'              => 'string',
+        'sanitize_callback' => 'esc_url_raw',
+        'default'           => '',
+    ]);
 }
 
 /**

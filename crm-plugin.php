@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.15');
+define('CRM_PLUGIN_VERSION', '1.20.16');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -2534,17 +2534,24 @@ function crm_lista_altas()
 
     // Determinar si el usuario puede ver las altas de otro comercial
     $current_user_id = get_current_user_id();
+    // v1.20.16: el visitador ve TODAS las altas (de cualquier comercial)
+    // para poder abrir cualquier ficha y registrar el resultado de la visita.
+    $is_visitador_user = function_exists('crm_user_is_visitador') && crm_user_is_visitador();
+    $is_admin_user     = function_exists('crm_user_is_admin') && crm_user_is_admin();
+    $see_all = $is_visitador_user || ($is_admin_user && !$requested_user_id);
+
     if ($requested_user_id && current_user_can('crm_admin') && $requested_user_id !== $current_user_id) {
         // Admin viendo otro comercial
         $user_id = $requested_user_id;
+        $see_all = false;
     } else {
-        // Comercial viendo sus propias altas
+        // Comercial viendo sus propias altas (o visitador viendo todas)
         $user_id = $current_user_id;
     }
 
     // Obtener información del comercial si es diferente del usuario actual
     $comercial_name = '';
-    if ($user_id !== $current_user_id) {
+    if (!$see_all && $user_id !== $current_user_id) {
         $comercial = get_userdata($user_id);
         if ($comercial) {
             $comercial_name = $comercial->display_name;
@@ -2552,13 +2559,22 @@ function crm_lista_altas()
     }
 
     // Obtener los datos de los clientes
-    $clientes = $wpdb->get_results($wpdb->prepare("
-        SELECT id, fecha, cliente_nombre, empresa, direccion, poblacion, email_cliente, estado, actualizado_en, facturas, presupuesto, 
-    contratos_firmados, intereses, estado_por_sector, reenvios, fecha_envio_por_sector, usuario_envio_por_sector
-        FROM $table_name
-        WHERE user_id = %d
-        ORDER BY actualizado_en DESC
-    ", $user_id), ARRAY_A);
+    if ($see_all) {
+        $clientes = $wpdb->get_results("
+            SELECT id, fecha, cliente_nombre, empresa, direccion, poblacion, email_cliente, estado, actualizado_en, facturas, presupuesto, 
+        contratos_firmados, intereses, estado_por_sector, reenvios, fecha_envio_por_sector, usuario_envio_por_sector
+            FROM $table_name
+            ORDER BY actualizado_en DESC
+        ", ARRAY_A);
+    } else {
+        $clientes = $wpdb->get_results($wpdb->prepare("
+            SELECT id, fecha, cliente_nombre, empresa, direccion, poblacion, email_cliente, estado, actualizado_en, facturas, presupuesto, 
+        contratos_firmados, intereses, estado_por_sector, reenvios, fecha_envio_por_sector, usuario_envio_por_sector
+            FROM $table_name
+            WHERE user_id = %d
+            ORDER BY actualizado_en DESC
+        ", $user_id), ARRAY_A);
+    }
 
     if (empty($clientes)) {
         $empty_message = $comercial_name ? "No hay clientes registrados para {$comercial_name}." : "No hay clientes registrados.";
@@ -2570,7 +2586,10 @@ function crm_lista_altas()
 ?>
     <div class="crm-table-container">
         <div class="crm-table-header">
-            <?php if ($comercial_name): ?>
+            <?php if ($see_all): ?>
+                <h3><img src="<?php echo get_site_icon_url(); ?>" alt="Logo" class="crm-logo-small"> Todos los clientes - Energitel CRM</h3>
+                <p class="table-subtitle">Listado completo para visitador: puedes abrir cualquier ficha y registrar el resultado de la visita.</p>
+            <?php elseif ($comercial_name): ?>
                 <h3><img src="<?php echo get_site_icon_url(); ?>" alt="Logo" class="crm-logo-small"> Clientes de <?php echo esc_html($comercial_name); ?> - Energitel CRM</h3>
                 <p class="table-subtitle">Visualizando clientes y seguimiento de estados de <?php echo esc_html($comercial_name); ?></p>
             <?php else: ?>
@@ -2602,7 +2621,8 @@ function crm_lista_altas()
     window.crmData = {
         ajaxurl: '<?php echo admin_url('admin-ajax.php'); ?>',
         nonce: '<?php echo wp_create_nonce('crm_obtener_clientes_nonce'); ?>',
-        user_id: <?php echo $user_id; ?>
+        user_id: <?php echo $user_id; ?>,
+        see_all: <?php echo $see_all ? 'true' : 'false'; ?>
     };
     
     jQuery(document).ready(function($) {
@@ -2632,6 +2652,7 @@ function crm_lista_altas()
                     d.action = 'crm_obtener_altas';
                     d.nonce = crmData.nonce;
                     d.user_id = crmData.user_id;
+                    if (crmData.see_all) { d.see_all = 'true'; }
                 },
                 "dataSrc": function(json) {
                     console.log('DataTable - Respuesta AJAX recibida:', json);
@@ -2679,6 +2700,9 @@ function crm_lista_altas()
                         }
                         if (row.email_cliente) {
                             html += '<br><a href="mailto:' + row.email_cliente + '" class="email-link" style="color: #007cba; font-size: 12px;">' + row.email_cliente + '</a>';
+                        }
+                        if (crmData.see_all && row.comercial_nombre) {
+                            html += '<br><span style="display:inline-block; margin-top:3px; padding:1px 7px; background:#eef2ff; color:#3730a3; border-radius:10px; font-size:11px; font-weight:600;">Comercial: ' + row.comercial_nombre + '</span>';
                         }
                         html += '</div>';
                         return html;
@@ -2861,6 +2885,12 @@ function crm_obtener_altas()
 
     // Determinar si el usuario puede ver las altas de otro comercial
     $current_user_id = get_current_user_id();
+    // v1.20.16: visitador y admin sin filtro ven todas las altas.
+    $is_visitador_user = function_exists('crm_user_is_visitador') && crm_user_is_visitador();
+    $is_admin_user     = function_exists('crm_user_is_admin') && crm_user_is_admin();
+    $see_all_post      = !empty($_POST['see_all']) && ($_POST['see_all'] === 'true' || $_POST['see_all'] === '1' || $_POST['see_all'] === true);
+    $see_all = ($is_visitador_user || $is_admin_user) && ($see_all_post || (!$requested_user_id && $is_visitador_user));
+
     if ($requested_user_id && (!current_user_can('crm_admin') || $requested_user_id === $current_user_id)) {
         $user_id = $current_user_id;
     } else {
@@ -2869,15 +2899,24 @@ function crm_obtener_altas()
     $user_info = get_userdata($user_id);
     $user_name = $user_info ? $user_info->display_name : 'Usuario desconocido';
 
-    $clientes = $wpdb->get_results($wpdb->prepare("
-   SELECT id, fecha, cliente_nombre, empresa, email_cliente, estado, actualizado_en, 
-          facturas, presupuesto, contratos_firmados, contratos_generados, intereses, estado_por_sector, reenvios, fecha_envio_por_sector, usuario_envio_por_sector
-   FROM $table_name
-   WHERE user_id = %d
-   ORDER BY actualizado_en DESC
-", $user_id), ARRAY_A);
+    if ($see_all) {
+        $clientes = $wpdb->get_results("
+       SELECT id, fecha, cliente_nombre, empresa, email_cliente, estado, actualizado_en, user_id,
+              facturas, presupuesto, contratos_firmados, contratos_generados, intereses, estado_por_sector, reenvios, fecha_envio_por_sector, usuario_envio_por_sector
+       FROM $table_name
+       ORDER BY actualizado_en DESC
+    ", ARRAY_A);
+    } else {
+        $clientes = $wpdb->get_results($wpdb->prepare("
+       SELECT id, fecha, cliente_nombre, empresa, email_cliente, estado, actualizado_en, user_id,
+              facturas, presupuesto, contratos_firmados, contratos_generados, intereses, estado_por_sector, reenvios, fecha_envio_por_sector, usuario_envio_por_sector
+       FROM $table_name
+       WHERE user_id = %d
+       ORDER BY actualizado_en DESC
+    ", $user_id), ARRAY_A);
+    }
 
-    crm_debug_log('crm_obtener_altas: usuario ' . $user_id . ' → ' . count($clientes) . ' registros');
+    crm_debug_log('crm_obtener_altas: usuario ' . $user_id . ' see_all=' . ($see_all ? '1' : '0') . ' → ' . count($clientes) . ' registros');
     if (empty($clientes)) {
         crm_debug_log('crm_obtener_altas: sin resultados para user_id ' . $user_id);
     }
@@ -2939,6 +2978,18 @@ function crm_obtener_altas()
             } else {
                 $cliente['usuario_envio_por_sector'] = [];
             }
+
+            // v1.20.16: cuando vista see_all, pintar nombre del comercial
+            // asignado para que el visitador sepa de quien es la ficha.
+            if ($see_all) {
+                $cuid = isset($cliente['user_id']) ? (int) $cliente['user_id'] : 0;
+                if ($cuid > 0) {
+                    $cu = get_userdata($cuid);
+                    $cliente['comercial_nombre'] = $cu ? $cu->display_name : ('User #' . $cuid);
+                } else {
+                    $cliente['comercial_nombre'] = '';
+                }
+            }
         }
 
         wp_send_json_success([
@@ -2983,10 +3034,15 @@ function crm_editar_cliente()
         return "<p>Cliente no encontrado.</p>";
     }
 
-    // Asegurarse de que el usuario tenga permiso para editar
+    // Asegurarse de que el usuario tenga permiso para editar.
+    // v1.20.16: el visitador puede abrir y editar la ficha de cualquier
+    // cliente para anotar el resultado de la visita / cambiar estado /
+    // dejar notas, aunque el cliente este asignado a otro comercial.
+    $is_visitador_user = function_exists('crm_user_is_visitador') && crm_user_is_visitador();
     if (
         (empty($client_data['user_id']) || intval($client_data['user_id']) !== get_current_user_id()) &&
-        !current_user_can('crm_admin')
+        !current_user_can('crm_admin') &&
+        !$is_visitador_user
     ) {
         return "<p>No tienes permisos para editar este cliente.</p>";
     }

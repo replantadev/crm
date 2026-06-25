@@ -684,6 +684,27 @@ function crm_render_visitas_box($client_id) {
         }
     }
     ?>
+    <?php
+    // v1.20.16: mostrar resultado del guardado (admin-post.php redirige aqui
+    // con crm_visita_msg). Antes los errores (solape, fecha pasada...) se
+    // perdian y el usuario creia que la visita se habia guardado.
+    $visita_msg     = isset($_GET['crm_visita_msg']) ? sanitize_key((string) $_GET['crm_visita_msg']) : '';
+    $visita_msg_txt = isset($_GET['crm_msg']) ? urldecode((string) $_GET['crm_msg']) : '';
+    if ($visita_msg === 'error'):
+    ?>
+        <div role="alert" style="margin-top:16px; padding:12px 14px; background:#fef2f2; border:1px solid #fca5a5; border-radius:6px; color:#991b1b;">
+            <strong>No se pudo guardar la visita:</strong>
+            <span><?php echo esc_html($visita_msg_txt !== '' ? $visita_msg_txt : 'Error desconocido.'); ?></span>
+        </div>
+    <?php elseif ($visita_msg === 'created'): ?>
+        <div role="status" style="margin-top:16px; padding:10px 14px; background:#ecfdf5; border:1px solid #6ee7b7; border-radius:6px; color:#065f46;">
+            Visita creada correctamente.
+        </div>
+    <?php elseif ($visita_msg === 'updated'): ?>
+        <div role="status" style="margin-top:16px; padding:10px 14px; background:#ecfdf5; border:1px solid #6ee7b7; border-radius:6px; color:#065f46;">
+            Visita actualizada.
+        </div>
+    <?php endif; ?>
     <?php if (!empty($mis_visitas_futuras)): ?>
         <div class="crm-visita-mia-banner" role="status" style="margin-top:16px; padding:14px 16px; background:#fff8e1; border-left:4px solid #f59e0b; border-radius:6px;">
             <strong style="color:#92400e; font-size:15px;">

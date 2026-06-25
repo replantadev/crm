@@ -154,6 +154,86 @@ function crm_shortcode_mi_agenda($atts = []) {
             </div>
         </details>
 
+        <?php
+        // v1.20.16: toggle Tabla | Calendario. La preferencia se guarda en
+        // localStorage. El calendario carga visitas en un rango amplio
+        // (-3 meses / +12 meses) independiente del filtro desde/hasta
+        // para poder navegar libremente por meses.
+        $args_cal = $args;
+        unset($args_cal['desde'], $args_cal['hasta'], $args_cal['estado']);
+        $args_cal['desde']   = date('Y-m-d', strtotime('-3 months'));
+        $args_cal['hasta']   = date('Y-m-d', strtotime('+12 months'));
+        $args_cal['limit']   = 2000;
+        $visitas_cal = crm_visitas_list($args_cal);
+        $eventos_cal = [];
+        $estado_color_map = [
+            'programada' => '#3b82f6',
+            'realizada'  => '#10b981',
+            'cancelada'  => '#94a3b8',
+            'no_show'    => '#f59e0b',
+        ];
+        if (!empty($visitas_cal)) {
+            global $wpdb;
+            $client_table = $wpdb->prefix . 'crm_clients';
+            $client_ids = array_unique(array_map(static fn($v) => (int) $v['client_id'], $visitas_cal));
+            $client_ids = array_filter($client_ids);
+            $nombres = [];
+            if (!empty($client_ids)) {
+                $in_ph = implode(',', array_fill(0, count($client_ids), '%d'));
+                $rows = $wpdb->get_results(
+                    $wpdb->prepare("SELECT id, cliente_nombre FROM $client_table WHERE id IN ($in_ph)", $client_ids),
+                    ARRAY_A
+                );
+                foreach ((array) $rows as $r) {
+                    $nombres[(int) $r['id']] = (string) $r['cliente_nombre'];
+                }
+            }
+            foreach ($visitas_cal as $v) {
+                $cid   = (int) $v['client_id'];
+                $title = ($nombres[$cid] ?? ('Cliente #' . $cid));
+                $color = $estado_color_map[$v['estado']] ?? '#64748b';
+                try {
+                    $dt_start = new DateTime($v['fecha_visita']);
+                    $start    = $dt_start->format('Y-m-d\TH:i:s');
+                    $dt_end   = clone $dt_start;
+                    $dt_end->modify('+' . max(5, (int) $v['duracion_min']) . ' minutes');
+                    $end      = $dt_end->format('Y-m-d\TH:i:s');
+                } catch (Exception $e) {
+                    $start = $v['fecha_visita'];
+                    $end   = $v['fecha_visita'];
+                }
+                $com_user = $v['comercial_id'] ? get_userdata((int) $v['comercial_id']) : null;
+                $eventos_cal[] = [
+                    'id'              => (int) $v['id'],
+                    'title'           => $title,
+                    'start'           => $start,
+                    'end'             => $end,
+                    'backgroundColor' => $color,
+                    'borderColor'     => $color,
+                    'extendedProps'   => [
+                        'estado'    => $v['estado'],
+                        'lugar'     => (string) $v['lugar'],
+                        'sector'    => (string) $v['sector'],
+                        'asignado'  => $com_user ? $com_user->display_name : '',
+                        'client_id' => $cid,
+                    ],
+                ];
+            }
+        }
+        $eventos_json = wp_json_encode($eventos_cal);
+        ?>
+        <div class="crm-agenda-toggle" style="display:inline-flex; gap:4px; margin-bottom:14px; background:#f1f5f9; padding:4px; border-radius:8px;">
+            <button type="button" data-view="list" class="crm-agenda-toggle-btn is-active"
+                style="padding:6px 14px; border:none; background:#fff; color:#0f172a; border-radius:6px; cursor:pointer; font-weight:600; font-size:13px; box-shadow:0 1px 2px rgba(0,0,0,.06);">
+                Lista
+            </button>
+            <button type="button" data-view="calendar" class="crm-agenda-toggle-btn"
+                style="padding:6px 14px; border:none; background:transparent; color:#475569; border-radius:6px; cursor:pointer; font-weight:600; font-size:13px;">
+                Calendario
+            </button>
+        </div>
+
+        <div class="crm-agenda-view crm-agenda-view-list">
         <?php if (empty($visitas)): ?>
             <p style="padding:18px; background:#fff; border:1px solid #e2e8f0; border-radius:6px;">
                 No hay visitas que coincidan con los filtros.
@@ -303,6 +383,97 @@ function crm_shortcode_mi_agenda($atts = []) {
             </table>
             </div>
         <?php endif; ?>
+        </div><!-- /.crm-agenda-view-list -->
+
+        <div class="crm-agenda-view crm-agenda-view-calendar" style="display:none;">
+            <div id="crm-agenda-calendar" style="background:#fff; padding:14px; border:1px solid #e2e8f0; border-radius:6px;"></div>
+            <p style="font-size:12px; color:#64748b; margin-top:8px;">
+                Pulsa una visita para abrir la ficha del cliente. Colores:
+                <span style="display:inline-block; width:10px; height:10px; background:#3b82f6; border-radius:50%; vertical-align:middle;"></span> programada ·
+                <span style="display:inline-block; width:10px; height:10px; background:#10b981; border-radius:50%; vertical-align:middle;"></span> realizada ·
+                <span style="display:inline-block; width:10px; height:10px; background:#f59e0b; border-radius:50%; vertical-align:middle;"></span> no se present\u00f3 ·
+                <span style="display:inline-block; width:10px; height:10px; background:#94a3b8; border-radius:50%; vertical-align:middle;"></span> cancelada
+            </p>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+        <script>
+        (function(){
+            var STORAGE_KEY = 'crmAgendaView';
+            var events = <?php echo $eventos_json; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>;
+            var fichaUrl = <?php echo wp_json_encode(home_url('/editar-cliente/')); ?>;
+
+            var wrap = document.querySelector('.crm-mi-agenda-wrap');
+            if (!wrap) return;
+            var btns    = wrap.querySelectorAll('.crm-agenda-toggle-btn');
+            var listEl  = wrap.querySelector('.crm-agenda-view-list');
+            var calEl   = wrap.querySelector('.crm-agenda-view-calendar');
+            var mountEl = document.getElementById('crm-agenda-calendar');
+            var calendar = null;
+
+            function activate(view){
+                btns.forEach(function(b){
+                    var on = (b.dataset.view === view);
+                    b.classList.toggle('is-active', on);
+                    b.style.background = on ? '#fff' : 'transparent';
+                    b.style.color      = on ? '#0f172a' : '#475569';
+                    b.style.boxShadow  = on ? '0 1px 2px rgba(0,0,0,.06)' : 'none';
+                });
+                if (view === 'calendar') {
+                    listEl.style.display = 'none';
+                    calEl.style.display  = '';
+                    if (!calendar && window.FullCalendar) {
+                        calendar = new FullCalendar.Calendar(mountEl, {
+                            initialView: 'dayGridMonth',
+                            locale: 'es',
+                            firstDay: 1,
+                            height: 'auto',
+                            headerToolbar: {
+                                left:  'prev,next today',
+                                center:'title',
+                                right: 'dayGridMonth,timeGridWeek,listMonth'
+                            },
+                            buttonText: { today: 'Hoy', month: 'Mes', week: 'Semana', list: 'Lista' },
+                            events: events,
+                            eventTimeFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
+                            eventClick: function(info){
+                                info.jsEvent.preventDefault();
+                                var cid = info.event.extendedProps.client_id;
+                                if (cid) {
+                                    var sep = fichaUrl.indexOf('?') === -1 ? '?' : '&';
+                                    window.location.href = fichaUrl + sep + 'client_id=' + cid;
+                                }
+                            },
+                            eventDidMount: function(info){
+                                var p = info.event.extendedProps;
+                                var tip = (info.event.title || '') +
+                                    (p.lugar ? '\n' + p.lugar : '') +
+                                    (p.asignado ? '\nAsignado: ' + p.asignado : '') +
+                                    (p.estado ? '\nEstado: ' + p.estado : '');
+                                info.el.setAttribute('title', tip);
+                            }
+                        });
+                        calendar.render();
+                    } else if (calendar) {
+                        // por si cambia de tamano el contenedor
+                        calendar.updateSize();
+                    }
+                } else {
+                    listEl.style.display = '';
+                    calEl.style.display  = 'none';
+                }
+                try { localStorage.setItem(STORAGE_KEY, view); } catch (e) {}
+            }
+
+            btns.forEach(function(b){
+                b.addEventListener('click', function(){ activate(b.dataset.view); });
+            });
+
+            var saved = 'list';
+            try { saved = localStorage.getItem(STORAGE_KEY) || 'list'; } catch (e) {}
+            activate(saved);
+        })();
+        </script>
     </div>
     <?php
     return ob_get_clean();

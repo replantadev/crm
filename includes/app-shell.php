@@ -82,6 +82,81 @@ function crm_app_shell_trigger_shortcodes() {
 }
 
 /**
+ * Helper: devuelve true cuando la pagina actual se solicita en modo
+ * embed/iframe del CRM (parametro GET `crm_modal=1`).
+ *
+ * En este modo el plugin suprime el shell propio (topbar/menu) y ademas
+ * oculta el header/footer del tema y la admin bar de WordPress para que el
+ * iframe muestre solo el contenido limpio, sin chrome ni navegacion.
+ *
+ * v1.20.13
+ */
+function crm_app_shell_is_modal_request() {
+    return isset($_GET['crm_modal']) && (string) $_GET['crm_modal'] === '1';
+}
+
+/**
+ * Modo chromeless: cuando el iframe del modal pide la pagina con
+ * `?crm_modal=1` ocultamos la admin bar y el chrome del tema (Astra y
+ * temas similares), para que dentro del iframe solo se vea el contenido.
+ *
+ * v1.20.13
+ */
+add_action('after_setup_theme', function () {
+    if (crm_app_shell_is_modal_request()) {
+        show_admin_bar(false);
+    }
+});
+
+add_action('wp_head', function () {
+    if (!crm_app_shell_is_modal_request()) {
+        return;
+    }
+    // CSS muy especifico para neutralizar chrome del tema dentro del modal.
+    // Cubre Astra (.ast-*, #masthead) y selectores genericos de WP.
+    ?>
+    <style id="crm-modal-chromeless">
+    html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+    }
+    html.wp-toolbar { padding-top: 0 !important; }
+    #wpadminbar,
+    header.site-header,
+    #masthead,
+    .site-header,
+    .ast-primary-header-bar,
+    .ast-above-header,
+    .ast-below-header,
+    .main-header-bar-wrap,
+    .main-header-bar,
+    .ast-main-header,
+    .ast-mobile-header-wrap,
+    footer.site-footer,
+    #colophon,
+    .site-footer,
+    .ast-scroll-to-top-wrap,
+    .crm-topbar {
+        display: none !important;
+    }
+    .ast-container,
+    .site-content,
+    #content,
+    .ast-row,
+    .entry-content,
+    .ast-article-single,
+    main {
+        padding: 0 !important;
+        margin: 0 !important;
+        max-width: 100% !important;
+    }
+    body.crm-app-mode .crm-shell-main { padding-top: 0 !important; }
+    </style>
+    <?php
+}, 9999);
+
+/**
  * Determina si la página actual es una página CRM.
  *
  * Detección en dos pasos para robustez:
@@ -93,10 +168,10 @@ function crm_app_shell_is_crm_page() {
     if ($cache !== null) {
         return $cache;
     }
-    // v1.20.12: si la pagina se solicita en modo embed/iframe (crm_modal=1),
-    // suprimir el shell (topbar/menu) para que dentro del iframe solo se vea
-    // el contenido y no se duplique el menu lateral.
-    if (isset($_GET['crm_modal']) && (string) $_GET['crm_modal'] === '1') {
+    // v1.20.12 / v1.20.13: si la pagina se solicita en modo embed/iframe
+    // (crm_modal=1), suprimir el shell (topbar/menu) para que dentro del
+    // iframe solo se vea el contenido y no se duplique el menu lateral.
+    if (crm_app_shell_is_modal_request()) {
         $cache = false;
         return $cache;
     }

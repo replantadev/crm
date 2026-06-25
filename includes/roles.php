@@ -126,8 +126,16 @@ function crm_user_is_comercial($user_id = null) {
 }
 
 /**
- * Devuelve el rol primario del usuario para el CRM en orden de prioridad:
- * administrator > crm_admin > comercial > visitador > '' (sin rol CRM).
+ * Devuelve el rol primario del usuario para el CRM.
+ *
+ * Prioridad (de mas restrictivo a menos restrictivo): el rol mas restrictivo
+ * gana — coherente con la regla de seguridad: si un usuario tiene rol comercial
+ * o visitador, debe identificarse como tal aunque tambien tenga roles admin.
+ *
+ *  visitador > comercial > crm_admin > administrator > '' (sin rol CRM)
+ *
+ * v1.20.13: invertida la prioridad para que con SOLO el rol visitador (o
+ * combinado con comercial/admin) la cabecera muestre "Visitador".
  *
  * @param int|null $user_id ID de usuario; null para el actual.
  * @return string Rol primario (slug).
@@ -142,7 +150,7 @@ function crm_user_primary_role($user_id = null) {
         return '';
     }
     $roles = (array) $user->roles;
-    $priority = ['administrator', 'crm_admin', 'comercial', 'visitador'];
+    $priority = ['visitador', 'comercial', 'crm_admin', 'administrator'];
     foreach ($priority as $r) {
         if (in_array($r, $roles, true)) {
             return $r;

@@ -338,8 +338,8 @@ function crm_shortcode_agenda_modal($atts = []) {
         onclick="if(event.target===this){this.style.display='none'; document.getElementById('crm-agenda-modal-iframe').src='about:blank';}">
         <div style="background:#fff; border-radius:12px; width:100%; max-width:1200px; height:90vh; position:relative; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.4);">
             <button type="button" aria-label="Cerrar"
-                style="position:absolute; top:8px; right:12px; z-index:2; background:#fff; border:1px solid #ddd; border-radius:50%; width:34px; height:34px; cursor:pointer; font-size:18px; line-height:1;"
-                onclick="document.getElementById('crm-agenda-modal').style.display='none'; document.getElementById('crm-agenda-modal-iframe').src='about:blank';">�</button>
+                style="position:absolute; top:8px; right:12px; z-index:2; background:#fff; border:1px solid #ddd; border-radius:50%; width:34px; height:34px; cursor:pointer; font-size:20px; line-height:1; display:inline-flex; align-items:center; justify-content:center; padding:0; color:#191919;"
+                onclick="document.getElementById('crm-agenda-modal').style.display='none'; document.getElementById('crm-agenda-modal-iframe').src='about:blank';">&times;</button>
             <iframe id="crm-agenda-modal-iframe"
                 src="about:blank"
                 data-src="<?php echo esc_url($iframe_url); ?>"

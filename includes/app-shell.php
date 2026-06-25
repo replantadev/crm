@@ -93,6 +93,13 @@ function crm_app_shell_is_crm_page() {
     if ($cache !== null) {
         return $cache;
     }
+    // v1.20.12: si la pagina se solicita en modo embed/iframe (crm_modal=1),
+    // suprimir el shell (topbar/menu) para que dentro del iframe solo se vea
+    // el contenido y no se duplique el menu lateral.
+    if (isset($_GET['crm_modal']) && (string) $_GET['crm_modal'] === '1') {
+        $cache = false;
+        return $cache;
+    }
     $opts = crm_app_shell_get_settings();
     if (empty($opts['enabled']) || is_admin() || !is_singular()) {
         $cache = false;

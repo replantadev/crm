@@ -554,6 +554,47 @@ function crm_admin_render_settings() {
                     <p class="description">Página con el shortcode <code>[crm_mi_agenda]</code>. También se usa como contenido del modal del comercial.</p>
                 </td>
             </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Menú global por rol (v1.20.3)</h3>
+                <p style="font-weight:normal;color:#666;margin:0 0 8px;">URLs adicionales que el menú propio del CRM usará para construir la navegación por rol. Si las dejas en blanco, esos items no aparecerán en el menú.</p></th></tr>
+            <tr>
+                <th><label for="crm_url_escritorio">URL Escritorio (todos los roles)</label></th>
+                <td>
+                    <input type="url" id="crm_url_escritorio" name="crm_url_escritorio" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_url_escritorio', home_url('/crm/'))); ?>" placeholder="<?php echo esc_attr(home_url('/crm/')); ?>">
+                    <p class="description">Página con los widgets de resumen del CRM (clientes recientes, rendimiento, etc).</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_url_altas_admin">URL "Todas las altas" (admin)</label></th>
+                <td>
+                    <input type="url" id="crm_url_altas_admin" name="crm_url_altas_admin" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_url_altas_admin', home_url('/todas-las-altas-de-cliente/'))); ?>" placeholder="<?php echo esc_attr(home_url('/todas-las-altas-de-cliente/')); ?>">
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_url_leads_mk_admin">URL "Leads MK" (admin)</label></th>
+                <td>
+                    <input type="url" id="crm_url_leads_mk_admin" name="crm_url_leads_mk_admin" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_url_leads_mk_admin', '')); ?>" placeholder="https://tusitio.com/leads-mk/">
+                    <p class="description">Página con el shortcode <code>[asignacion_leads_mk]</code>.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_url_mis_leads">URL "Mis leads" (comercial/visitador)</label></th>
+                <td>
+                    <input type="url" id="crm_url_mis_leads" name="crm_url_mis_leads" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_url_mis_leads', '')); ?>" placeholder="https://tusitio.com/mis-leads/">
+                    <p class="description">Página con el shortcode <code>[asignacion_leads_mk modo="mios"]</code>.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_url_nueva_alta">URL "Nueva alta"</label></th>
+                <td>
+                    <input type="url" id="crm_url_nueva_alta" name="crm_url_nueva_alta" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_url_nueva_alta', home_url('/alta-de-cliente/'))); ?>" placeholder="<?php echo esc_attr(home_url('/alta-de-cliente/')); ?>">
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_url_resumen">URL "Resumen comerciales"</label></th>
+                <td>
+                    <input type="url" id="crm_url_resumen" name="crm_url_resumen" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_url_resumen', home_url('/resumen/'))); ?>" placeholder="<?php echo esc_attr(home_url('/resumen/')); ?>">
+                </td>
+            </tr>
         </table>
         <?php submit_button(); ?>
     </form>

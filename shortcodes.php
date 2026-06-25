@@ -9,17 +9,58 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+/**
+ * v1.20.3 — Selector de filas de clientes filtrado por rol del usuario actual,
+ * para los widgets de escritorio.
+ *
+ * - crm_admin / administrator → todos los clientes.
+ * - comercial → solo los clientes con user_id = current.
+ * - visitador → solo los clientes con visitas asignadas al current.
+ * - cualquier otro rol → array vacío.
+ */
+function crm_widget_select_clientes_field($field) {
+    global $wpdb;
+    $field = preg_replace('/[^a-z0-9_]/', '', (string) $field);
+    if ($field === '') {
+        return [];
+    }
+    $table = $wpdb->prefix . 'crm_clients';
+    $u = wp_get_current_user();
+    $roles = (array) $u->roles;
+    $uid = (int) $u->ID;
+
+    if (in_array('administrator', $roles, true) || in_array('crm_admin', $roles, true)) {
+        return $wpdb->get_col("SELECT {$field} FROM {$table}");
+    }
+    if (in_array('comercial', $roles, true)) {
+        return $wpdb->get_col($wpdb->prepare(
+            "SELECT {$field} FROM {$table} WHERE user_id = %d",
+            $uid
+        ));
+    }
+    if (in_array('visitador', $roles, true)) {
+        $v_table = $wpdb->prefix . 'crm_visitas';
+        return $wpdb->get_col($wpdb->prepare(
+            "SELECT c.{$field} FROM {$table} c
+             WHERE c.id IN (SELECT DISTINCT client_id FROM {$v_table} WHERE comercial_id = %d)",
+            $uid
+        ));
+    }
+    return [];
+}
+
 add_shortcode('crm_clientes_por_interes', 'crm_clientes_por_interes_widget');
 function crm_clientes_por_interes_widget() {
     if (!is_user_logged_in()) {
         return "<p>Debes iniciar sesión para ver este widget.</p>";
     }
 
-    global $wpdb;
-    $table = $wpdb->prefix . "crm_clients";
     $sectores = array_keys(crm_get_colores_sectores());
     $counts = array_fill_keys($sectores, 0);
-    $rows = $wpdb->get_col("SELECT intereses FROM $table");
+
+    // v1.20.3: filtrar por rol — admin todos, comercial sus clientes,
+    // visitador los clientes con visitas asignadas a él.
+    $rows = crm_widget_select_clientes_field('intereses');
 
     foreach ($rows as $raw) {
         $ints = maybe_unserialize($raw);
@@ -410,7 +451,7 @@ function crm_admin_panel_widget() {
         
         <!-- Estadísticas Generales -->
         <div class="crm-panel-section">
-            <h3>📊 Estadísticas del Sistema</h3>
+            <h3>Estadísticas del Sistema</h3>
             <?php
             global $wpdb;
             $clients_table = $wpdb->prefix . 'crm_clients';
@@ -454,7 +495,7 @@ function crm_admin_panel_widget() {
         
         <!-- Configuración de Emails -->
         <div class="crm-panel-section">
-            <h3>📧 Configuración de Notificaciones</h3>
+            <h3>Configuración de Notificaciones</h3>
             <form method="post">
                 <?php wp_nonce_field('crm_admin_settings', 'crm_nonce'); ?>
                 <div class="crm-settings-grid">
@@ -476,20 +517,20 @@ function crm_admin_panel_widget() {
                     </label>
                 </div>
                 <p style="margin-top: 20px;">
-                    <button type="submit" name="update_crm_settings" class="crm-btn">💾 Guardar Configuración</button>
-                    <button type="button" id="test-email-btn" class="crm-btn">📧 Enviar Email de Prueba</button>
-                    <button type="button" id="clean-logs-btn" class="crm-btn crm-btn-danger">🧹 Limpiar Logs Antiguos</button>
+                    <button type="submit" name="update_crm_settings" class="crm-btn">Guardar configuración</button>
+                    <button type="button" id="test-email-btn" class="crm-btn">Enviar email de prueba</button>
+                    <button type="button" id="clean-logs-btn" class="crm-btn crm-btn-danger">Limpiar logs antiguos</button>
                 </p>
             </form>
         </div>
         
         <!-- Log de Actividades -->
         <div class="crm-panel-section">
-            <h3>📋 Registro de Actividades</h3>
+            <h3>Registro de actividades</h3>
             
             <!-- Selector de mes -->
             <div style="margin-bottom: 15px;">
-                <label for="month-selector" style="color: rgb(51, 65, 85); font-weight: 600;">📅 Consultar mes:</label>
+                <label for="month-selector" style="color: rgb(51, 65, 85); font-weight: 600;">Consultar mes:</label>
                 <select id="month-selector" style="margin-left: 10px; padding: 8px; border: 1px solid rgb(203, 213, 225); border-radius: 6px; background: white;">
                     <?php
                     $available_months = crm_get_available_log_months();
@@ -507,7 +548,7 @@ function crm_admin_panel_widget() {
                     }
                     ?>
                 </select>
-                <button id="load-month-logs" class="crm-btn" style="margin-left: 10px; padding: 8px 15px; font-size: 14px;">🔄 Cargar</button>
+                <button id="load-month-logs" class="crm-btn" style="margin-left: 10px; padding: 8px 15px; font-size: 14px;">Cargar</button>
             </div>
             
             <div id="activity-logs-container">
@@ -526,7 +567,7 @@ function crm_admin_panel_widget() {
             
             if (empty($logs)) {
                 echo '<div style="padding: 20px; text-align: center; background: rgb(248, 250, 252); border-radius: 8px; border: 2px dashed rgb(203, 213, 225);">';
-                echo '<p style="margin: 0; color: rgb(71, 85, 105);">📝 No hay actividades registradas este mes.</p>';
+                echo '<p style="margin: 0; color: rgb(71, 85, 105);">No hay actividades registradas este mes.</p>';
                 echo '<p style="margin: 10px 0 0 0; font-size: 14px; color: rgb(100, 116, 139);">Las actividades aparecerán aquí cuando uses el sistema.</p>';
                 echo '</div>';
             } else {
@@ -535,11 +576,11 @@ function crm_admin_panel_widget() {
                 <table class="crm-log-table">
                     <thead>
                         <tr>
-                            <th>👤 Usuario</th>
-                            <th>🔹 Acción</th>
-                            <th>📝 Detalles</th>
-                            <th>🕐 Fecha</th>
-                            <th>🌐 IP</th>
+                            <th>Usuario</th>
+                            <th>Acción</th>
+                            <th>Detalles</th>
+                            <th>Fecha</th>
+                            <th>IP</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -574,30 +615,30 @@ function crm_admin_panel_widget() {
         
         <!-- Herramientas del Sistema -->
         <div class="crm-panel-section">
-            <h3>🔧 Herramientas del Sistema</h3>
+            <h3>Herramientas del sistema</h3>
             <div class="crm-stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
                 <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <a href="/todas-las-altas-de-cliente/" class="crm-btn">📋 Ver Todos los Clientes</a>
-                    <a href="/resumen/" class="crm-btn crm-btn-secondary">📊 Resumen de Comerciales</a>
-                    <a href="/asignar-leads/" class="crm-btn crm-btn-secondary">🎯 Asignar Leads de Marketing</a>
+                    <a href="/todas-las-altas-de-cliente/" class="crm-btn">Ver todos los clientes</a>
+                    <a href="/resumen/" class="crm-btn crm-btn-secondary">Resumen de comerciales</a>
+                    <a href="/asignar-leads/" class="crm-btn crm-btn-secondary">Asignar leads de marketing</a>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <button type="button" id="export-data-btn" class="crm-btn">📁 Exportar Datos</button>
-                    <button type="button" id="backup-system-btn" class="crm-btn crm-btn-secondary">💾 Backup Sistema</button>
+                    <button type="button" id="export-data-btn" class="crm-btn">Exportar datos</button>
+                    <button type="button" id="backup-system-btn" class="crm-btn crm-btn-secondary">Backup sistema</button>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <button type="button" id="optimize-db-btn" class="crm-btn crm-btn-secondary">⚡ Optimizar BD</button>
-                    <button type="button" id="system-info-btn" class="crm-btn crm-btn-secondary">ℹ️ Info Sistema</button>
+                    <button type="button" id="optimize-db-btn" class="crm-btn crm-btn-secondary">Optimizar BD</button>
+                    <button type="button" id="system-info-btn" class="crm-btn crm-btn-secondary">Info sistema</button>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <button type="button" id="generate-sample-logs-btn" class="crm-btn" style="background: linear-gradient(135deg, rgb(34, 197, 94) 0%, rgb(22, 163, 74) 100%);">🧪 Generar Logs Prueba</button>
-                    <button type="button" id="clear-all-logs-btn" class="crm-btn crm-btn-danger">🗑️ Limpiar Todos</button>
+                    <button type="button" id="generate-sample-logs-btn" class="crm-btn" style="background: linear-gradient(135deg, rgb(34, 197, 94) 0%, rgb(22, 163, 74) 100%);">Generar logs prueba</button>
+                    <button type="button" id="clear-all-logs-btn" class="crm-btn crm-btn-danger">Limpiar todos</button>
                 </div>
             </div>
             
             <!-- Panel de información del sistema -->
             <div id="system-info-panel" style="display: none; margin-top: 20px; padding: 20px; background: rgb(248, 250, 252); border-radius: 8px; border-left: 4px solid rgb(59, 130, 246);">
-                <h4 style="margin-top: 0; color: rgb(15, 23, 42);">📊 Información del Sistema</h4>
+                <h4 style="margin-top: 0; color: rgb(15, 23, 42);">Información del sistema</h4>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                     <div>
                         <strong>WordPress:</strong> <?php echo get_bloginfo('version'); ?><br>
@@ -620,7 +661,7 @@ function crm_admin_panel_widget() {
         
         <!-- Panel de Monitoreo en Tiempo Real -->
         <div class="crm-panel-section">
-            <h3>📈 Monitoreo en Tiempo Real</h3>
+            <h3>Monitoreo en tiempo real</h3>
             <div id="real-time-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
                 <div style="text-align: center; padding: 15px; background: linear-gradient(135deg, rgb(248, 250, 252) 0%, rgb(241, 245, 249) 100%); border-radius: 8px;">
                     <div style="font-size: 24px; font-weight: bold; color: rgb(15, 23, 42);" id="users-online">0</div>
@@ -640,8 +681,8 @@ function crm_admin_panel_widget() {
                 </div>
             </div>
             <div style="margin-top: 15px; text-align: center;">
-                <button type="button" id="refresh-monitoring" class="crm-btn crm-btn-secondary">🔄 Actualizar</button>
-                <button type="button" id="auto-refresh-toggle" class="crm-btn">⏰ Auto-refresh: OFF</button>
+                <button type="button" id="refresh-monitoring" class="crm-btn crm-btn-secondary">Actualizar</button>
+                <button type="button" id="auto-refresh-toggle" class="crm-btn">Auto-refresh: OFF</button>
             </div>
         </div>
     </div>
@@ -659,9 +700,9 @@ function crm_clientes_recientes_widget() {
     $table = $wpdb->prefix . "crm_clients";
 
     if (current_user_can('crm_admin')) {
-        $rows = $wpdb->get_results("SELECT cliente_nombre, empresa, estado, creado_en FROM $table ORDER BY creado_en DESC LIMIT 5", ARRAY_A);
+        $rows = $wpdb->get_results("SELECT id, cliente_nombre, empresa, estado, creado_en FROM $table ORDER BY creado_en DESC LIMIT 5", ARRAY_A);
     } else {
-        $rows = $wpdb->get_results($wpdb->prepare("SELECT cliente_nombre, empresa, estado, creado_en FROM $table WHERE user_id=%d ORDER BY creado_en DESC LIMIT 5", $current), ARRAY_A);
+        $rows = $wpdb->get_results($wpdb->prepare("SELECT id, cliente_nombre, empresa, estado, creado_en FROM $table WHERE user_id=%d ORDER BY creado_en DESC LIMIT 5", $current), ARRAY_A);
     }
 
     ob_start(); 
@@ -686,8 +727,9 @@ function crm_clientes_recientes_widget() {
                     </thead>
                     <tbody>
                         <?php foreach ($rows as $r): ?>
+                        <?php $ficha_url = add_query_arg('client_id', (int) $r['id'], home_url('/alta-de-cliente/')); ?>
                         <tr>
-                            <td class="client-name-cell"><?php echo esc_html($r['cliente_nombre']); ?></td>
+                            <td class="client-name-cell"><a href="<?php echo esc_url($ficha_url); ?>" class="crm-link"><?php echo esc_html($r['cliente_nombre']); ?></a></td>
                             <td class="company-cell"><?php echo esc_html($r['empresa']); ?></td>
                             <td>
                                 <span class="status-badge status-<?php echo esc_attr($r['estado']); ?>">
@@ -743,7 +785,7 @@ function crm_admin_panel_scripts() {
                 nonce: '<?php echo wp_create_nonce("crm_admin_actions"); ?>'
             }, function(response) {
                 alert(response.data || 'Email de prueba enviado');
-                btn.text('📧 Enviar Email de Prueba');
+                btn.text('Enviar email de prueba');
             });
         });
         
@@ -772,7 +814,7 @@ function crm_admin_panel_scripts() {
                 nonce: '<?php echo wp_create_nonce("crm_admin_actions"); ?>'
             }, function(response) {
                 alert(response.data || 'Backup creado');
-                btn.text('💾 Backup Sistema');
+                btn.text('Backup sistema');
             });
         });
         
@@ -785,7 +827,7 @@ function crm_admin_panel_scripts() {
                 nonce: '<?php echo wp_create_nonce("crm_admin_actions"); ?>'
             }, function(response) {
                 alert(response.data || 'Base de datos optimizada');
-                btn.text('⚡ Optimizar BD');
+                btn.text('Optimizar BD');
             });
         });
         
@@ -847,11 +889,11 @@ function crm_admin_panel_scripts() {
             if (autoRefreshEnabled) {
                 clearInterval(autoRefreshInterval);
                 autoRefreshEnabled = false;
-                btn.text('⏰ Auto-refresh: OFF');
+                btn.text('Auto-refresh: OFF');
             } else {
                 autoRefreshInterval = setInterval(updateMonitoring, 30000); // Cada 30 segundos
                 autoRefreshEnabled = true;
-                btn.text('⏰ Auto-refresh: ON');
+                btn.text('Auto-refresh: ON');
                 updateMonitoring(); // Actualizar inmediatamente
             }
         });
@@ -868,8 +910,6 @@ function crm_clientes_por_estado_widget() {
     if (!is_user_logged_in()) {
         return "<p>Debes iniciar sesión para ver este widget.</p>";
     }
-    global $wpdb;
-    $table = $wpdb->prefix . "crm_clients";
 
     $sectores = array_keys(crm_get_colores_sectores());
     $estados = array_keys(crm_get_estados_sector());
@@ -884,7 +924,8 @@ function crm_clientes_por_estado_widget() {
         }
     }
 
-    $rows = $wpdb->get_col("SELECT estado_por_sector FROM $table");
+    // v1.20.3: filtrar por rol.
+    $rows = crm_widget_select_clientes_field('estado_por_sector');
     foreach ($rows as $raw) {
         $eps = maybe_unserialize($raw);
         if (!is_array($eps)) continue;

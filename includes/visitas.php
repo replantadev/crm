@@ -155,6 +155,12 @@ function crm_visita_create($input) {
     if (is_wp_error($data)) {
         return $data;
     }
+    // v1.20.3: no permitir agendar nuevas visitas en el pasado.
+    // Se tolera hasta 5 min hacia atrás para evitar errores por reloj/clic tardío.
+    $fecha_ts = strtotime($data['fecha_visita']);
+    if ($fecha_ts && $fecha_ts < (current_time('timestamp') - 300)) {
+        return new WP_Error('past', 'No se pueden agendar visitas en el pasado.');
+    }
     // v1.20.2: anti-solape — bloquear si el asignado tiene otra visita en el slot.
     // Permitir saltar con $input['force_overlap'] = '1' (crm_admin o visitador).
     $force = !empty($input['force_overlap']) && crm_visita_user_can_force_overlap();
@@ -643,6 +649,39 @@ function crm_render_visitas_box($client_id) {
     $is_admin = function_exists('crm_user_is_admin') && crm_user_is_admin();
     $can_create = crm_visita_can_create();
     $current_user_id = get_current_user_id();
+
+    // v1.20.3: detectar visitas programadas asignadas al usuario actual
+    // (badge destacado para que el visitador no pase por alto su asignación).
+    $mis_visitas_futuras = [];
+    $now_ts = current_time('timestamp');
+    foreach ($visitas as $v) {
+        if ((int) $v['comercial_id'] === (int) $current_user_id
+            && $v['estado'] === 'programada'
+            && strtotime($v['fecha_visita']) >= $now_ts - 3600) {
+            $mis_visitas_futuras[] = $v;
+        }
+    }
+    ?>
+    <?php if (!empty($mis_visitas_futuras)): ?>
+        <div class="crm-visita-mia-banner" role="status" style="margin-top:16px; padding:14px 16px; background:#fff8e1; border-left:4px solid #f59e0b; border-radius:6px;">
+            <strong style="color:#92400e; font-size:15px;">
+                Tienes <?php echo count($mis_visitas_futuras); ?>
+                visita<?php echo count($mis_visitas_futuras) > 1 ? 's' : ''; ?>
+                programada<?php echo count($mis_visitas_futuras) > 1 ? 's' : ''; ?> con este cliente:
+            </strong>
+            <ul style="margin:6px 0 0 0; padding-left:20px; color:#78350f;">
+                <?php foreach ($mis_visitas_futuras as $mv):
+                    $mv_fecha = mysql2date(get_option('date_format') . ' H:i', $mv['fecha_visita']);
+                ?>
+                    <li>
+                        <strong><?php echo esc_html($mv_fecha); ?></strong>
+                        <?php if (!empty($mv['lugar'])): ?> — <?php echo esc_html($mv['lugar']); ?><?php endif; ?>
+                        <?php if (!empty($mv['sector'])): ?> · <?php echo esc_html($sectores_lbl[$mv['sector']] ?? $mv['sector']); ?><?php endif; ?>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        </div>
+    <?php endif; ?>
     ?>
     <div class="crm-card crm-visitas-card" style="margin-top:20px;">
         <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">
@@ -685,9 +724,19 @@ function crm_render_visitas_box($client_id) {
                         if ($v['estado'] === 'realizada')   $estado_class = 'crm-pill--success';
                         if ($v['estado'] === 'cancelada')   $estado_class = 'crm-pill--neutral';
                         if ($v['estado'] === 'no_show')     $estado_class = 'crm-pill--warn';
+                        $es_mia = ($com === (int) $current_user_id);
+                        $row_style = 'border-top:1px solid #eee;';
+                        if ($es_mia && $v['estado'] === 'programada') {
+                            $row_style .= ' background:#fff8e1;';
+                        }
                     ?>
-                        <tr style="border-top:1px solid #eee;">
-                            <td style="padding:6px 8px;"><?php echo esc_html($fecha_dt); ?></td>
+                        <tr style="<?php echo esc_attr($row_style); ?>"<?php if ($es_mia) echo ' class="crm-visita-mia"'; ?>>
+                            <td style="padding:6px 8px;">
+                                <?php echo esc_html($fecha_dt); ?>
+                                <?php if ($es_mia): ?>
+                                    <span style="margin-left:4px; background:#f59e0b; color:#fff; font-size:10px; padding:1px 6px; border-radius:10px; font-weight:600;">Para ti</span>
+                                <?php endif; ?>
+                            </td>
                             <td style="padding:6px 8px;"><?php echo $v['sector'] ? esc_html($sectores_lbl[$v['sector']] ?? $v['sector']) : '—'; ?></td>
                             <td style="padding:6px 8px;"><?php echo esc_html($v['lugar']); ?></td>
                             <td style="padding:6px 8px;">
@@ -712,6 +761,22 @@ function crm_render_visitas_box($client_id) {
                                         <input type="hidden" name="estado" value="cancelada">
                                         <button type="submit" class="button button-small" onclick="return confirm('¿Cancelar esta visita?');">Cancelar</button>
                                     </form>
+                                <?php endif; ?>
+                                <?php if ($v['estado'] === 'programada' && function_exists('crm_gcal_get_event_url')):
+                                    if (!isset($client_row_cache)) { $client_row_cache = []; }
+                                    if (!isset($client_row_cache[$client_id])) {
+                                        global $wpdb;
+                                        $client_row_cache[$client_id] = $wpdb->get_row($wpdb->prepare("SELECT cliente_nombre FROM {$wpdb->prefix}crm_clients WHERE id=%d", $client_id), ARRAY_A);
+                                    }
+                                    $gcal_url = crm_gcal_get_event_url($v, $client_row_cache[$client_id]['cliente_nombre'] ?? '');
+                                ?>
+                                    <a href="<?php echo esc_url($gcal_url); ?>" target="_blank" rel="noopener noreferrer"
+                                       class="button button-small"
+                                       title="Añadir a Google Calendar"
+                                       style="display:inline-flex; align-items:center; gap:4px;">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                                        Google Calendar
+                                    </a>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -742,7 +807,17 @@ function crm_render_visitas_box($client_id) {
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                     <label>
                         <span style="display:block; font-weight:600; font-size:13px;">Fecha y hora</span>
-                        <input type="datetime-local" name="fecha_visita" required style="width:100%;">
+                        <?php
+                        // Slots de 15 min; mínimo: ahora redondeado al próximo cuarto de hora
+                        $now_ts   = current_time('timestamp');
+                        $min_ts   = (int) (ceil($now_ts / 900) * 900);
+                        $min_attr = date('Y-m-d\TH:i', $min_ts);
+                        ?>
+                        <input type="datetime-local" name="fecha_visita" required
+                               step="900"
+                               min="<?php echo esc_attr($min_attr); ?>"
+                               style="width:100%;">
+                        <small style="color:#64748b;">Slots de 15 min. No se permite agendar en el pasado.</small>
                     </label>
                     <label>
                         <span style="display:block; font-weight:600; font-size:13px;">Duración (min)</span>

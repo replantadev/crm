@@ -16,11 +16,105 @@ if (!defined('ABSPATH')) {
 
 add_shortcode('asignacion_leads_mk', 'crm_shortcode_asignacion_leads_mk');
 
-function crm_shortcode_asignacion_leads_mk() {
-    if (!is_user_logged_in() || !current_user_can('crm_admin')) {
+function crm_shortcode_asignacion_leads_mk($atts = []) {
+    $atts = shortcode_atts([
+        'modo' => 'asignar', // 'asignar' (admin) | 'mios' (comercial/visitador)
+    ], $atts, 'asignacion_leads_mk');
+
+    if (!is_user_logged_in()) {
+        return '<p>Inicia sesión para ver tus leads.</p>';
+    }
+
+    if ($atts['modo'] === 'mios') {
+        return crm_render_mis_leads_mk();
+    }
+
+    // Modo asignar: solo crm_admin
+    if (!current_user_can('crm_admin')) {
         return '<p>No tienes permiso para ver esta sección.</p>';
     }
 
+    return crm_render_asignacion_leads_mk();
+}
+
+/**
+ * Render "Mis leads MK": vista read-only para comercial/visitador.
+ * Muestra los leads de marketing asignados al usuario actual.
+ */
+function crm_render_mis_leads_mk() {
+    global $wpdb;
+    $table = $wpdb->prefix . 'crm_clients';
+    $current = get_current_user_id();
+
+    $rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT id, fecha, cliente_nombre, telefono, email_cliente, lead_meta, estado
+         FROM $table
+         WHERE origen_lead='lead_mk' AND user_id = %d
+         ORDER BY id DESC
+         LIMIT 200",
+        $current
+    ), ARRAY_A);
+
+    ob_start();
+    ?>
+    <div class="crm-leads-mk crm-leads-mk--mios">
+        <div class="crm-leads-mk-header">
+            <h2>Mis leads (Marketing)</h2>
+            <p class="crm-leads-mk-counter">
+                <strong><?php echo count($rows); ?></strong>
+                lead<?php echo count($rows) === 1 ? '' : 's'; ?> asignado<?php echo count($rows) === 1 ? '' : 's'; ?> a ti.
+            </p>
+        </div>
+
+        <?php if (empty($rows)): ?>
+            <div class="crm-empty" style="padding:24px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; text-align:center; color:#475569;">
+                <p style="margin:0;">Aún no se te han asignado leads de marketing.</p>
+                <p style="margin:6px 0 0 0; font-size:13px;">Cuando un administrador te asigne uno, aparecerá aquí.</p>
+            </div>
+        <?php else: ?>
+            <div class="crm-leads-mk-table-wrap">
+                <table class="crm-leads-mk-table">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Nombre</th>
+                            <th>Teléfono</th>
+                            <th>Email</th>
+                            <th>Campaña</th>
+                            <th>Estado</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($rows as $r):
+                        $meta = !empty($r['lead_meta']) ? json_decode($r['lead_meta'], true) : [];
+                        $campana = is_array($meta) ? trim(($meta['campaign_name'] ?? '') . (!empty($meta['ad_name']) ? ' · ' . $meta['ad_name'] : '')) : '';
+                        $ficha = add_query_arg('client_id', (int) $r['id'], home_url('/alta-de-cliente/'));
+                        $estado_label = function_exists('crm_get_estado_label') ? crm_get_estado_label($r['estado']) : $r['estado'];
+                    ?>
+                        <tr>
+                            <td><?php echo esc_html(mysql2date('d/m/Y H:i', $r['fecha'])); ?></td>
+                            <td><a href="<?php echo esc_url($ficha); ?>" class="crm-link"><?php echo esc_html($r['cliente_nombre'] ?: '(sin nombre)'); ?></a></td>
+                            <td><?php echo esc_html($r['telefono']); ?></td>
+                            <td><?php echo esc_html($r['email_cliente']); ?></td>
+                            <td><?php echo esc_html($campana); ?></td>
+                            <td><span class="status-badge status-<?php echo esc_attr($r['estado']); ?>"><?php echo esc_html($estado_label); ?></span></td>
+                            <td><a href="<?php echo esc_url($ficha); ?>" class="crm-btn crm-btn-sm">Abrir ficha</a></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+
+/**
+ * Render "Asignar leads MK": vista admin original.
+ */
+function crm_render_asignacion_leads_mk() {
     global $wpdb;
     $table = $wpdb->prefix . 'crm_clients';
     $count = (int) $wpdb->get_var(

@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.2');
+define('CRM_PLUGIN_VERSION', '1.20.3');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -74,10 +74,12 @@ require_once CRM_PLUGIN_PATH . 'includes/icons.php';
 require_once CRM_PLUGIN_PATH . 'includes/ui-helpers.php';
 require_once CRM_PLUGIN_PATH . 'includes/app-shell.php';
 // v1.20.0 — Sistema de visitas
-require_once CRM_PLUGIN_PATH . 'includes/visitas.php';
-// v1.20.2 — Shortcode frontend de Mi agenda + bloqueo wp-admin
+require_once CRM_PLUGIN_PATH . 'includes/visitas.php';// v1.20.2 — Shortcode frontend de Mi agenda + bloqueo wp-admin
 require_once CRM_PLUGIN_PATH . 'includes/shortcode-agenda.php';
 require_once CRM_PLUGIN_PATH . 'includes/admin-lockdown.php';
+// v1.20.3 — Integración Google Calendar (link + feed iCal personal) y menú por rol
+require_once CRM_PLUGIN_PATH . 'includes/gcal-sync.php';
+require_once CRM_PLUGIN_PATH . 'includes/menu-rol.php';
 // Incluir archivos del plugin
 require_once CRM_PLUGIN_PATH . 'acceso.php';
 require_once CRM_PLUGIN_PATH . 'shortcodes.php';
@@ -694,7 +696,7 @@ function crm_formulario_alta_cliente()
         <?php if(current_user_can('crm_admin')): ?>
         <div class="crm-section inicio">
             <div class="half-width">
-                <p><a class="atras" href="/todas-las-altas-de-cliente/"> ⬅️Regresar Atrás</a></p>
+                <p><a class="atras" href="/todas-las-altas-de-cliente/">&larr; Regresar atrás</a></p>
                 <p>Estado: <strong class="estado <?php echo $estado_actual; ?>"><?php echo crm_get_estado_label($estado_actual); ?></strong></p>
                 <?php if ($estado_actual === 'borrador'): ?>
                     <p><small>Esta ficha aún no se ha enviado al administrador para revisión.</small></p>
@@ -1860,6 +1862,31 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         if (!empty($dups_pre)) {
             $dup_warning = $dups_pre;
         }
+    }
+
+    // v1.20.3: hardening — un comercial NO puede cambiar delegado/email_comercial/
+    // origen_lead/es_cliente_activo de un cliente existente, ni asignárselo a otro
+    // en altas (siempre se le asigna a sí mismo).
+    $is_admin_save = current_user_can('crm_admin');
+    if (!$is_admin_save) {
+        $self = wp_get_current_user();
+        if ($is_update) {
+            // Update: preservar SIEMPRE los valores ya guardados
+            $forced_delegado        = (string) ($client['delegado'] ?? $self->display_name);
+            $forced_email_comercial = (string) ($client['email_comercial'] ?? $self->user_email);
+            $forced_origen          = (string) ($client['origen_lead'] ?? 'directo');
+            $forced_activo          = !empty($client['es_cliente_activo']) ? 1 : 0;
+        } else {
+            // Alta nueva: asignarse a sí mismo siempre
+            $forced_delegado        = (string) $self->display_name;
+            $forced_email_comercial = (string) $self->user_email;
+            $forced_origen          = sanitize_text_field($_POST['origen_lead'] ?? 'directo');
+            $forced_activo          = !empty($_POST['es_cliente_activo']) ? 1 : 0;
+        }
+        $_POST['delegado']          = $forced_delegado;
+        $_POST['email_comercial']   = $forced_email_comercial;
+        $_POST['origen_lead']       = $forced_origen;
+        $_POST['es_cliente_activo'] = $forced_activo;
     }
 
     // preparar array de guardado

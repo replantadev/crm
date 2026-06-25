@@ -127,6 +127,16 @@ function crm_shortcode_mi_agenda($atts = []) {
             </div>
         </div>
 
+        <?php // v1.20.3: bloque desplegable con la URL iCal personal del usuario. ?>
+        <details style="margin-bottom:14px; padding:10px 14px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px;">
+            <summary style="cursor:pointer; font-weight:600; color:#075985;">
+                Sincronizar con Google Calendar
+            </summary>
+            <div style="margin-top:10px;">
+                <?php echo do_shortcode('[crm_mi_gcal]'); ?>
+            </div>
+        </details>
+
         <?php if (empty($visitas)): ?>
             <p style="padding:18px; background:#fff; border:1px solid #e2e8f0; border-radius:6px;">
                 No hay visitas que coincidan con los filtros.
@@ -239,6 +249,15 @@ function crm_shortcode_mi_agenda($atts = []) {
                                         <button type="submit" style="padding:4px 8px; cursor:pointer;" title="Cancelar" onclick="return confirm('¿Cancelar?');">✕</button>
                                     </form>
                                 <?php endif; ?>
+                                <?php if ($v['estado'] === 'programada' && function_exists('crm_gcal_get_event_url')):
+                                    $gcal_url = crm_gcal_get_event_url($v, $client['cliente_nombre'] ?? '');
+                                ?>
+                                    <a href="<?php echo esc_url($gcal_url); ?>" target="_blank" rel="noopener noreferrer"
+                                       title="Añadir a Google Calendar"
+                                       style="display:inline-block; padding:4px 8px; background:#fff; border:1px solid #cbd5e1; border-radius:4px; text-decoration:none; color:#0f172a; font-size:12px;">
+                                        GCal
+                                    </a>
+                                <?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -272,17 +291,15 @@ function crm_shortcode_agenda_modal($atts = []) {
         return '';
     }
     $atts = shortcode_atts([
-        'label'    => '?? Mi agenda',
+        'label'    => 'Mi agenda',
         'posicion' => 'br',
+        'icono'    => 'auto', // auto = favicon del sitio | calendar | none
     ], $atts, 'crm_agenda_modal');
 
     $url = trim((string) get_option('crm_url_mi_agenda', ''));
     if ($url === '') {
-        // Sin URL configurada: no podemos cargar el iframe. Mostrar nada.
         return '';
     }
-    // A�adir ?crm_modal=1 al iframe para que el shortcode interno pueda
-    // ocultar header/footer del tema si se desea (queda como hook futuro).
     $iframe_url = add_query_arg('crm_modal', '1', $url);
 
     $pos = sanitize_key((string) $atts['posicion']);
@@ -295,12 +312,26 @@ function crm_shortcode_agenda_modal($atts = []) {
     ];
     $btn_style = $pos_styles[$pos] ?? $pos_styles['br'];
 
+    // Resolver icono: favicon del sitio si está disponible, fallback a SVG calendario.
+    $icono_html = '';
+    $icono_modo = sanitize_key((string) $atts['icono']);
+    if ($icono_modo !== 'none') {
+        $favicon = function_exists('get_site_icon_url') ? get_site_icon_url(48) : '';
+        if ($icono_modo === 'auto' && $favicon) {
+            $icono_html = '<img src="' . esc_url($favicon) . '" alt="" style="width:18px;height:18px;display:inline-block;vertical-align:middle;border-radius:3px;">';
+        } else {
+            // SVG calendario inline (neutro, hereda currentColor)
+            $icono_html = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>';
+        }
+    }
+
     ob_start();
     ?>
     <button type="button" id="crm-agenda-modal-btn"
-        style="<?php echo esc_attr($btn_style); ?> z-index:99998; padding:12px 18px; background:#191919; color:#fff; border:none; border-radius:50px; box-shadow:0 4px 14px rgba(0,0,0,.25); cursor:pointer; font-weight:600; font-size:14px;"
+        style="<?php echo esc_attr($btn_style); ?> z-index:99998; padding:10px 16px; background:#191919; color:#fff; border:none; border-radius:50px; box-shadow:0 4px 14px rgba(0,0,0,.25); cursor:pointer; font-weight:600; font-size:14px; display:inline-flex; align-items:center; gap:8px;"
         onclick="document.getElementById('crm-agenda-modal').style.display='flex'; document.getElementById('crm-agenda-modal-iframe').src=document.getElementById('crm-agenda-modal-iframe').dataset.src;">
-        <?php echo esc_html($atts['label']); ?>
+        <?php echo $icono_html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped (SVG/IMG controlados) ?>
+        <span><?php echo esc_html($atts['label']); ?></span>
     </button>
     <div id="crm-agenda-modal"
         style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:99999; align-items:center; justify-content:center; padding:20px;"

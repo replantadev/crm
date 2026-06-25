@@ -35,6 +35,11 @@ function crm_shortcode_mi_agenda($atts = []) {
     // las que el mismo ha creado y delegado a un visitador. Un visitador puro
     // sigue viendo solo las suyas (las que tiene asignadas).
     $is_comercial_no_visitador = !$is_admin && !$is_visitador;
+    // v1.20.17: un usuario con roles `comercial + visitador` tambien debe ver
+    // las visitas que el mismo ha creado y delegado. Antes solo se incluia
+    // `or_creado_por` para "comerciales puros", asi que un usuario hibrido no
+    // veia en su agenda las visitas que delegaba a otro visitador.
+    $can_create_visits = function_exists('crm_visita_can_create') && crm_visita_can_create();
 
     // Filtros (GET)
     $filtro_estado    = isset($_GET['estado']) ? sanitize_key($_GET['estado']) : '';
@@ -52,8 +57,10 @@ function crm_shortcode_mi_agenda($atts = []) {
     ];
     if (!$is_admin) {
         $args['comercial_id'] = $current_uid;
-        if ($is_comercial_no_visitador) {
-            // v1.20.15: incluir visitas creadas por mi (delegadas a visitadores).
+        if ($can_create_visits) {
+            // v1.20.17: cualquier usuario que pueda crear visitas (comercial,
+            // crm_admin o hibrido comercial+visitador) ve en su agenda las que
+            // el mismo declaro, este o no asignado a el.
             $args['or_creado_por'] = $current_uid;
         }
     } elseif ($filtro_comercial > 0) {

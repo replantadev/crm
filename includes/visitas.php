@@ -853,12 +853,24 @@ function crm_render_visitas_box($client_id) {
                         // Slots de 15 min; mínimo: ahora redondeado al próximo cuarto de hora
                         $now_ts   = current_time('timestamp');
                         $min_ts   = (int) (ceil($now_ts / 900) * 900);
-                        $min_attr = date('Y-m-d\TH:i', $min_ts);
+                        $min_date = date('Y-m-d', $min_ts);
+                        $min_time = date('H:i', $min_ts);
                         ?>
-                        <input type="datetime-local" name="fecha_visita" required
-                               step="900"
-                               min="<?php echo esc_attr($min_attr); ?>"
-                               style="width:100%;">
+                        <?php // v1.20.17: separamos en date + time + hidden combinado.
+                              // datetime-local renderiza inconsistente entre navegadores
+                              // (Firefox y Safari iOS a veces ocultan la hora). Con dos
+                              // inputs nativos se ve siempre el selector de hora.
+                        ?>
+                        <div class="crm-visita-fechahora" style="display:flex; gap:6px;">
+                            <input type="date" class="crm-visita-fecha-d" required
+                                   min="<?php echo esc_attr($min_date); ?>"
+                                   style="flex:1; min-width:0;">
+                            <input type="time" class="crm-visita-fecha-h" required
+                                   step="900"
+                                   value="<?php echo esc_attr($min_time); ?>"
+                                   style="flex:0 0 110px; min-width:0;">
+                        </div>
+                        <input type="hidden" name="fecha_visita" required value="">
                         <small style="color:#64748b;">Slots de 15 min. No se permite agendar en el pasado.</small>
                     </label>
                     <label>
@@ -960,6 +972,35 @@ function crm_render_visitas_box($client_id) {
                 var asignSelect = form.querySelector('select[name="comercial_id"]');
                 var asignHidden = form.querySelector('input[type="hidden"][name="comercial_id"]');
 
+                // v1.20.17: combinar inputs date + time en el hidden fecha_visita.
+                var fechaDateEl = form.querySelector('.crm-visita-fecha-d');
+                var fechaTimeEl = form.querySelector('.crm-visita-fecha-h');
+                function syncFechaHidden(){
+                    if (!fechaInput || !fechaDateEl || !fechaTimeEl) return;
+                    var d = (fechaDateEl.value || '').trim();
+                    var h = (fechaTimeEl.value || '').trim();
+                    if (d && h) {
+                        // datetime-local format: YYYY-MM-DDTHH:MM
+                        fechaInput.value = d + 'T' + (h.length === 5 ? h : (h + ':00').substring(0, 5));
+                    } else {
+                        fechaInput.value = '';
+                    }
+                }
+                if (fechaDateEl) fechaDateEl.addEventListener('change', syncFechaHidden);
+                if (fechaDateEl) fechaDateEl.addEventListener('input',  syncFechaHidden);
+                if (fechaTimeEl) fechaTimeEl.addEventListener('change', syncFechaHidden);
+                if (fechaTimeEl) fechaTimeEl.addEventListener('input',  syncFechaHidden);
+                // Garantizar valor al enviar y bloquear si falta.
+                form.addEventListener('submit', function(e){
+                    syncFechaHidden();
+                    if (!fechaInput.value) {
+                        e.preventDefault();
+                        alert('Indica fecha y hora de la visita.');
+                        if (fechaDateEl && !fechaDateEl.value) fechaDateEl.focus();
+                        else if (fechaTimeEl) fechaTimeEl.focus();
+                    }
+                });
+
                 function getAsignId(){
                     if (asignSelect) return parseInt(asignSelect.value, 10) || 0;
                     if (asignHidden) return parseInt(asignHidden.value, 10) || 0;
@@ -1027,6 +1068,12 @@ function crm_render_visitas_box($client_id) {
                     if (fechaInput) fechaInput.addEventListener(ev, check);
                     if (duracInput) duracInput.addEventListener(ev, check);
                     if (asignSelect) asignSelect.addEventListener('change', check);
+                });
+                // v1.20.17: tambien escuchar los inputs visibles date+time
+                // ya que fechaInput es hidden y no emite eventos por si solo.
+                ['change','input','blur'].forEach(function(ev){
+                    if (fechaDateEl) fechaDateEl.addEventListener(ev, function(){ syncFechaHidden(); check(); });
+                    if (fechaTimeEl) fechaTimeEl.addEventListener(ev, function(){ syncFechaHidden(); check(); });
                 });
             })();
             </script>

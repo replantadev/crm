@@ -182,13 +182,15 @@ function crm_app_shell_menu_items() {
             'label' => 'Alta',
             'slug'  => 'alta-de-cliente',
             'icon'  => 'plus',
-            'roles' => ['administrator', 'crm_admin', 'comercial'],
+            // v1.20.7: visitador tambien puede dar altas (actua como comercial).
+            'roles' => ['administrator', 'crm_admin', 'comercial', 'visitador'],
         ],
         [
             'label' => 'Mis altas',
             'slug'  => 'mis-altas-de-cliente',
             'icon'  => 'list-bullets',
-            'roles' => ['administrator', 'crm_admin', 'comercial'],
+            // v1.20.7: visitador ve sus propias altas igual que un comercial.
+            'roles' => ['administrator', 'crm_admin', 'comercial', 'visitador'],
         ],
         [
             'label' => 'Todas las altas',
@@ -259,20 +261,26 @@ function crm_app_shell_menu_items() {
 /**
  * Determina si el usuario actual puede ver un item del menú.
  *
- * Reglas estrictas (v1.20.6):
- *  - Si el item declara `roles`, el rol PRIMARIO del usuario debe estar en
- *    esa lista. No hay bypass para administradores: ellos deben estar en
- *    la whitelist explícitamente (lo están).
+ * Reglas estrictas (v1.20.7):
+ *  - Si el item declara `roles`, BASTA con que el usuario tenga AL MENOS UNO
+ *    de esos roles asignados (intersección con $user->roles). Esto permite
+ *    combinaciones como comercial+visitador. NO se mira capabilities (para
+ *    evitar bypass por plugins tipo Members que inyectan caps).
+ *  - Administradores deben estar en la whitelist explícitamente (lo están).
  */
 function crm_app_shell_user_can_see_item(array $item) {
     if (empty($item['roles'])) {
         return true;
     }
-    $primary = function_exists('crm_user_primary_role') ? crm_user_primary_role() : '';
-    if ($primary === '') {
+    $user = wp_get_current_user();
+    if (!$user || !$user->ID) {
         return false;
     }
-    return in_array($primary, (array) $item['roles'], true);
+    $user_roles = (array) $user->roles;
+    if (empty($user_roles)) {
+        return false;
+    }
+    return count(array_intersect($user_roles, (array) $item['roles'])) > 0;
 }
 
 /**

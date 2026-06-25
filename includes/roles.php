@@ -96,6 +96,68 @@ function crm_user_is_visitador($user_id = null) {
 }
 
 /**
+ * Devuelve true si el usuario es comercial (rol explícito).
+ *
+ * Si además tiene rol administrator/crm_admin, NO se considera comercial
+ * para que un crm_admin no aparezca duplicado en menús filtrados.
+ */
+function crm_user_is_comercial($user_id = null) {
+    if ($user_id === null) {
+        $user = wp_get_current_user();
+    } else {
+        $user = get_user_by('id', (int) $user_id);
+    }
+    if (!$user || empty($user->ID) || empty($user->roles)) {
+        return false;
+    }
+    $roles = (array) $user->roles;
+    if (array_intersect(['administrator', 'crm_admin'], $roles)) {
+        return false;
+    }
+    return in_array('comercial', $roles, true);
+}
+
+/**
+ * Devuelve el rol primario del usuario para el CRM en orden de prioridad:
+ * administrator > crm_admin > comercial > visitador > '' (sin rol CRM).
+ *
+ * @param int|null $user_id ID de usuario; null para el actual.
+ * @return string Rol primario (slug).
+ */
+function crm_user_primary_role($user_id = null) {
+    if ($user_id === null) {
+        $user = wp_get_current_user();
+    } else {
+        $user = get_user_by('id', (int) $user_id);
+    }
+    if (!$user || empty($user->ID) || empty($user->roles)) {
+        return '';
+    }
+    $roles = (array) $user->roles;
+    $priority = ['administrator', 'crm_admin', 'comercial', 'visitador'];
+    foreach ($priority as $r) {
+        if (in_array($r, $roles, true)) {
+            return $r;
+        }
+    }
+    return '';
+}
+
+/**
+ * Etiqueta legible del rol primario para mostrar en UI.
+ */
+function crm_user_role_label($user_id = null) {
+    $role = crm_user_primary_role($user_id);
+    $labels = [
+        'administrator' => 'Administrador',
+        'crm_admin'     => 'Admin CRM',
+        'comercial'     => 'Comercial',
+        'visitador'     => 'Visitador',
+    ];
+    return $labels[$role] ?? '';
+}
+
+/**
  * Crea/actualiza los roles del CRM. Idempotente.
  */
 function crm_install_roles() {

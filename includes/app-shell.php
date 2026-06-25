@@ -56,7 +56,37 @@ function crm_app_shell_get_settings() {
 }
 
 /**
- * Determina si la página actual es una página CRM (según slug configurado).
+ * Lista de shortcodes que, si están presentes en el contenido de la página,
+ * activan el shell aunque el slug no esté listado. Filtrable.
+ *
+ * @return string[]
+ */
+function crm_app_shell_trigger_shortcodes() {
+    return apply_filters('crm_app_shell_trigger_shortcodes', [
+        'crm_alta_cliente',
+        'crm_lista_altas',
+        'crm_editar_cliente',
+        'todas_las_altas',
+        'crm_admin_panel',
+        'crm_clientes_recientes',
+        'crm_clientes_por_interes',
+        'crm_clientes_por_estado',
+        'crm_rendimiento_comercial',
+        'crm_comerciales_estadisticas',
+        'crm_mi_agenda',
+        'crm_mi_gcal',
+        'asignacion_leads_mk',
+        'crm_guia_admin',
+        'crm_guia_comerciales',
+    ]);
+}
+
+/**
+ * Determina si la página actual es una página CRM.
+ *
+ * Detección en dos pasos para robustez:
+ *  1) Slug del post listado en la opción.
+ *  2) Presencia de alguno de los shortcodes CRM en el contenido del post.
  */
 function crm_app_shell_is_crm_page() {
     static $cache = null;
@@ -64,15 +94,7 @@ function crm_app_shell_is_crm_page() {
         return $cache;
     }
     $opts = crm_app_shell_get_settings();
-    if (empty($opts['enabled'])) {
-        $cache = false;
-        return $cache;
-    }
-    if (is_admin()) {
-        $cache = false;
-        return $cache;
-    }
-    if (!is_singular()) {
+    if (empty($opts['enabled']) || is_admin() || !is_singular()) {
         $cache = false;
         return $cache;
     }
@@ -81,7 +103,21 @@ function crm_app_shell_is_crm_page() {
         $cache = false;
         return $cache;
     }
-    $cache = in_array($post->post_name, $opts['slugs'], true);
+    if (in_array($post->post_name, $opts['slugs'], true)) {
+        $cache = true;
+        return $cache;
+    }
+    // Fallback: detectar por shortcode en el contenido.
+    if (!empty($post->post_content)) {
+        $content = $post->post_content;
+        foreach (crm_app_shell_trigger_shortcodes() as $sc) {
+            if (has_shortcode($content, $sc)) {
+                $cache = true;
+                return $cache;
+            }
+        }
+    }
+    $cache = false;
     return $cache;
 }
 
@@ -118,13 +154,19 @@ add_action('wp_footer', function () {
 /**
  * Lista de items del menú del shell. Filtrable por rol.
  *
- * Cada item: label, slug (fallback), icon, opcional cap, opcional roles,
- * opcional option (option_key del que leer URL custom configurable en admin).
+ * Cada item: label, slug (fallback), icon, roles (whitelist ESTRICTA de roles
+ * primarios permitidos), opcional `option` (option_key con URL custom).
  *
- * Jerarquía por rol (verificada en v1.20.5):
- *  - admin/crm_admin: TODOS los items.
+ * Jerarquía verificada (v1.20.6):
+ *  - administrator / crm_admin: Escritorio, Alta, Mis altas, Todas las altas,
+ *    Resumen, Leads MK, Mi agenda, Panel.
  *  - comercial: Escritorio, Alta, Mis altas, Mis leads, Mi agenda.
  *  - visitador: Escritorio, Mis leads, Mi agenda.
+ *
+ * NO se usa `capability` para filtrar el menú: el filtrado es por rol primario
+ * (función `crm_user_primary_role()`), para evitar que un plugin externo
+ * (p.ej. Members) que añada la capability `crm_admin` a un comercial le haga
+ * ver items que no le corresponden.
  *
  * @return array<int, array<string,mixed>>
  */
@@ -134,6 +176,7 @@ function crm_app_shell_menu_items() {
             'label' => 'Escritorio',
             'slug'  => 'crm',
             'icon'  => 'house',
+            'roles' => ['administrator', 'crm_admin', 'comercial', 'visitador'],
         ],
         [
             'label' => 'Alta',
@@ -151,19 +194,19 @@ function crm_app_shell_menu_items() {
             'label' => 'Todas las altas',
             'slug'  => 'todas-las-altas-de-cliente',
             'icon'  => 'users',
-            'cap'   => 'crm_admin',
+            'roles' => ['administrator', 'crm_admin'],
         ],
         [
             'label' => 'Resumen',
             'slug'  => 'resumen',
             'icon'  => 'chart-bar',
-            'cap'   => 'crm_admin',
+            'roles' => ['administrator', 'crm_admin'],
         ],
         [
             'label' => 'Leads MK',
             'slug'  => 'asignar-leads',
             'icon'  => 'target',
-            'cap'   => 'crm_admin',
+            'roles' => ['administrator', 'crm_admin'],
         ],
         [
             'label'  => 'Mis leads',
@@ -183,7 +226,7 @@ function crm_app_shell_menu_items() {
             'label' => 'Panel',
             'slug'  => 'panel-de-control',
             'icon'  => 'gear',
-            'cap'   => 'crm_admin',
+            'roles' => ['administrator', 'crm_admin'],
         ],
     ];
 
@@ -216,30 +259,20 @@ function crm_app_shell_menu_items() {
 /**
  * Determina si el usuario actual puede ver un item del menú.
  *
- * Reglas:
- *  - Si el item tiene `cap` y el usuario no la tiene → false.
- *  - Si el item tiene `roles` y el usuario es admin/crm_admin → true (los admins lo ven todo).
- *  - Si el item tiene `roles` y el usuario tiene al menos uno de esos roles → true.
- *  - Si el item NO tiene `cap` ni `roles` → visible (item público para todos los logueados).
+ * Reglas estrictas (v1.20.6):
+ *  - Si el item declara `roles`, el rol PRIMARIO del usuario debe estar en
+ *    esa lista. No hay bypass para administradores: ellos deben estar en
+ *    la whitelist explícitamente (lo están).
  */
 function crm_app_shell_user_can_see_item(array $item) {
-    if (!empty($item['cap']) && !current_user_can($item['cap'])) {
+    if (empty($item['roles'])) {
+        return true;
+    }
+    $primary = function_exists('crm_user_primary_role') ? crm_user_primary_role() : '';
+    if ($primary === '') {
         return false;
     }
-    if (!empty($item['roles'])) {
-        $user = wp_get_current_user();
-        if (!$user || !$user->ID) {
-            return false;
-        }
-        $user_roles = (array) $user->roles;
-        if (in_array('administrator', $user_roles, true) || in_array('crm_admin', $user_roles, true)) {
-            return true; // admins lo ven todo.
-        }
-        if (!array_intersect($user_roles, (array) $item['roles'])) {
-            return false;
-        }
-    }
-    return true;
+    return in_array($primary, (array) $item['roles'], true);
 }
 
 /**
@@ -305,9 +338,16 @@ function crm_app_shell_render_topbar() {
             <?php endforeach; ?>
         </nav>
         <div class="crm-topbar__user">
-            <?php if ($user && $user->ID): ?>
+            <?php if ($user && $user->ID):
+                $role_label = function_exists('crm_user_role_label') ? crm_user_role_label() : '';
+            ?>
                 <span class="crm-topbar__avatar"><?php echo esc_html($iniciales); ?></span>
-                <span class="crm-topbar__user-name"><?php echo esc_html($user->display_name); ?></span>
+                <span class="crm-topbar__user-meta">
+                    <span class="crm-topbar__user-name"><?php echo esc_html($user->display_name); ?></span>
+                    <?php if ($role_label !== ''): ?>
+                        <span class="crm-topbar__user-role"><?php echo esc_html($role_label); ?></span>
+                    <?php endif; ?>
+                </span>
                 <a href="<?php echo esc_url($logout_url); ?>" class="crm-topbar__logout" title="Cerrar sesión">
                     <?php echo $icon('sign-out', 16); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                 </a>

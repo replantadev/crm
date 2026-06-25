@@ -4787,3 +4787,161 @@ button.aceptar-presupuesto{background:#25C685;color:#fff;font-size:12px;margin:4
     font-size: 12px;
     color: #4b5563;
 }
+
+/* =========================================================================
+ * v1.20.11 — Badges de estado por sector (minimal, color por interes)
+ *
+ * Concepto:
+ *  - Cada sector tiene un Hue base.
+ *  - El estado del flujo oscurece progresivamente el color (--c-step 0..5).
+ *  - El paso 6 = "cliente activo" se pinta solido (cierre).
+ *
+ * Se aplica donde la funcion crm_render_estado_badges() emite los pills.
+ * ========================================================================= */
+
+.crm-badges-estado,
+.crm-header-badges .crm-badges-estado {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin: 4px 0 0;
+    padding: 0;
+}
+
+.crm-estado-pill {
+    /* defaults sobrescritos por [data-sector] y [data-step] */
+    --c-h: 220;
+    --c-s-bg: 28%;
+    --c-l-bg: 96%;
+    --c-s-bd: 45%;
+    --c-l-bd: 80%;
+    --c-s-tx: 55%;
+    --c-l-tx: 28%;
+    --c-s-dot: 60%;
+    --c-l-dot: 50%;
+
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px 3px 8px;
+    background: hsl(var(--c-h) var(--c-s-bg) var(--c-l-bg));
+    color: hsl(var(--c-h) var(--c-s-tx) var(--c-l-tx));
+    border: 1px solid hsl(var(--c-h) var(--c-s-bd) var(--c-l-bd));
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .12s ease, box-shadow .12s ease;
+    cursor: default;
+}
+
+.crm-estado-pill:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.07);
+}
+
+.crm-estado-pill__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: hsl(var(--c-h) var(--c-s-dot) var(--c-l-dot));
+    flex: 0 0 6px;
+    box-shadow: 0 0 0 0 transparent;
+}
+
+.crm-estado-pill__sector { font-weight: 600; }
+.crm-estado-pill__sep    { opacity: 0.4; margin: 0 1px; font-weight: 400; }
+.crm-estado-pill__estado { opacity: 0.86; font-weight: 500; }
+
+/* --- Hue por sector ---------------------------------------------------- */
+.crm-estado-pill[data-sector="energia"]            { --c-h: 38;  } /* amber */
+.crm-estado-pill[data-sector="alarmas"]            { --c-h: 0;   } /* red   */
+.crm-estado-pill[data-sector="telecomunicaciones"] { --c-h: 215; } /* blue  */
+.crm-estado-pill[data-sector="seguros"]            { --c-h: 250; } /* indigo*/
+.crm-estado-pill[data-sector="renovables"]         { --c-h: 145; } /* green */
+
+/* --- Progresion: cada step oscurece y satura ---------------------------- */
+.crm-estado-pill[data-step="0"] {
+    --c-s-bg: 0%; --c-l-bg: 97%;
+    --c-s-bd: 0%; --c-l-bd: 88%;
+    --c-s-tx: 0%; --c-l-tx: 45%;
+    --c-s-dot: 0%; --c-l-dot: 70%;
+}
+.crm-estado-pill[data-step="1"] {
+    --c-s-bg: 70%; --c-l-bg: 96%;
+    --c-s-bd: 55%; --c-l-bd: 82%;
+    --c-s-tx: 60%; --c-l-tx: 34%;
+    --c-s-dot: 65%; --c-l-dot: 60%;
+}
+.crm-estado-pill[data-step="2"] {
+    --c-s-bg: 75%; --c-l-bg: 93%;
+    --c-s-bd: 60%; --c-l-bd: 74%;
+    --c-s-tx: 65%; --c-l-tx: 30%;
+    --c-s-dot: 70%; --c-l-dot: 54%;
+}
+.crm-estado-pill[data-step="3"] {
+    --c-s-bg: 78%; --c-l-bg: 89%;
+    --c-s-bd: 62%; --c-l-bd: 65%;
+    --c-s-tx: 70%; --c-l-tx: 27%;
+    --c-s-dot: 72%; --c-l-dot: 48%;
+}
+.crm-estado-pill[data-step="4"] {
+    --c-s-bg: 80%; --c-l-bg: 84%;
+    --c-s-bd: 65%; --c-l-bd: 56%;
+    --c-s-tx: 75%; --c-l-tx: 22%;
+    --c-s-dot: 75%; --c-l-dot: 42%;
+}
+.crm-estado-pill[data-step="5"] {
+    --c-s-bg: 85%; --c-l-bg: 78%;
+    --c-s-bd: 68%; --c-l-bd: 48%;
+    --c-s-tx: 78%; --c-l-tx: 18%;
+    --c-s-dot: 78%; --c-l-dot: 36%;
+}
+
+/* --- Estado activo (cliente convertido): solido + check --------------- */
+.crm-estado-pill[data-step="6"],
+.crm-estado-pill.is-activo {
+    background: hsl(var(--c-h) 60% 38%);
+    border-color: hsl(var(--c-h) 60% 32%);
+    color: #fff;
+}
+.crm-estado-pill[data-step="6"] .crm-estado-pill__dot,
+.crm-estado-pill.is-activo .crm-estado-pill__dot {
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18);
+}
+.crm-estado-pill[data-step="6"] .crm-estado-pill__sep,
+.crm-estado-pill.is-activo .crm-estado-pill__sep { opacity: 0.55; }
+.crm-estado-pill[data-step="6"] .crm-estado-pill__estado,
+.crm-estado-pill.is-activo .crm-estado-pill__estado { opacity: 1; }
+
+/* --- Indicador de "reenviado" (fecha de envio presente) --------------- */
+.crm-estado-pill.is-sent {
+    position: relative;
+    padding-right: 16px;
+}
+.crm-estado-pill.is-sent::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.18);
+}
+
+/* --- Responsive: en movil compactamos label del sector ---------------- */
+@media (max-width: 540px) {
+    .crm-estado-pill { font-size: 11px; padding: 2px 8px 2px 7px; }
+    .crm-estado-pill__estado { display: none; }
+    .crm-estado-pill__sep { display: none; }
+    .crm-estado-pill.is-activo .crm-estado-pill__estado { display: inline; }
+    .crm-estado-pill.is-activo .crm-estado-pill__sep { display: inline; }
+}
+

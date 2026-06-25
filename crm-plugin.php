@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.10
+Version: 1.20.11
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.10');
+define('CRM_PLUGIN_VERSION', '1.20.11');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -392,16 +392,66 @@ function crm_format_spanish_phone($phone) {
 
 /**
  * Renderiza badges de estado por sector/interés.
+ *
+ * v1.20.11 — Sistema minimal:
+ *  - Cada sector tiene un Hue base (energia/alarmas/telecom/seguros/renovables).
+ *  - El estado del flujo oscurece el color (0..5) y el paso 6 = "cliente activo"
+ *    se pinta sólido para destacar el cierre.
+ *  - El reenvío (fechas_envio) añade un punto verde junto al pill.
+ *
+ * @param array $estado_por_sector mapa sector => estado (slug)
+ * @param array $sectores sectores a mostrar (orden)
+ * @param array $fechas_envio mapa sector => timestamp; si existe, marca el pill como reenviado
+ * @param array $opts {
+ *     @type bool  $es_cliente_activo Si el cliente esta convertido (force step 6).
+ *     @type array $entrada_vigor_por_sector Mapa sector => fecha; si existe, ese sector va a step 6.
+ * }
+ * @return string HTML
  */
-function crm_render_estado_badges($estado_por_sector = [], $sectores = [], $fechas_envio = [])
+function crm_render_estado_badges($estado_por_sector = [], $sectores = [], $fechas_envio = [], $opts = [])
 {
+    $orden = crm_get_orden_estados(); // 0..5
+    $sector_labels = [
+        'energia'            => 'Energía',
+        'alarmas'            => 'Alarmas',
+        'telecomunicaciones' => 'Telecom.',
+        'seguros'            => 'Seguros',
+        'renovables'         => 'Renovables',
+    ];
+    $cliente_activo_global = !empty($opts['es_cliente_activo']);
+    $entrada_vigor = isset($opts['entrada_vigor_por_sector']) && is_array($opts['entrada_vigor_por_sector'])
+        ? $opts['entrada_vigor_por_sector'] : [];
+
     $out = '';
     foreach ($sectores as $sector) {
         $estado = $estado_por_sector[$sector] ?? 'borrador';
-        $estado_label = crm_get_estado_label($estado);
-        $sector_label = ucfirst($sector);
-        $sent_class = isset($fechas_envio[$sector]) ? ' sent-indicator' : '';
-        $out .= '<span class="crm-badge estado ' . $estado . $sent_class . '">' . $sector_label . ': ' . $estado_label . '</span>';
+        $step = array_search($estado, $orden, true);
+        if ($step === false) { $step = 0; }
+        // step 6 = cliente activo (entrada en vigor por sector o flag global)
+        $is_activo = !empty($entrada_vigor[$sector]) || ($cliente_activo_global && $step >= 4);
+        if ($is_activo) { $step = 6; }
+
+        $estado_label = $is_activo ? 'Cliente activo' : crm_get_estado_label($estado);
+        $sector_label = $sector_labels[$sector] ?? ucfirst($sector);
+        $title = $sector_label . ' · ' . $estado_label;
+        $classes = ['crm-estado-pill'];
+        if (!empty($fechas_envio[$sector])) { $classes[] = 'is-sent'; }
+        if ($is_activo) { $classes[] = 'is-activo'; }
+
+        $out .= sprintf(
+            '<span class="%1$s" data-sector="%2$s" data-step="%3$d" title="%4$s">'
+                . '<span class="crm-estado-pill__dot" aria-hidden="true"></span>'
+                . '<span class="crm-estado-pill__sector">%5$s</span>'
+                . '<span class="crm-estado-pill__sep" aria-hidden="true">·</span>'
+                . '<span class="crm-estado-pill__estado">%6$s</span>'
+            . '</span>',
+            esc_attr(implode(' ', $classes)),
+            esc_attr($sector),
+            (int) $step,
+            esc_attr($title),
+            esc_html($sector_label),
+            esc_html($estado_label)
+        );
     }
     return $out;
 }
@@ -536,7 +586,10 @@ function crm_formulario_alta_cliente()
                     <?php
                     $sectores = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
                     $fechas_envio = maybe_unserialize($client_data['fecha_envio_por_sector'] ?? []);
-                    echo crm_render_estado_badges($estado_por_sector, $sectores, $fechas_envio);
+                    echo crm_render_estado_badges($estado_por_sector, $sectores, $fechas_envio, [
+                        'es_cliente_activo' => !empty($client_data['es_cliente_activo']),
+                        'entrada_vigor_por_sector' => is_array($entrada_vigor_por_sector ?? null) ? $entrada_vigor_por_sector : [],
+                    ]);
                     ?>
                 </div>
             <?php endif; ?>
@@ -711,7 +764,10 @@ function crm_formulario_alta_cliente()
                 $sectores = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
                 $fechas_envio = maybe_unserialize($client_data['fecha_envio_por_sector'] ?? []);
                 echo '<div class="crm-badges-estado">';
-                echo crm_render_estado_badges($estado_por_sector, $sectores, $fechas_envio);
+                echo crm_render_estado_badges($estado_por_sector, $sectores, $fechas_envio, [
+                    'es_cliente_activo' => !empty($client_data['es_cliente_activo']),
+                    'entrada_vigor_por_sector' => $entrada_vigor_por_sector,
+                ]);
                 echo '</div>';
                 ?>
             </div>

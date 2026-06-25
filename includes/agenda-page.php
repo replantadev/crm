@@ -28,24 +28,17 @@ function crm_register_agenda_menu() {
 }
 
 /**
- * v1.20.1 — Al entrar al wp-admin, si el usuario es visitador, redirigir
- * directamente a "Mi agenda" en vez del dashboard de WP (que está vacío
- * para este rol).
+ * v1.20.1 — Redirect al entrar al wp-admin para visitadores.
+ *
+ * Obsoleto en v1.20.2: el bloqueo total de wp-admin a no-administrator
+ * (admin-lockdown.php) ya intercepta a visitadores y comerciales antes de
+ * que lleguen aquí. Se mantiene el código sin acción para no romper si
+ * algún hook externo lo referencia.
  */
 add_action('admin_init', 'crm_visitador_redirect_to_agenda');
 function crm_visitador_redirect_to_agenda() {
-    if (!function_exists('crm_user_is_visitador') || !crm_user_is_visitador()) {
-        return;
-    }
-    if (wp_doing_ajax()) {
-        return;
-    }
-    global $pagenow;
-    if ($pagenow !== 'index.php' || !empty($_GET['page'])) {
-        return;
-    }
-    wp_safe_redirect(admin_url('admin.php?page=crm-mi-agenda'));
-    exit;
+    // No-op desde v1.20.2 — gestionado por crm_block_wpadmin_for_non_admins().
+    return;
 }
 
 function crm_render_agenda_page() {

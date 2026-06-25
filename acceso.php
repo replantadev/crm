@@ -88,6 +88,32 @@ function display_user_profile() {
     return $output;
 }
 
+// v1.20.2 — Shortcode de logout frontend para roles bloqueados del wp-admin.
+// Uso: [crm_logout] o [crm_logout label="Salir" redirect="https://tusitio.com/"]
+add_shortcode('crm_logout', 'crm_shortcode_logout');
+function crm_shortcode_logout($atts = []) {
+    if (!is_user_logged_in()) {
+        return '';
+    }
+    $atts = shortcode_atts([
+        'label'    => 'Cerrar sesión',
+        'redirect' => '',
+        'class'    => 'crm-logout-btn',
+    ], $atts, 'crm_logout');
+
+    $redirect = trim((string) $atts['redirect']);
+    if ($redirect === '') {
+        $login_id = (int) get_option('crm_login_page_id', 0);
+        $redirect = $login_id > 0 ? (string) get_permalink($login_id) : home_url('/');
+    }
+    return sprintf(
+        '<a class="%s" href="%s">%s</a>',
+        esc_attr($atts['class']),
+        esc_url(wp_logout_url($redirect)),
+        esc_html($atts['label'])
+    );
+}
+
 add_action('wp_head', 'hide_header_with_css_on_login_page');
 function hide_header_with_css_on_login_page() {
     $login_page_id = crm_get_login_page_id();

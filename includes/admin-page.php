@@ -531,6 +531,29 @@ function crm_admin_render_settings() {
                 <th><label for="crm_post_login_page_id">Página tras login (ID)</label></th>
                 <td><input type="number" min="0" id="crm_post_login_page_id" name="crm_post_login_page_id" value="<?php echo esc_attr((int) get_option('crm_post_login_page_id', 30)); ?>"></td>
             </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Redirecciones frontend (v1.20.2)</h3>
+                <p style="font-weight:normal;color:#666;margin:0 0 8px;">Cuando un rol distinto de <code>administrator</code> intenta entrar al <code>wp-admin</code>, se le redirige a la URL frontend correspondiente a su rol. Debe ser una URL completa (https://…).</p></th></tr>
+            <tr>
+                <th><label for="crm_url_panel_admin">URL panel admin (crm_admin)</label></th>
+                <td>
+                    <input type="url" id="crm_url_panel_admin" name="crm_url_panel_admin" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_url_panel_admin', '')); ?>" placeholder="https://tusitio.com/panel-admin/">
+                    <p class="description">Página con el shortcode <code>[crm_admin_panel]</code>.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_url_panel_comercial">URL panel comercial</label></th>
+                <td>
+                    <input type="url" id="crm_url_panel_comercial" name="crm_url_panel_comercial" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_url_panel_comercial', '')); ?>" placeholder="https://tusitio.com/comercial/">
+                    <p class="description">Página principal del comercial. Recomendado: incluir también el shortcode <code>[crm_agenda_modal]</code> para el botón flotante.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_url_mi_agenda">URL "Mi agenda" (visitador)</label></th>
+                <td>
+                    <input type="url" id="crm_url_mi_agenda" name="crm_url_mi_agenda" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_url_mi_agenda', '')); ?>" placeholder="https://tusitio.com/mi-agenda/">
+                    <p class="description">Página con el shortcode <code>[crm_mi_agenda]</code>. También se usa como contenido del modal del comercial.</p>
+                </td>
+            </tr>
         </table>
         <?php submit_button(); ?>
     </form>

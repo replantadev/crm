@@ -155,6 +155,24 @@ function crm_visita_create($input) {
     if (is_wp_error($data)) {
         return $data;
     }
+    // v1.20.2: anti-solape — bloquear si el asignado tiene otra visita en el slot.
+    // Permitir saltar con $input['force_overlap'] = '1' (crm_admin o visitador).
+    $force = !empty($input['force_overlap']) && crm_visita_user_can_force_overlap();
+    if (!$force) {
+        $conflicts = crm_visita_check_conflicts(
+            $data['comercial_id'],
+            $data['fecha_visita'],
+            $data['duracion_min'],
+            0
+        );
+        if (!empty($conflicts)) {
+            return new WP_Error(
+                'overlap',
+                crm_visita_format_conflicts_message($conflicts),
+                ['conflicts' => $conflicts]
+            );
+        }
+    }
     $data['creado_por'] = get_current_user_id();
     $data['creado_en']  = current_time('mysql');
     $res = $wpdb->insert(crm_visitas_table(), $data);
@@ -176,6 +194,23 @@ function crm_visita_update($id, $input) {
     $data = crm_visita_sanitize($input, true);
     if (is_wp_error($data)) {
         return $data;
+    }
+    // v1.20.2: anti-solape al editar (excluyendo la propia visita).
+    $force = !empty($input['force_overlap']) && crm_visita_user_can_force_overlap();
+    if (!$force) {
+        $conflicts = crm_visita_check_conflicts(
+            $data['comercial_id'],
+            $data['fecha_visita'],
+            $data['duracion_min'],
+            $id
+        );
+        if (!empty($conflicts)) {
+            return new WP_Error(
+                'overlap',
+                crm_visita_format_conflicts_message($conflicts),
+                ['conflicts' => $conflicts]
+            );
+        }
     }
     $data['actualizado_en'] = current_time('mysql');
     $res = $wpdb->update(crm_visitas_table(), $data, ['id' => $id]);
@@ -305,14 +340,118 @@ function crm_visita_can_manage($visita) {
 
 /**
  * Devuelve true si el usuario actual puede CREAR visitas nuevas.
- * Visitadores NO pueden crear; solo gestionan las asignadas por el admin
- * o el comercial responsable del cliente.
+ *
+ * Pueden crear: administrator, crm_admin, comercial.
+ * NO pueden crear (a menos que tengan también otro rol): visitador.
+ *
+ * Esto permite que un usuario con roles `comercial + visitador` sí pueda
+ * crear visitas (porque también es comercial), mientras que un visitador
+ * "puro" solo gestiona las visitas que le asignan.
  */
+/**
+ * Devuelve un mensaje legible describiendo los conflictos de solape.
+ * Lista cada conflicto con cliente, fecha y rango horario.
+ *
+ * @param array $conflicts array de filas ARRAY_A con id, fecha_visita,
+ *                         duracion_min, client_id, estado.
+ */
+function crm_visita_format_conflicts_message($conflicts) {
+    if (empty($conflicts)) {
+        return 'Sin conflictos.';
+    }
+    global $wpdb;
+    $client_table = $wpdb->prefix . 'crm_clients';
+    $detalles = [];
+    foreach ($conflicts as $c) {
+        $cliente = '';
+        if (!empty($c['client_id'])) {
+            $cliente = (string) $wpdb->get_var(
+                $wpdb->prepare("SELECT cliente_nombre FROM $client_table WHERE id = %d", (int) $c['client_id'])
+            );
+        }
+        if ($cliente === '') {
+            $cliente = 'Cliente #' . (int) ($c['client_id'] ?? 0);
+        }
+        $inicio = mysql2date('d/m/Y H:i', $c['fecha_visita']);
+        try {
+            $fin_dt = new DateTime($c['fecha_visita']);
+            $fin_dt->modify('+' . (int) $c['duracion_min'] . ' minutes');
+            $fin = $fin_dt->format('H:i');
+        } catch (Exception $e) {
+            $fin = '?';
+        }
+        $detalles[] = sprintf('%s (%s-%s)', $cliente, $inicio, $fin);
+    }
+    return sprintf(
+        'Solape con %d visita(s): %s',
+        count($conflicts),
+        implode(' · ', $detalles)
+    );
+}
+
+/**
+ * Comprueba si la visita propuesta se solapa con otra del mismo asignado
+ * (comercial o visitador) en el rango [fecha_visita, fecha_visita + duracion).
+ *
+ * Devuelve array de visitas en conflicto (ARRAY_A) o vacío.
+ *
+ * @param int    $comercial_id    ID del asignado.
+ * @param string $fecha_visita    'Y-m-d H:i:s' inicio propuesto.
+ * @param int    $duracion_min    minutos.
+ * @param int    $exclude_id      visita_id a excluir (0 = ninguna).
+ */
+function crm_visita_check_conflicts($comercial_id, $fecha_visita, $duracion_min, $exclude_id = 0) {
+    global $wpdb;
+    $comercial_id = (int) $comercial_id;
+    $duracion_min = max(1, (int) $duracion_min);
+    $exclude_id   = (int) $exclude_id;
+    if ($comercial_id <= 0 || $fecha_visita === '') {
+        return [];
+    }
+    $tabla = crm_visitas_table();
+    // Solapamiento real (intervalos abiertos por la derecha):
+    // existente.inicio < propuesta.fin  AND  existente.fin > propuesta.inicio
+    $sql = $wpdb->prepare(
+        "SELECT id, fecha_visita, duracion_min, client_id, estado
+           FROM $tabla
+          WHERE comercial_id = %d
+            AND estado IN ('programada','realizada')
+            AND id <> %d
+            AND fecha_visita < DATE_ADD(%s, INTERVAL %d MINUTE)
+            AND DATE_ADD(fecha_visita, INTERVAL duracion_min MINUTE) > %s",
+        $comercial_id,
+        $exclude_id,
+        $fecha_visita,
+        $duracion_min,
+        $fecha_visita
+    );
+    $rows = $wpdb->get_results($sql, ARRAY_A);
+    return is_array($rows) ? $rows : [];
+}
+
 function crm_visita_can_create() {
-    if (function_exists('crm_user_is_visitador') && crm_user_is_visitador()) {
+    $u = wp_get_current_user();
+    if (!$u || empty($u->ID)) {
         return false;
     }
-    return is_user_logged_in();
+    $roles_que_crean = ['administrator', 'crm_admin', 'comercial'];
+    return (bool) array_intersect($roles_que_crean, (array) $u->roles);
+}
+
+/**
+ * Roles autorizados a IGNORAR el chequeo anti-solape (force_overlap=1).
+ *
+ * El comercial NO puede forzar — debe respetar la disponibilidad del visitador.
+ * El administrator es solo dev/ops y no opera el CRM en producción.
+ * crm_admin y visitador SÍ pueden forzar (acumulan visitas si lo necesitan).
+ */
+function crm_visita_user_can_force_overlap() {
+    $u = wp_get_current_user();
+    if (!$u || empty($u->ID)) {
+        return false;
+    }
+    $roles_que_fuerzan = ['crm_admin', 'visitador'];
+    return (bool) array_intersect($roles_que_fuerzan, (array) $u->roles);
 }
 
 /* =========================================================================
@@ -329,12 +468,25 @@ function crm_visita_handle_save() {
     $id     = isset($_POST['visita_id']) ? (int) $_POST['visita_id'] : 0;
     $input  = wp_unslash($_POST);
 
-    // Si el usuario no es admin, fuerza comercial_id = usuario actual
-    if (!function_exists('crm_user_is_admin') || !crm_user_is_admin()) {
-        $input['comercial_id'] = get_current_user_id();
-    }
+    $is_admin = function_exists('crm_user_is_admin') && crm_user_is_admin();
+    $current_id = get_current_user_id();
 
-    $client_id = (int) ($input['client_id'] ?? 0);
+    if (!$is_admin) {
+        // Para no-admin (comercial): permitir asignar a uno mismo o a un visitador.
+        // Cualquier otro comercial_id se fuerza a uno mismo.
+        $target_id = isset($input['comercial_id']) ? (int) $input['comercial_id'] : $current_id;
+        if ($target_id !== $current_id) {
+            $target_user = $target_id > 0 ? get_userdata($target_id) : null;
+            $is_visitador_target = $target_user
+                && in_array('visitador', (array) $target_user->roles, true);
+            if (!$is_visitador_target) {
+                $target_id = $current_id;
+            }
+        }
+        $input['comercial_id'] = $target_id;
+        // Solo admins pueden forzar saltar el chequeo de solape.
+        unset($input['force_overlap']);
+    }
 
     if ($id > 0) {
         $existing = crm_visita_get($id);
@@ -379,6 +531,90 @@ function crm_visita_handle_estado() {
     $redirect = add_query_arg(['crm_visita_msg' => 'updated'], $redirect);
     wp_safe_redirect($redirect);
     exit;
+}
+
+/* =========================================================================
+ * AJAX: consultar disponibilidad (busy slots) de un asignado
+ * ========================================================================= */
+
+add_action('wp_ajax_crm_visitas_busy', 'crm_ajax_visitas_busy_slots');
+function crm_ajax_visitas_busy_slots() {
+    if (!is_user_logged_in()) {
+        wp_send_json_error(['msg' => 'No autorizado'], 403);
+    }
+    check_ajax_referer('crm_visitas_busy', 'nonce');
+
+    $comercial_id = isset($_POST['comercial_id']) ? (int) $_POST['comercial_id'] : 0;
+    $desde        = isset($_POST['desde']) ? sanitize_text_field((string) $_POST['desde']) : '';
+    $hasta        = isset($_POST['hasta']) ? sanitize_text_field((string) $_POST['hasta']) : '';
+    $exclude_id   = isset($_POST['exclude_id']) ? (int) $_POST['exclude_id'] : 0;
+
+    if ($comercial_id <= 0 || $desde === '' || $hasta === '') {
+        wp_send_json_error(['msg' => 'Parámetros inválidos']);
+    }
+    // Validar formato Y-m-d (acepta también Y-m-d H:i:s)
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}/', $desde) || !preg_match('/^\d{4}-\d{2}-\d{2}/', $hasta)) {
+        wp_send_json_error(['msg' => 'Formato de fecha inválido']);
+    }
+
+    global $wpdb;
+    $tabla = crm_visitas_table();
+    $rows = $wpdb->get_results(
+        $wpdb->prepare(
+            "SELECT id, fecha_visita, duracion_min, client_id, estado
+               FROM $tabla
+              WHERE comercial_id = %d
+                AND estado IN ('programada','realizada')
+                AND id <> %d
+                AND fecha_visita >= %s
+                AND fecha_visita <= %s
+              ORDER BY fecha_visita ASC",
+            $comercial_id,
+            $exclude_id,
+            substr($desde, 0, 10) . ' 00:00:00',
+            substr($hasta, 0, 10) . ' 23:59:59'
+        ),
+        ARRAY_A
+    );
+    if (!is_array($rows)) {
+        $rows = [];
+    }
+
+    // Cliente nombres en bloque para no hacer N queries.
+    $client_ids = array_filter(array_map(static fn($r) => (int) $r['client_id'], $rows));
+    $nombres = [];
+    if (!empty($client_ids)) {
+        $client_table = $wpdb->prefix . 'crm_clients';
+        $in_ph = implode(',', array_fill(0, count($client_ids), '%d'));
+        $sql_n = $wpdb->prepare("SELECT id, cliente_nombre FROM $client_table WHERE id IN ($in_ph)", $client_ids);
+        $res = $wpdb->get_results($sql_n, ARRAY_A);
+        foreach ((array) $res as $r) {
+            $nombres[(int) $r['id']] = (string) $r['cliente_nombre'];
+        }
+    }
+
+    $slots = [];
+    foreach ($rows as $r) {
+        $start = $r['fecha_visita'];
+        try {
+            $dt = new DateTime($start);
+            $dt->modify('+' . (int) $r['duracion_min'] . ' minutes');
+            $end = $dt->format('Y-m-d H:i:s');
+        } catch (Exception $e) {
+            $end = $start;
+        }
+        $cid = (int) $r['client_id'];
+        $slots[] = [
+            'id'           => (int) $r['id'],
+            'start'        => $start,
+            'end'          => $end,
+            'duracion_min' => (int) $r['duracion_min'],
+            'estado'       => $r['estado'],
+            'cliente'      => $nombres[$cid] ?? ('Cliente #' . $cid),
+        ];
+    }
+
+    wp_send_json_success(['slots' => $slots]);
 }
 
 /* =========================================================================
@@ -535,6 +771,32 @@ function crm_render_visitas_box($client_id) {
                                 'show_option_none' => '— Seleccionar —',
                             ]); ?>
                         </label>
+                    <?php elseif (in_array('comercial', (array) wp_get_current_user()->roles, true)): ?>
+                        <label style="grid-column:1/-1;">
+                            <span style="display:block; font-weight:600; font-size:13px;">Asignar a</span>
+                            <select name="comercial_id" style="width:100%;">
+                                <option value="<?php echo (int) $current_user_id; ?>">Yo mismo (<?php echo esc_html(wp_get_current_user()->display_name); ?>)</option>
+                                <?php
+                                $visitadores = get_users([
+                                    'role'    => 'visitador',
+                                    'orderby' => 'display_name',
+                                    'order'   => 'ASC',
+                                    'fields'  => ['ID', 'display_name'],
+                                ]);
+                                foreach ($visitadores as $vu) {
+                                    if ((int) $vu->ID === (int) $current_user_id) {
+                                        continue;
+                                    }
+                                    printf(
+                                        '<option value="%d">%s (visitador)</option>',
+                                        (int) $vu->ID,
+                                        esc_html($vu->display_name)
+                                    );
+                                }
+                                ?>
+                            </select>
+                            <small style="color:#666;">Si asignas a un visitador, se validará su disponibilidad horaria.</small>
+                        </label>
                     <?php else: ?>
                         <input type="hidden" name="comercial_id" value="<?php echo (int) $current_user_id; ?>">
                     <?php endif; ?>
@@ -542,6 +804,22 @@ function crm_render_visitas_box($client_id) {
                         <span style="display:block; font-weight:600; font-size:13px;">Notas</span>
                         <textarea name="notas" rows="3" style="width:100%;"></textarea>
                     </label>
+
+                    <?php
+                    $can_force = crm_visita_user_can_force_overlap();
+                    ?>
+                    <div style="grid-column:1/-1;">
+                        <div class="crm-visita-availability"
+                             data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>"
+                             data-nonce="<?php echo esc_attr(wp_create_nonce('crm_visitas_busy')); ?>"
+                             style="margin-top:4px; min-height:0;"></div>
+                        <?php if ($can_force): ?>
+                            <label style="display:inline-flex; align-items:center; gap:6px; margin-top:8px; font-size:13px;">
+                                <input type="checkbox" name="force_overlap" value="1">
+                                <span>Forzar (saltar validación de solape)</span>
+                            </label>
+                        <?php endif; ?>
+                    </div>
                 </div>
 
                 <div style="margin-top:12px; display:flex; gap:8px;">
@@ -549,6 +827,92 @@ function crm_render_visitas_box($client_id) {
                     <button type="button" class="button" onclick="this.closest('form').style.display='none';">Cancelar</button>
                 </div>
             </form>
+            <script>
+            (function(){
+                var formId = 'crm-visita-form-<?php echo (int) $client_id; ?>';
+                var form = document.getElementById(formId);
+                if (!form || form.dataset.crmAvailabilityWired === '1') return;
+                form.dataset.crmAvailabilityWired = '1';
+
+                var box = form.querySelector('.crm-visita-availability');
+                if (!box) return;
+                var ajaxUrl = box.dataset.ajaxUrl;
+                var nonce   = box.dataset.nonce;
+                var fechaInput = form.querySelector('input[name="fecha_visita"]');
+                var duracInput = form.querySelector('input[name="duracion_min"]');
+                var asignSelect = form.querySelector('select[name="comercial_id"]');
+                var asignHidden = form.querySelector('input[type="hidden"][name="comercial_id"]');
+
+                function getAsignId(){
+                    if (asignSelect) return parseInt(asignSelect.value, 10) || 0;
+                    if (asignHidden) return parseInt(asignHidden.value, 10) || 0;
+                    return 0;
+                }
+
+                function fmt(s){
+                    if (!s) return '';
+                    return s.replace('T',' ').substring(0,16);
+                }
+
+                function render(slots, conflict){
+                    if (!slots || !slots.length) {
+                        box.innerHTML = '<div style="padding:8px 10px; background:#ecfdf5; border:1px solid #6ee7b7; border-radius:4px; font-size:13px; color:#065f46;">Sin visitas del asignado ese día. Disponible.</div>';
+                        return;
+                    }
+                    var html = '';
+                    if (conflict) {
+                        html += '<div style="padding:8px 10px; background:#fef2f2; border:1px solid #fca5a5; border-radius:4px; font-size:13px; color:#991b1b; margin-bottom:6px;"><strong>Solape detectado</strong> con la franja propuesta.</div>';
+                    } else {
+                        html += '<div style="padding:8px 10px; background:#fffbeb; border:1px solid #fcd34d; border-radius:4px; font-size:13px; color:#92400e; margin-bottom:6px;">Otras visitas del asignado ese día:</div>';
+                    }
+                    html += '<ul style="margin:0; padding-left:18px; font-size:12px; color:#374151;">';
+                    slots.forEach(function(s){
+                        html += '<li>' + fmt(s.start) + ' a ' + s.end.substring(11,16) + ' &mdash; ' + s.cliente + '</li>';
+                    });
+                    html += '</ul>';
+                    box.innerHTML = html;
+                }
+
+                function check(){
+                    var cid = getAsignId();
+                    var fecha = fechaInput ? fechaInput.value : '';
+                    var durac = duracInput ? parseInt(duracInput.value, 10) || 60 : 60;
+                    if (!cid || !fecha) {
+                        box.innerHTML = '';
+                        return;
+                    }
+                    var dia = fecha.substring(0,10);
+                    var body = new URLSearchParams();
+                    body.append('action', 'crm_visitas_busy');
+                    body.append('nonce', nonce);
+                    body.append('comercial_id', cid);
+                    body.append('desde', dia);
+                    body.append('hasta', dia);
+                    fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin', body: body })
+                        .then(function(r){ return r.json(); })
+                        .then(function(j){
+                            if (!j || !j.success) { box.innerHTML = ''; return; }
+                            var slots = j.data && j.data.slots ? j.data.slots : [];
+                            // Detectar conflicto con la franja propuesta
+                            var newStart = new Date(fecha);
+                            var newEnd = new Date(newStart.getTime() + durac * 60000);
+                            var conflict = slots.some(function(s){
+                                var sStart = new Date(s.start.replace(' ', 'T'));
+                                var sEnd = new Date(s.end.replace(' ', 'T'));
+                                return sStart < newEnd && sEnd > newStart;
+                            });
+                            render(slots, conflict);
+                        })
+                        .catch(function(){ box.innerHTML = ''; });
+                }
+
+                ['change','input','blur'].forEach(function(ev){
+                    if (fechaInput) fechaInput.addEventListener(ev, check);
+                    if (duracInput) duracInput.addEventListener(ev, check);
+                    if (asignSelect) asignSelect.addEventListener('change', check);
+                });
+            })();
+            </script>
             <?php endif; ?>
         </div>
     </div>

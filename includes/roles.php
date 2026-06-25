@@ -213,6 +213,50 @@ function crm_install_roles() {
 }
 
 /**
+ * v1.20.9: Filtro de capabilities. Revoca dinamicamente cualquier cap
+ * de admin del CRM (crm_admin, crm_view_all_clients, crm_delete_clients,
+ * crm_manage_settings, crm_export_data) para usuarios cuyo rol NO es
+ * `administrator` ni `crm_admin`.
+ *
+ * Esto neutraliza la elevacion de privilegios por plugins externos (Members,
+ * User Role Editor) que pudieran haber inyectado esas capabilities a un
+ * comercial o visitador. La fuente de verdad es el ROL asignado al usuario.
+ *
+ * @param array $allcaps Todas las caps del usuario (cap => bool).
+ * @param array $caps    Caps requeridas para la accion.
+ * @param array $args    Args originales pasados a current_user_can().
+ * @param WP_User $user  Objeto usuario.
+ * @return array
+ */
+function crm_filter_user_has_cap($allcaps, $caps, $args, $user) {
+    if (!is_object($user) || empty($user->ID)) {
+        return $allcaps;
+    }
+    $roles = (array) ($user->roles ?? []);
+    if (array_intersect(['administrator', 'crm_admin'], $roles)) {
+        return $allcaps; // usuario legitimo, no tocar
+    }
+    // Lista de caps que SOLO deben funcionar para administrator/crm_admin.
+    $admin_only_caps = [
+        'crm_admin',
+        'crm_view_all_clients',
+        'crm_edit_all_clients',
+        'crm_delete_clients',
+        'crm_manage_settings',
+        'crm_view_logs',
+        'crm_export_data',
+        'crm_manage_visits',
+    ];
+    foreach ($admin_only_caps as $cap) {
+        if (!empty($allcaps[$cap])) {
+            $allcaps[$cap] = false;
+        }
+    }
+    return $allcaps;
+}
+add_filter('user_has_cap', 'crm_filter_user_has_cap', 999, 4);
+
+/**
  * Quita las capacidades del CRM al desactivar/desinstalar.
  * NO borra el rol `comercial` ni `crm_admin` para no perder asignaciones de usuarios.
  */

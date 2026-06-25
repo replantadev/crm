@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.8
+Version: 1.20.9
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.8');
+define('CRM_PLUGIN_VERSION', '1.20.9');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -694,7 +694,11 @@ function crm_formulario_alta_cliente()
         <input type="hidden" name="estado_formulario" id="estado_formulario" value="<?php echo esc_attr($estado_actual); ?>">
 
         <!-- Datos del Comercial - Solo visible para administradores -->
-        <?php if(current_user_can('crm_admin')): ?>
+        <?php
+        // v1.20.9: usar rol explicito (crm_user_is_admin) en lugar de current_user_can,
+        // que podia ser bypaseado por capabilities inyectadas por plugins (Members).
+        $crm_is_admin_view = function_exists('crm_user_is_admin') ? crm_user_is_admin() : current_user_can('crm_admin');
+        if ($crm_is_admin_view): ?>
         <div class="crm-section inicio">
             <div class="half-width">
                 <p><a class="atras" href="/todas-las-altas-de-cliente/">&larr; Regresar atrás</a></p>
@@ -715,9 +719,9 @@ function crm_formulario_alta_cliente()
                 <label for="delegado">Comercial Asignado:</label>
                 <select name="delegado" id="delegado">
                     <?php
-                    // Obtener todos los usuarios con el rol "comercial"
-                    $comerciales = get_users(['role' => 'comercial']);
-                    foreach ($comerciales as $comercial) {
+                    // v1.20.9: incluir tambien visitadores (actuan como comercial).
+                    $delegados = get_users(['role__in' => ['comercial', 'visitador']]);
+                    foreach ($delegados as $comercial) {
                         $selected = (isset($client_data['delegado']) && $client_data['delegado'] === $comercial->display_name) ? 'selected' : '';
                         echo "<option value='" . esc_attr($comercial->display_name) . "' $selected>" . esc_html($comercial->display_name) . " (" . esc_html($comercial->user_email) . ")</option>";
                     }

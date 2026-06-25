@@ -266,7 +266,11 @@ function showToast(msg, tipo, duration = 4000) {
     form.addEventListener('click', e => {
         if (!e.target.matches('.send-sector-btn')) return;
         const sector = e.target.dataset.sector;
-        // inyectamos el campo para el AJAX
+        // v1.20.14: limpiar hiddens previos para garantizar INDEPENDENCIA de
+        // envio por sector. Antes, pulsar "Enviar" en varios botones acumulaba
+        // los hiddens `enviar_sector[]` y el backend acababa marcando como
+        // enviados sectores que no se habían pulsado en esa interacción.
+        form.querySelectorAll('input[type="hidden"][name="enviar_sector[]"]').forEach(el => el.remove());
         const h = document.createElement('input');
         h.type = 'hidden';
         h.name = 'enviar_sector[]';

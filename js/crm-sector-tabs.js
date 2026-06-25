@@ -14,19 +14,28 @@
 (function () {
     'use strict';
 
+    // v1.20.14 — sectores reales del CRM (energia/alarmas/telecomunicaciones/
+    // seguros/renovables). Se mantienen los legacy por si una instancia antigua
+    // todavia tiene fichas con luz/gas/agua/asesoria.
     const SECTOR_LABELS = {
+        energia: 'Energía',
+        alarmas: 'Alarmas',
+        telecomunicaciones: 'Telecom',
+        seguros: 'Seguros',
+        renovables: 'Renovables',
         luz: 'Luz',
         gas: 'Gas',
-        telecomunicaciones: 'Telecom',
-        alarmas: 'Alarmas',
         agua: 'Agua',
         asesoria: 'Asesoría',
     };
     const SECTOR_ICONS = {
+        energia: 'lightning',
+        alarmas: 'shield-check',
+        telecomunicaciones: 'broadcast',
+        seguros: 'umbrella',
+        renovables: 'leaf',
         luz: 'lightning',
         gas: 'flame',
-        telecomunicaciones: 'broadcast',
-        alarmas: 'shield-check',
         agua: 'drop',
         asesoria: 'scales',
     };
@@ -72,7 +81,12 @@
     }
 
     function getInlineSvg(name) {
-        // Buscamos en cualquier .crm-i SVG ya renderizado por el helper PHP
+        // v1.20.14: primero intentamos usar el sprite localizado por PHP
+        // (window.CRM_SECTOR_ICONS_SVG). Asi evitamos depender de que haya un
+        // ref `[data-crm-icon]` en el DOM que coincida con el nombre buscado.
+        if (typeof window !== 'undefined' && window.CRM_SECTOR_ICONS_SVG && window.CRM_SECTOR_ICONS_SVG[name]) {
+            return window.CRM_SECTOR_ICONS_SVG[name];
+        }
         const ref = document.querySelector('[data-crm-icon="' + name + '"]');
         if (ref) {
             return ref.innerHTML;

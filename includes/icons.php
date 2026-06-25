@@ -58,6 +58,9 @@ function crm_icon_path($name) {
             'arrow-left'   => '<path d="M224,128a8,8,0,0,1-8,8H59.31l58.35,58.34a8,8,0,0,1-11.32,11.32l-72-72a8,8,0,0,1,0-11.32l72-72a8,8,0,0,1,11.32,11.32L59.31,120H216A8,8,0,0,1,224,128Z" fill="currentColor"/>',
             'floppy'       => '<path d="M219.31,72,184,36.69A15.86,15.86,0,0,0,172.69,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V83.31A15.86,15.86,0,0,0,219.31,72ZM168,208H88V152h80Zm40,0H184V152a16,16,0,0,0-16-16H88a16,16,0,0,0-16,16v56H48V48H172.69L208,83.31Zm-56-128a8,8,0,0,1-8,8H96a8,8,0,0,1,0-16h48A8,8,0,0,1,152,80Z" fill="currentColor"/>',
             'calendar'     => '<path d="M208,32H184V24a8,8,0,0,0-16,0v8H88V24a8,8,0,0,0-16,0v8H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM72,48v8a8,8,0,0,0,16,0V48h80v8a8,8,0,0,0,16,0V48h24V80H48V48ZM208,208H48V96H208V208Zm-68-76a12,12,0,1,1-12-12A12,12,0,0,1,140,132Zm44,0a12,12,0,1,1-12-12A12,12,0,0,1,184,132ZM96,172a12,12,0,1,1-12-12A12,12,0,0,1,96,172Zm44,0a12,12,0,1,1-12-12A12,12,0,0,1,140,172Zm44,0a12,12,0,1,1-12-12A12,12,0,0,1,184,172Z" fill="currentColor"/>',
+            // v1.20.14 — paraguas (sector seguros) y hoja (sector renovables).
+            'umbrella'     => '<path d="M128,24a8,8,0,0,0-8,8v8.41A104.16,104.16,0,0,0,24,144a8,8,0,0,0,8,8H120v48a32,32,0,0,1-64,0,8,8,0,0,0-16,0,48,48,0,0,0,96,0V152h88a8,8,0,0,0,8-8A104.16,104.16,0,0,0,136,40.41V32A8,8,0,0,0,128,24Z" fill="currentColor"/>',
+            'leaf'         => '<path d="M223.45,40.07a8,8,0,0,0-7.52-7.52C139.8,28.08,78.82,51,52.82,94.14c-18,29.85-17.65,66.32.92,103A175.31,175.31,0,0,0,46.07,217a8,8,0,1,0,15.86,2c.65-5.31,1.94-10.49,3.78-15.49a128,128,0,0,0,33.93,9.42,138.43,138.43,0,0,0,21.94,1.62c20.72,0,40.61-7,57.31-19.6C223.65,162.06,228.42,77.84,223.45,40.07Z" fill="currentColor"/>',
         ];
     }
     return $paths[$name] ?? '';
@@ -88,13 +91,22 @@ function crm_icon($name, $size = 16, $extra = '') {
 
 /**
  * Iconos por sector. Devuelve el nombre del icono Phosphor a usar.
+ *
+ * v1.20.14: alineado con los sectores reales del CRM
+ * (energia/alarmas/telecomunicaciones/seguros/renovables). Se mantienen las
+ * entradas legacy luz/gas/agua/asesoria por compatibilidad con datos antiguos.
  */
 function crm_icon_for_sector($sector) {
     $map = [
+        // Sectores actuales
+        'energia'            => 'lightning',
+        'alarmas'            => 'shield-check',
+        'telecomunicaciones' => 'broadcast',
+        'seguros'            => 'umbrella',
+        'renovables'         => 'leaf',
+        // Legacy / aliases
         'luz'                => 'lightning',
         'gas'                => 'flame',
-        'telecomunicaciones' => 'broadcast',
-        'alarmas'            => 'shield-check',
         'agua'               => 'drop',
         'asesoria'           => 'scales',
         'asesoría'           => 'scales',

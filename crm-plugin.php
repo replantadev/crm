@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.13
+Version: 1.20.14
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.13');
+define('CRM_PLUGIN_VERSION', '1.20.14');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -523,6 +523,25 @@ function crm_formulario_alta_cliente()
     wp_enqueue_script('crm-duplicates', CRM_PLUGIN_URL . 'js/crm-duplicates.js', array(), CRM_PLUGIN_VERSION, true);
     // v1.19.0 — Tabs de sectores (vertical desktop / horizontal mobile)
     wp_enqueue_script('crm-sector-tabs', CRM_PLUGIN_URL . 'js/crm-sector-tabs.js', array('crm-scriptv2'), CRM_PLUGIN_VERSION, true);
+
+    // v1.20.14 — pasamos el SVG inline de cada icono al script de tabs para que
+    // pueda construir los tabs con el icono correcto del sector sin depender
+    // de que haya un `[data-crm-icon="..."]` ya renderizado en el DOM.
+    if (function_exists('crm_icon_path')) {
+        $sector_icon_names = ['lightning', 'shield-check', 'broadcast', 'umbrella', 'leaf', 'flame', 'drop', 'scales'];
+        $svg_map = [];
+        foreach ($sector_icon_names as $icon_name) {
+            $path = crm_icon_path($icon_name);
+            if ($path !== '') {
+                $svg_map[$icon_name] = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true">' . $path . '</svg>';
+            }
+        }
+        wp_add_inline_script(
+            'crm-sector-tabs',
+            'window.CRM_SECTOR_ICONS_SVG = ' . wp_json_encode($svg_map) . ';',
+            'before'
+        );
+    }
 
     // Pasar al loader de municipios la URL del bundle JSON (asset estático
     // generado desde el diccionario oficial del INE con tools/build-municipios.ps1).
@@ -2669,56 +2688,63 @@ function crm_lista_altas()
                 { 
                     "data": "intereses",
                     "render": function(data, type, row) {
+                        // v1.20.14: badges minimal coherentes con el resto del CRM
+                        // (.crm-badge.sector-xxx con dot del color del sector).
                         if (Array.isArray(data) && data.length > 0) {
-                            let badges = '';
-                            const colors = {
-                                'energia': '#28a745',
-                                'alarmas': '#ffc107', 
-                                'telecomunicaciones': '#17a2b8',
-                                'teleco': '#17a2b8',
-                                'seguros': '#dc3545',
-                                'renovables': '#6f42c1'
+                            const labels = {
+                                energia: 'Energía', alarmas: 'Alarmas',
+                                telecomunicaciones: 'Telecom',
+                                seguros: 'Seguros', renovables: 'Renovables'
                             };
+                            let html = '';
                             data.slice(0, 3).forEach(function(interes) {
-                                const color = colors[interes.toLowerCase()] || '#6c757d';
-                                badges += '<span class="badge-interes" style="background-color: ' + color + '; color: white; padding: 2px 6px; border-radius: 3px; margin: 1px; font-size: 11px; display: inline-block;">' + interes + '</span> ';
+                                const k = String(interes).toLowerCase();
+                                const lbl = labels[k] || interes;
+                                html += '<span class="crm-badge sector-' + k + '">' + lbl + '</span> ';
                             });
-                            if (data.length > 3) badges += '<span class="badge-interes" style="background-color: #6c757d; color: white; padding: 2px 6px; border-radius: 3px; margin: 1px; font-size: 11px;">+' + (data.length - 3) + '</span>';
-                            return badges;
+                            if (data.length > 3) {
+                                html += '<span class="crm-badge">+' + (data.length - 3) + '</span>';
+                            }
+                            return html;
                         }
-                        return '<em style="color: #999;">Sin intereses</em>';
+                        return '<em style="color:#999;">Sin intereses</em>';
                     },
-                    "width": "150px"
+                    "width": "180px"
                 },
                 { 
                     "data": "estado_por_sector",
                     "render": function(data, type, row) {
-                        if (data && typeof data === 'object' && Object.keys(data).length > 0) {
-                            let badges = '';
-                            // Obtener datos de envío - pueden venir como objeto o string serializado
-                            let fechasEnvio = {};
-                            try {
-                                if (row.fecha_envio_por_sector) {
-                                    if (typeof row.fecha_envio_por_sector === 'object') {
-                                        fechasEnvio = row.fecha_envio_por_sector;
-                                    } else {
-                                        // Fallback: si viene como string, intentar parsear
-                                        fechasEnvio = {};
-                                    }
-                                }
-                            } catch(e) {
-                                console.warn('Error processing fecha_envio_por_sector:', e);
-                                fechasEnvio = {};
-                            }
-                            
-                            Object.entries(data).forEach(([sector, estado]) => {
-                                const hasSentToAdmin = fechasEnvio[sector] ? ' sent-indicator' : '';
-                                badges += '<span class="estado-badge ' + estado + hasSentToAdmin + '">' + 
-                                         sector + ': ' + getEstadoLabel(estado) + '</span> ';
-                            });
-                            return badges;
+                        // v1.20.14: pills minimal con escala HSL por sector y paso.
+                        const stepMap = {
+                            borrador: 0, enviado: 1,
+                            presupuesto_generado: 2, presupuesto_aceptado: 3,
+                            contratos_generados: 4, contratos_firmados: 5
+                        };
+                        const abre = {
+                            energia: 'Energía', alarmas: 'Alarmas',
+                            telecomunicaciones: 'Telecom',
+                            seguros: 'Seguros', renovables: 'Renovables'
+                        };
+                        function pill(sector, estado) {
+                            const sec = String(sector).toLowerCase();
+                            const step = stepMap[estado] ?? 0;
+                            const lbl = getEstadoLabel(estado);
+                            return '<span class="crm-estado-pill" data-sector="' + sec + '" data-step="' + step + '" title="' + (abre[sec] || sec) + ' · ' + lbl + '">' +
+                                   '<span class="crm-estado-pill__dot" aria-hidden="true"></span>' +
+                                   '<span class="crm-estado-pill__sector">' + (abre[sec] || sec) + '</span>' +
+                                   '<span class="crm-estado-pill__sep" aria-hidden="true">·</span>' +
+                                   '<span class="crm-estado-pill__estado">' + lbl + '</span>' +
+                                   '</span>';
                         }
-                        return '<span class="estado-badge ' + row.estado + '">' + getEstadoLabel(row.estado) + '</span>';
+                        if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+                            let html = '<div style="display:flex; flex-wrap:wrap; gap:4px;">';
+                            Object.entries(data).forEach(function(pair) {
+                                html += pill(pair[0], pair[1]);
+                            });
+                            html += '</div>';
+                            return html;
+                        }
+                        return pill('energia', row.estado || 'borrador');
                     }
                 },
                 { 

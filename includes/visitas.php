@@ -529,15 +529,59 @@ function crm_visita_debug_early_dump() {
     ]);
 }
 
+// v1.20.21: registramos un filter wp_redirect global que captura el primer
+// redirect emitido durante una request de debug y lo devuelve como JSON.
+// Esto permite ver QUE codigo (theme, otro plugin, lockdown, etc.) provoca
+// la salida a home cuando el handler de visita no llega a su dump.
+if (!function_exists('crm_debug_handler_state')) {
+    function &crm_debug_handler_state() {
+        static $state = ['entered' => false, 'step' => null];
+        return $state;
+    }
+}
+if (!function_exists('crm_debug_wp_redirect_capture')) {
+    function crm_debug_wp_redirect_capture($location, $status) {
+        if (empty($_POST['_crm_debug'])) {
+            return $location;
+        }
+        $trigger = (string) $_POST['_crm_debug'];
+        if ($trigger !== '1' && $trigger !== 'trace') {
+            return $location;
+        }
+        $state = &crm_debug_handler_state();
+        nocache_headers();
+        wp_send_json([
+            'phase'        => 'wp_redirect filter',
+            'location'     => $location,
+            'status'       => $status,
+            'backtrace'    => function_exists('wp_debug_backtrace_summary') ? wp_debug_backtrace_summary(null, 0, false) : null,
+            'request_uri'  => isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : null,
+            'action_param' => isset($_REQUEST['action']) ? $_REQUEST['action'] : null,
+            'post_keys'    => array_keys($_POST),
+            'handler_seen' => $state['entered'],
+            'handler_step' => $state['step'],
+        ]);
+    }
+    add_filter('wp_redirect', 'crm_debug_wp_redirect_capture', 1, 2);
+}
+
 add_action('admin_post_crm_visita_save', 'crm_visita_handle_save');
 function crm_visita_handle_save() {
+    // v1.20.21: marca de entrada al handler para que el filter wp_redirect sepa
+    // si el handler llego a ejecutarse o no.
+    $state = &crm_debug_handler_state();
+    $state['entered'] = true;
+    $state['step'] = 'entered';
     if (!is_user_logged_in()) {
         wp_die('No autorizado.', '', ['response' => 403]);
     }
+    $state['step'] = 'before_check_admin_referer';
     check_admin_referer('crm_visita_save');
+    $state['step'] = 'after_check_admin_referer';
 
     $id     = isset($_POST['visita_id']) ? (int) $_POST['visita_id'] : 0;
     $input  = wp_unslash($_POST);
+    $state['step'] = 'after_input_parse';
 
     $is_admin = function_exists('crm_user_is_admin') && crm_user_is_admin();
     $current_id = get_current_user_id();
@@ -558,18 +602,23 @@ function crm_visita_handle_save() {
         // Solo admins pueden forzar saltar el chequeo de solape.
         unset($input['force_overlap']);
     }
+    $state['step'] = 'after_target_resolution';
 
     if ($id > 0) {
         $existing = crm_visita_get($id);
         if (!$existing || !crm_visita_can_manage($existing)) {
             wp_die('Sin permisos para editar esta visita.', '', ['response' => 403]);
         }
+        $state['step'] = 'before_update';
         $res = crm_visita_update($id, $input);
+        $state['step'] = 'after_update';
     } else {
         if (!crm_visita_can_create()) {
             wp_die('Sin permisos para crear visitas.', '', ['response' => 403]);
         }
+        $state['step'] = 'before_create';
         $res = crm_visita_create($input);
+        $state['step'] = 'after_create';
     }
 
     // v1.20.18: fallback frontend. Si referer vacio, ir a la ficha del cliente

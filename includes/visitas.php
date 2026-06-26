@@ -486,6 +486,47 @@ function crm_visita_user_can_force_overlap() {
  * HANDLERS admin-post (formularios)
  * ========================================================================= */
 
+// v1.20.19: hook MUY temprano en admin_init para diagnostico. Si el POST trae
+// _crm_debug=1 dumpa JSON con el estado de WP antes de que cualquier otro
+// hook (lockdown, etc.) pueda hacer redirects. Solo activo para usuarios con
+// capacidad de crear visitas. Quitar tras resolver el incidente del redirect.
+add_action('admin_init', 'crm_visita_debug_early_dump', 0);
+function crm_visita_debug_early_dump() {
+    if (empty($_POST['_crm_debug']) || (string) $_POST['_crm_debug'] !== '1') {
+        return;
+    }
+    if (!is_user_logged_in()) {
+        return;
+    }
+    if (!function_exists('crm_visita_can_create') || !crm_visita_can_create()) {
+        return;
+    }
+    global $pagenow;
+    $user = wp_get_current_user();
+    nocache_headers();
+    wp_send_json([
+        'phase'                => 'admin_init priority 0',
+        'pagenow'              => $pagenow,
+        'is_admin'             => is_admin(),
+        'wp_doing_ajax'        => wp_doing_ajax(),
+        'doing_cron'           => defined('DOING_CRON') && DOING_CRON,
+        'request_uri'          => isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : null,
+        'php_self'             => isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : null,
+        'script_name'          => isset($_SERVER['SCRIPT_NAME']) ? $_SERVER['SCRIPT_NAME'] : null,
+        'http_referer'         => isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : null,
+        'wp_get_raw_referer'   => function_exists('wp_get_raw_referer') ? wp_get_raw_referer() : null,
+        'wp_get_referer'       => function_exists('wp_get_referer') ? wp_get_referer() : null,
+        'home_url'             => home_url('/'),
+        'admin_url_post'       => admin_url('admin-post.php'),
+        'current_user_id'      => $user ? $user->ID : 0,
+        'current_user_roles'   => $user ? (array) $user->roles : [],
+        'action_param'         => isset($_REQUEST['action']) ? $_REQUEST['action'] : null,
+        'post_keys'            => array_keys($_POST),
+        'wp_http_referer_post' => isset($_POST['_wp_http_referer']) ? $_POST['_wp_http_referer'] : null,
+        'plugin_version'       => defined('CRM_PLUGIN_VERSION') ? CRM_PLUGIN_VERSION : null,
+    ]);
+}
+
 add_action('admin_post_crm_visita_save', 'crm_visita_handle_save');
 function crm_visita_handle_save() {
     if (!is_user_logged_in()) {

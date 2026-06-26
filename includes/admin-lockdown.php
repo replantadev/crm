@@ -83,11 +83,23 @@ function crm_block_wpadmin_for_non_admins() {
     global $pagenow;
     // Endpoints siempre permitidos:
     //  - admin-post.php / admin-ajax.php: handlers POST/AJAX desde frontend.
-    //  - profile.php: que el usuario pueda cambiar su contraseña/datos
-    //    (gestionado además por el plugin Members para los caps).
+    //  - profile.php: que el usuario pueda cambiar su contrasena/datos.
+    // v1.20.19: ademas de $pagenow comprobamos REQUEST_URI por si el reverse
+    // proxy / configuracion del servidor deja $pagenow vacio o incorrecto
+    // (esto puede pasar en producciones con PHP-FPM detras de Nginx).
     $allowed_pages = ['admin-post.php', 'admin-ajax.php', 'profile.php'];
     if (in_array($pagenow, $allowed_pages, true)) {
         return;
+    }
+    $req_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+    if ($req_uri !== '') {
+        $path = parse_url($req_uri, PHP_URL_PATH);
+        if (is_string($path)) {
+            $basename = basename($path);
+            if (in_array($basename, $allowed_pages, true)) {
+                return;
+            }
+        }
     }
 
     $user = wp_get_current_user();

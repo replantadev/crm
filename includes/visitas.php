@@ -492,7 +492,9 @@ function crm_visita_user_can_force_overlap() {
 // capacidad de crear visitas. Quitar tras resolver el incidente del redirect.
 add_action('admin_init', 'crm_visita_debug_early_dump', 0);
 function crm_visita_debug_early_dump() {
-    if (empty($_POST['_crm_debug']) || (string) $_POST['_crm_debug'] !== '1') {
+    // v1.20.20: separar trigger del early dump (_crm_debug=early) del handler
+    // dump (_crm_debug=1) para poder diagnosticar las dos fases por separado.
+    if (empty($_POST['_crm_debug']) || (string) $_POST['_crm_debug'] !== 'early') {
         return;
     }
     if (!is_user_logged_in()) {

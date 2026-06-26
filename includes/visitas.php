@@ -486,102 +486,15 @@ function crm_visita_user_can_force_overlap() {
  * HANDLERS admin-post (formularios)
  * ========================================================================= */
 
-// v1.20.19: hook MUY temprano en admin_init para diagnostico. Si el POST trae
-// _crm_debug=1 dumpa JSON con el estado de WP antes de que cualquier otro
-// hook (lockdown, etc.) pueda hacer redirects. Solo activo para usuarios con
-// capacidad de crear visitas. Quitar tras resolver el incidente del redirect.
-add_action('admin_init', 'crm_visita_debug_early_dump', 0);
-function crm_visita_debug_early_dump() {
-    // v1.20.20: separar trigger del early dump (_crm_debug=early) del handler
-    // dump (_crm_debug=1) para poder diagnosticar las dos fases por separado.
-    if (empty($_POST['_crm_debug']) || (string) $_POST['_crm_debug'] !== 'early') {
-        return;
-    }
-    if (!is_user_logged_in()) {
-        return;
-    }
-    if (!function_exists('crm_visita_can_create') || !crm_visita_can_create()) {
-        return;
-    }
-    global $pagenow;
-    $user = wp_get_current_user();
-    nocache_headers();
-    wp_send_json([
-        'phase'                => 'admin_init priority 0',
-        'pagenow'              => $pagenow,
-        'is_admin'             => is_admin(),
-        'wp_doing_ajax'        => wp_doing_ajax(),
-        'doing_cron'           => defined('DOING_CRON') && DOING_CRON,
-        'request_uri'          => isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : null,
-        'php_self'             => isset($_SERVER['PHP_SELF']) ? $_SERVER['PHP_SELF'] : null,
-        'script_name'          => isset($_SERVER['SCRIPT_NAME']) ? $_SERVER['SCRIPT_NAME'] : null,
-        'http_referer'         => isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : null,
-        'wp_get_raw_referer'   => function_exists('wp_get_raw_referer') ? wp_get_raw_referer() : null,
-        'wp_get_referer'       => function_exists('wp_get_referer') ? wp_get_referer() : null,
-        'home_url'             => home_url('/'),
-        'admin_url_post'       => admin_url('admin-post.php'),
-        'current_user_id'      => $user ? $user->ID : 0,
-        'current_user_roles'   => $user ? (array) $user->roles : [],
-        'action_param'         => isset($_REQUEST['action']) ? $_REQUEST['action'] : null,
-        'post_keys'            => array_keys($_POST),
-        'wp_http_referer_post' => isset($_POST['_wp_http_referer']) ? $_POST['_wp_http_referer'] : null,
-        'plugin_version'       => defined('CRM_PLUGIN_VERSION') ? CRM_PLUGIN_VERSION : null,
-    ]);
-}
-
-// v1.20.21: registramos un filter wp_redirect global que captura el primer
-// redirect emitido durante una request de debug y lo devuelve como JSON.
-// Esto permite ver QUE codigo (theme, otro plugin, lockdown, etc.) provoca
-// la salida a home cuando el handler de visita no llega a su dump.
-if (!function_exists('crm_debug_handler_state')) {
-    function &crm_debug_handler_state() {
-        static $state = ['entered' => false, 'step' => null];
-        return $state;
-    }
-}
-if (!function_exists('crm_debug_wp_redirect_capture')) {
-    function crm_debug_wp_redirect_capture($location, $status) {
-        if (empty($_POST['_crm_debug'])) {
-            return $location;
-        }
-        $trigger = (string) $_POST['_crm_debug'];
-        if ($trigger !== '1' && $trigger !== 'trace') {
-            return $location;
-        }
-        $state = &crm_debug_handler_state();
-        nocache_headers();
-        wp_send_json([
-            'phase'        => 'wp_redirect filter',
-            'location'     => $location,
-            'status'       => $status,
-            'backtrace'    => function_exists('wp_debug_backtrace_summary') ? wp_debug_backtrace_summary(null, 0, false) : null,
-            'request_uri'  => isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : null,
-            'action_param' => isset($_REQUEST['action']) ? $_REQUEST['action'] : null,
-            'post_keys'    => array_keys($_POST),
-            'handler_seen' => $state['entered'],
-            'handler_step' => $state['step'],
-        ]);
-    }
-    add_filter('wp_redirect', 'crm_debug_wp_redirect_capture', 1, 2);
-}
-
 add_action('admin_post_crm_visita_save', 'crm_visita_handle_save');
 function crm_visita_handle_save() {
-    // v1.20.21: marca de entrada al handler para que el filter wp_redirect sepa
-    // si el handler llego a ejecutarse o no.
-    $state = &crm_debug_handler_state();
-    $state['entered'] = true;
-    $state['step'] = 'entered';
     if (!is_user_logged_in()) {
         wp_die('No autorizado.', '', ['response' => 403]);
     }
-    $state['step'] = 'before_check_admin_referer';
     check_admin_referer('crm_visita_save');
-    $state['step'] = 'after_check_admin_referer';
 
     $id     = isset($_POST['visita_id']) ? (int) $_POST['visita_id'] : 0;
     $input  = wp_unslash($_POST);
-    $state['step'] = 'after_input_parse';
 
     $is_admin = function_exists('crm_user_is_admin') && crm_user_is_admin();
     $current_id = get_current_user_id();
@@ -602,29 +515,23 @@ function crm_visita_handle_save() {
         // Solo admins pueden forzar saltar el chequeo de solape.
         unset($input['force_overlap']);
     }
-    $state['step'] = 'after_target_resolution';
 
     if ($id > 0) {
         $existing = crm_visita_get($id);
         if (!$existing || !crm_visita_can_manage($existing)) {
             wp_die('Sin permisos para editar esta visita.', '', ['response' => 403]);
         }
-        $state['step'] = 'before_update';
         $res = crm_visita_update($id, $input);
-        $state['step'] = 'after_update';
     } else {
         if (!crm_visita_can_create()) {
             wp_die('Sin permisos para crear visitas.', '', ['response' => 403]);
         }
-        $state['step'] = 'before_create';
         $res = crm_visita_create($input);
-        $state['step'] = 'after_create';
     }
 
     // v1.20.18: fallback frontend. Si referer vacio, ir a la ficha del cliente
     // (donde esta el form) o a /mi-agenda/. Antes usabamos admin.php?page=...
     // que el lockdown wp-admin redirige al escritorio y pierde el banner.
-    $referer_raw = wp_get_raw_referer();
     $redirect = wp_get_referer();
     if (!$redirect) {
         $client_id_post = isset($_POST['client_id']) ? (int) $_POST['client_id'] : 0;
@@ -638,33 +545,6 @@ function crm_visita_handle_save() {
         $redirect = add_query_arg(['crm_visita_msg' => 'error', 'crm_msg' => urlencode($res->get_error_message())], $redirect);
     } else {
         $redirect = add_query_arg(['crm_visita_msg' => $id > 0 ? 'updated' : 'created'], $redirect);
-    }
-
-    // v1.20.18: modo debug temporal. Si el POST trae _crm_debug=1 y el usuario
-    // tiene capacidad de crear visitas, devolvemos JSON con la informacion
-    // de la operacion para diagnosticar problemas de redirect en produccion.
-    // Quitar este bloque tras resolver.
-    if (!empty($_POST['_crm_debug']) && (string) $_POST['_crm_debug'] === '1' && crm_visita_can_create()) {
-        nocache_headers();
-        wp_send_json([
-            'ok'                   => !is_wp_error($res),
-            'res'                  => is_wp_error($res) ? $res->get_error_message() : (int) $res,
-            'redirect'             => $redirect,
-            'wp_get_referer'       => wp_get_referer(),
-            'wp_get_raw_referer'   => $referer_raw,
-            'server_referer'       => isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : null,
-            'home_url'             => home_url('/'),
-            'site_url'             => site_url('/'),
-            'current_user_id'      => get_current_user_id(),
-            'current_user_roles'   => (array) wp_get_current_user()->roles,
-            'can_create'           => crm_visita_can_create(),
-            'is_admin_request'     => is_admin(),
-            'request_uri'          => isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : null,
-            'post_keys'            => array_keys($_POST),
-            'has_wp_http_referer'  => isset($_POST['_wp_http_referer']),
-            'wp_http_referer_post' => isset($_POST['_wp_http_referer']) ? $_POST['_wp_http_referer'] : null,
-            'comercial_id_final'   => isset($input['comercial_id']) ? (int) $input['comercial_id'] : null,
-        ]);
     }
 
     wp_safe_redirect($redirect);

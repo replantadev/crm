@@ -66,6 +66,64 @@ function crm_get_redirect_url_for_user($user) {
 }
 
 /**
+ * v1.20.21: Allow-list para handlers admin-post.php propios del CRM.
+ * Algunos plugins de "private site" / restricción de wp-admin (Members AddOn
+ * AdminAccess, Restrict User Access, etc.) bloquean cualquier petición a
+ * /wp-admin/* para roles no-admin redirigiendo a home en admin_init, incluso
+ * cuando se trata de admin-post.php (que admin-post.php verifica nonce y
+ * permisos por su cuenta). Esto rompe el guardado de visitas para comerciales.
+ *
+ * Aquí desenganchamos esos guards SOLO cuando la petición es admin-post.php
+ * con un action que empieza por "crm_" (acciones de nuestro plugin).
+ *
+ * Se ejecuta antes que cualquier hook de admin_init (prioridad PHP_INT_MIN+1)
+ * para asegurar que los remove_action surtan efecto.
+ */
+add_action('admin_init', 'crm_allow_own_admin_post_actions', PHP_INT_MIN + 1);
+function crm_allow_own_admin_post_actions() {
+    if (wp_doing_ajax()) {
+        return;
+    }
+    $req_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+    if ($req_uri === '') {
+        return;
+    }
+    $path = parse_url($req_uri, PHP_URL_PATH);
+    if (!is_string($path) || basename($path) !== 'admin-post.php') {
+        return;
+    }
+    $action = isset($_REQUEST['action']) ? (string) $_REQUEST['action'] : '';
+    if ($action === '' || strpos($action, 'crm_') !== 0) {
+        return;
+    }
+
+    // Members AddOn: Admin Access (https://members-plugin.com/).
+    if (function_exists('Members\\AddOns\\AdminAccess\\access_check')) {
+        remove_action('admin_init', 'Members\\AddOns\\AdminAccess\\access_check');
+    }
+    // Defensa adicional para variantes de Members u otros plugins similares:
+    // recorremos los hooks de admin_init y quitamos cualquier callback cuyo
+    // nombre contenga "AdminAccess" o "access_check" en namespace Members.
+    global $wp_filter;
+    if (isset($wp_filter['admin_init']) && is_object($wp_filter['admin_init'])) {
+        foreach ($wp_filter['admin_init']->callbacks as $priority => $cbs) {
+            foreach ($cbs as $key => $cb) {
+                if (!isset($cb['function'])) {
+                    continue;
+                }
+                $fn = $cb['function'];
+                if (is_string($fn) && (
+                    stripos($fn, 'Members\\AddOns\\AdminAccess') !== false
+                    || stripos($fn, 'members_admin_access') !== false
+                )) {
+                    unset($wp_filter['admin_init']->callbacks[$priority][$key]);
+                }
+            }
+        }
+    }
+}
+
+/**
  * Hook principal: bloquea el wp-admin a CUALQUIER usuario que NO sea
  * `administrator`. Solo el administrator del sitio gestiona el backend.
  *

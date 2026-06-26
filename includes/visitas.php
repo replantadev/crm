@@ -529,12 +529,52 @@ function crm_visita_handle_save() {
         $res = crm_visita_create($input);
     }
 
-    $redirect = wp_get_referer() ?: admin_url('admin.php?page=crm-mi-agenda');
+    // v1.20.18: fallback frontend. Si referer vacio, ir a la ficha del cliente
+    // (donde esta el form) o a /mi-agenda/. Antes usabamos admin.php?page=...
+    // que el lockdown wp-admin redirige al escritorio y pierde el banner.
+    $referer_raw = wp_get_raw_referer();
+    $redirect = wp_get_referer();
+    if (!$redirect) {
+        $client_id_post = isset($_POST['client_id']) ? (int) $_POST['client_id'] : 0;
+        if ($client_id_post > 0) {
+            $redirect = add_query_arg('client_id', $client_id_post, home_url('/editar-cliente/'));
+        } else {
+            $redirect = home_url('/mi-agenda/');
+        }
+    }
     if (is_wp_error($res)) {
         $redirect = add_query_arg(['crm_visita_msg' => 'error', 'crm_msg' => urlencode($res->get_error_message())], $redirect);
     } else {
         $redirect = add_query_arg(['crm_visita_msg' => $id > 0 ? 'updated' : 'created'], $redirect);
     }
+
+    // v1.20.18: modo debug temporal. Si el POST trae _crm_debug=1 y el usuario
+    // tiene capacidad de crear visitas, devolvemos JSON con la informacion
+    // de la operacion para diagnosticar problemas de redirect en produccion.
+    // Quitar este bloque tras resolver.
+    if (!empty($_POST['_crm_debug']) && (string) $_POST['_crm_debug'] === '1' && crm_visita_can_create()) {
+        nocache_headers();
+        wp_send_json([
+            'ok'                   => !is_wp_error($res),
+            'res'                  => is_wp_error($res) ? $res->get_error_message() : (int) $res,
+            'redirect'             => $redirect,
+            'wp_get_referer'       => wp_get_referer(),
+            'wp_get_raw_referer'   => $referer_raw,
+            'server_referer'       => isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : null,
+            'home_url'             => home_url('/'),
+            'site_url'             => site_url('/'),
+            'current_user_id'      => get_current_user_id(),
+            'current_user_roles'   => (array) wp_get_current_user()->roles,
+            'can_create'           => crm_visita_can_create(),
+            'is_admin_request'     => is_admin(),
+            'request_uri'          => isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : null,
+            'post_keys'            => array_keys($_POST),
+            'has_wp_http_referer'  => isset($_POST['_wp_http_referer']),
+            'wp_http_referer_post' => isset($_POST['_wp_http_referer']) ? $_POST['_wp_http_referer'] : null,
+            'comercial_id_final'   => isset($input['comercial_id']) ? (int) $input['comercial_id'] : null,
+        ]);
+    }
+
     wp_safe_redirect($redirect);
     exit;
 }
@@ -555,7 +595,8 @@ function crm_visita_handle_estado() {
         wp_die('Sin permisos.', '', ['response' => 403]);
     }
     crm_visita_set_estado($id, $estado, $resultado);
-    $redirect = wp_get_referer() ?: admin_url('admin.php?page=crm-mi-agenda');
+    // v1.20.18: fallback frontend (wp-admin esta bloqueado para no-admin).
+    $redirect = wp_get_referer() ?: home_url('/mi-agenda/');
     $redirect = add_query_arg(['crm_visita_msg' => 'updated'], $redirect);
     wp_safe_redirect($redirect);
     exit;

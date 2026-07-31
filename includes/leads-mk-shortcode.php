@@ -16,6 +16,33 @@ if (!defined('ABSPATH')) {
 
 add_shortcode('asignacion_leads_mk', 'crm_shortcode_asignacion_leads_mk');
 
+/**
+ * Calcula el estado de lifecycle para la cola de leads MK.
+ */
+function crm_lead_mk_lifecycle(array $row) {
+    if ((int) ($row['user_id'] ?? 0) <= 0) {
+        return 'pendiente';
+    }
+    $raw = sanitize_key((string) ($row['lead_mk_status'] ?? ''));
+    if ($raw === 'trabajado') {
+        return 'trabajado';
+    }
+    return 'asignado';
+}
+
+/**
+ * Etiqueta legible del estado de lifecycle MK.
+ */
+function crm_lead_mk_lifecycle_label($status) {
+    $map = [
+        'pendiente' => 'Pendiente',
+        'asignado'  => 'Asignado',
+        'trabajado' => 'Trabajado',
+    ];
+    $status = sanitize_key((string) $status);
+    return $map[$status] ?? ucfirst($status);
+}
+
 function crm_shortcode_asignacion_leads_mk($atts = []) {
     $atts = shortcode_atts([
         'modo' => 'asignar', // 'asignar' (admin) | 'mios' (comercial/visitador)
@@ -117,8 +144,11 @@ function crm_render_mis_leads_mk() {
 function crm_render_asignacion_leads_mk() {
     global $wpdb;
     $table = $wpdb->prefix . 'crm_clients';
-    $count = (int) $wpdb->get_var(
+    $count_pending = (int) $wpdb->get_var(
         "SELECT COUNT(*) FROM $table WHERE origen_lead='lead_mk' AND (user_id IS NULL OR user_id = 0)"
+    );
+    $count_total = (int) $wpdb->get_var(
+        "SELECT COUNT(*) FROM $table WHERE origen_lead='lead_mk'"
     );
 
     $comerciales = get_users(['role' => 'comercial', 'fields' => ['ID', 'display_name', 'user_email']]);
@@ -138,7 +168,8 @@ function crm_render_asignacion_leads_mk() {
         <div class="crm-leads-mk-header">
             <h2>Asignación de leads (Marketing)</h2>
             <p class="crm-leads-mk-counter">
-                <strong><?php echo (int) $count; ?></strong> leads sin asignar.
+                <strong><?php echo (int) $count_total; ?></strong> leads MK en total ·
+                <strong><?php echo (int) $count_pending; ?></strong> pendientes.
                 <?php if (!empty($settings['last_sync'])): ?>
                     Última sincronización: <em><?php echo esc_html(date_i18n('d/m/Y H:i', (int) $settings['last_sync'])); ?></em>
                     · <?php echo esc_html($settings['last_status'] ?? ''); ?>
@@ -153,6 +184,14 @@ function crm_render_asignacion_leads_mk() {
         <div class="crm-leads-mk-filters">
             <label for="crm-leads-mk-search">Buscar:</label>
             <input type="search" id="crm-leads-mk-search" placeholder="Nombre, email, teléfono o campaña…">
+            <label for="crm-leads-mk-status">Estado:</label>
+            <select id="crm-leads-mk-status">
+                <option value="activos" selected>Pendientes + Asignados</option>
+                <option value="pendiente">Solo pendientes</option>
+                <option value="asignado">Solo asignados</option>
+                <option value="trabajado">Solo trabajados</option>
+                <option value="todos">Todos</option>
+            </select>
             <label for="crm-leads-mk-sector">Sector inicial:</label>
             <select id="crm-leads-mk-sector">
                 <option value="">(sin asignar sector)</option>
@@ -172,6 +211,8 @@ function crm_render_asignacion_leads_mk() {
                         <th>Teléfono</th>
                         <th>Email</th>
                         <th>Campaña</th>
+                        <th>Lifecycle MK</th>
+                        <th>Comercial</th>
                         <th>Asignar a</th>
                         <th>Acciones</th>
                     </tr>
@@ -179,33 +220,43 @@ function crm_render_asignacion_leads_mk() {
                 <tbody>
                     <?php
                     $rows = $wpdb->get_results(
-                        "SELECT id, fecha, cliente_nombre, telefono, email_cliente, lead_meta
+                        "SELECT id, fecha, cliente_nombre, telefono, email_cliente, lead_meta, user_id, delegado, lead_mk_status, lead_mk_touched_at
                          FROM $table
-                         WHERE origen_lead='lead_mk' AND (user_id IS NULL OR user_id = 0)
+                         WHERE origen_lead='lead_mk'
                          ORDER BY id DESC
                          LIMIT 500",
                         ARRAY_A
                     );
                     if (empty($rows)):
                     ?>
-                        <tr><td colspan="7" class="crm-leads-mk-empty">No hay leads en cola.</td></tr>
+                        <tr><td colspan="9" class="crm-leads-mk-empty">No hay leads de marketing.</td></tr>
                     <?php else:
                         foreach ($rows as $r):
                             $meta = !empty($r['lead_meta']) ? json_decode($r['lead_meta'], true) : [];
                             $campana = is_array($meta) ? trim(($meta['campaign_name'] ?? '') . ($meta['ad_name'] ? ' · ' . $meta['ad_name'] : '')) : '';
                             $haystack = strtolower(trim(($r['cliente_nombre'] ?: '') . ' ' . ($r['email_cliente'] ?: '') . ' ' . ($r['telefono'] ?: '') . ' ' . $campana));
+                            $mk_status = crm_lead_mk_lifecycle($r);
+                            $ficha = add_query_arg('client_id', (int) $r['id'], home_url('/alta-de-cliente/'));
                     ?>
-                        <tr class="crm-leads-mk-row" data-id="<?php echo (int) $r['id']; ?>" data-haystack="<?php echo esc_attr($haystack); ?>">
+                        <tr class="crm-leads-mk-row" data-id="<?php echo (int) $r['id']; ?>" data-haystack="<?php echo esc_attr($haystack); ?>" data-status="<?php echo esc_attr($mk_status); ?>" data-ficha="<?php echo esc_url($ficha); ?>">
                             <td><?php echo esc_html(mysql2date('d/m/Y H:i', $r['fecha'])); ?></td>
                             <td><?php echo esc_html($r['cliente_nombre'] ?: '(sin nombre)'); ?></td>
                             <td><?php echo esc_html($r['telefono']); ?></td>
                             <td><?php echo esc_html($r['email_cliente']); ?></td>
                             <td class="campana"><?php echo esc_html($campana); ?></td>
+                            <td><span class="status-badge status-<?php echo esc_attr($mk_status); ?> crm-lead-mk-status"><?php echo esc_html(crm_lead_mk_lifecycle_label($mk_status)); ?></span></td>
+                            <td>
+                                <?php if (!empty($r['delegado'])): ?>
+                                    <a href="<?php echo esc_url($ficha); ?>" class="crm-link"><?php echo esc_html($r['delegado']); ?></a>
+                                <?php else: ?>
+                                    <span style="color:#64748b;">Sin asignar</span>
+                                <?php endif; ?>
+                            </td>
                             <td>
                                 <select class="crm-leads-mk-assignee">
                                     <option value="">— Comercial —</option>
                                     <?php foreach ($comerciales as $c): ?>
-                                        <option value="<?php echo (int) $c->ID; ?>"><?php echo esc_html($c->display_name); ?></option>
+                                        <option value="<?php echo (int) $c->ID; ?>" <?php selected((int) ($r['user_id'] ?? 0), (int) $c->ID); ?>><?php echo esc_html($c->display_name); ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </td>
@@ -259,6 +310,8 @@ function crm_lead_assign_ajax() {
         'user_id'         => $user_id,
         'delegado'        => $user->display_name,
         'email_comercial' => $user->user_email,
+        'lead_mk_status'  => 'asignado',
+        'lead_mk_touched_at' => null,
         'actualizado_en'  => current_time('mysql'),
         'actualizado_por' => get_current_user_id(),
     ];
@@ -291,7 +344,12 @@ function crm_lead_assign_ajax() {
         crm_notif_assignment_send($lead_id, $user_id);
     }
 
-    wp_send_json_success(['message' => 'Lead asignado a ' . $user->display_name]);
+    wp_send_json_success([
+        'message' => 'Lead asignado a ' . $user->display_name,
+        'status'  => 'asignado',
+        'status_label' => crm_lead_mk_lifecycle_label('asignado'),
+        'delegado' => $user->display_name,
+    ]);
 }
 
 add_action('wp_ajax_crm_lead_to_cold', 'crm_lead_to_cold_ajax');
@@ -308,7 +366,13 @@ function crm_lead_to_cold_ajax() {
     global $wpdb;
     $ok = $wpdb->update(
         $wpdb->prefix . 'crm_clients',
-        ['origen_lead' => 'contacto_frio', 'actualizado_en' => current_time('mysql'), 'actualizado_por' => get_current_user_id()],
+        [
+            'origen_lead' => 'contacto_frio',
+            'lead_mk_status' => 'pendiente',
+            'lead_mk_touched_at' => null,
+            'actualizado_en' => current_time('mysql'),
+            'actualizado_por' => get_current_user_id(),
+        ],
         ['id' => $lead_id]
     );
     if ($ok === false) {

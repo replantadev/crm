@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.23
+Version: 1.20.24
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.23');
+define('CRM_PLUGIN_VERSION', '1.20.24');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -1969,6 +1969,15 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         $_POST['es_cliente_activo'] = $forced_activo;
     }
 
+    // Lifecycle de leads MK: cuando el comercial asignado guarda la ficha,
+    // dejamos de considerarlo "solo asignado" y pasa a "trabajado".
+    $mk_mark_as_worked = (
+        $is_update
+        && (($client['origen_lead'] ?? '') === 'lead_mk')
+        && !current_user_can('crm_admin')
+        && intval($client['user_id'] ?? 0) === get_current_user_id()
+    );
+
     // preparar array de guardado
     $data = [
         'delegado'                  => sanitize_text_field($_POST['delegado']),
@@ -2003,6 +2012,11 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         'actualizado_en'            => current_time('mysql'),
         'actualizado_por'           => get_current_user_id(),
     ];
+
+    if ($mk_mark_as_worked) {
+        $data['lead_mk_status'] = 'trabajado';
+        $data['lead_mk_touched_at'] = current_time('mysql');
+    }
 
     if ($estado === 'enviado') {
         $data['enviado_por']   = get_current_user_id();
@@ -3731,6 +3745,8 @@ function crm_create_clients_table() {
         entrada_vigor_por_sector longtext DEFAULT NULL,
         decision_por_sector longtext DEFAULT NULL,
         lead_meta longtext DEFAULT NULL,
+        lead_mk_status varchar(16) NOT NULL DEFAULT 'pendiente',
+        lead_mk_touched_at datetime DEFAULT NULL,
         reenvios int(11) DEFAULT 0,
         PRIMARY KEY (id),
         KEY cliente_nombre (cliente_nombre),
@@ -3739,6 +3755,7 @@ function crm_create_clients_table() {
         KEY creado_por (creado_por),
         KEY estado (estado),
         KEY origen_lead (origen_lead),
+        KEY lead_mk_status (lead_mk_status),
         KEY es_cliente_activo (es_cliente_activo),
         KEY user_id (user_id)
     ) $charset_collate;";
@@ -3823,6 +3840,8 @@ function crm_update_clients_table_structure() {
         'entrada_vigor_por_sector' => "LONGTEXT DEFAULT NULL",
         'decision_por_sector' => "LONGTEXT DEFAULT NULL",
         'lead_meta' => "LONGTEXT DEFAULT NULL",
+        'lead_mk_status' => "VARCHAR(16) NOT NULL DEFAULT 'pendiente'",
+        'lead_mk_touched_at' => "DATETIME DEFAULT NULL",
     ];
     
     foreach ($required_columns as $column => $definition) {
@@ -3852,6 +3871,7 @@ function crm_update_clients_table_structure() {
     $existing_indexes = $wpdb->get_col("SHOW INDEX FROM $table_name", 2); // Key_name
     $needed_indexes = [
         'origen_lead'       => "ALTER TABLE $table_name ADD INDEX origen_lead (origen_lead)",
+        'lead_mk_status'    => "ALTER TABLE $table_name ADD INDEX lead_mk_status (lead_mk_status)",
         'es_cliente_activo' => "ALTER TABLE $table_name ADD INDEX es_cliente_activo (es_cliente_activo)",
         'user_id'           => "ALTER TABLE $table_name ADD INDEX user_id (user_id)",
     ];

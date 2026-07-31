@@ -26,12 +26,30 @@
         if ($c.length) $c.text(remaining);
     }
 
-    $(document).on('input', '#crm-leads-mk-search', function () {
-        const q = this.value.toLowerCase().trim();
+    function rowMatchesStatus(rowStatus, filterValue) {
+        if (filterValue === 'todos' || !filterValue) return true;
+        if (filterValue === 'activos') return rowStatus === 'pendiente' || rowStatus === 'asignado';
+        return rowStatus === filterValue;
+    }
+
+    function applyFilters() {
+        const q = ($('#crm-leads-mk-search').val() || '').toLowerCase().trim();
+        const status = $('#crm-leads-mk-status').val() || 'activos';
         $('.crm-leads-mk-row').each(function () {
             const hay = (this.getAttribute('data-haystack') || '');
-            this.style.display = (q === '' || hay.indexOf(q) !== -1) ? '' : 'none';
+            const rowStatus = this.getAttribute('data-status') || 'pendiente';
+            const matchesSearch = (q === '' || hay.indexOf(q) !== -1);
+            const matchesStatus = rowMatchesStatus(rowStatus, status);
+            this.style.display = (matchesSearch && matchesStatus) ? '' : 'none';
         });
+    }
+
+    $(document).on('input', '#crm-leads-mk-search', function () {
+        applyFilters();
+    });
+
+    $(document).on('change', '#crm-leads-mk-status', function () {
+        applyFilters();
     });
 
     $(document).on('click', '.crm-leads-mk-assign', function () {
@@ -46,7 +64,21 @@
             .done(function (resp) {
                 if (resp && resp.success) {
                     showToast(resp.data.message, 'success');
-                    $row.fadeOut(250, function () { $row.addClass('crm-leads-mk-row--gone').remove(); refreshCounter(); });
+                    const status = (resp.data && resp.data.status) || 'asignado';
+                    const statusLabel = (resp.data && resp.data.status_label) || 'Asignado';
+                    const delegado = (resp.data && resp.data.delegado) || '';
+                    $row.attr('data-status', status);
+                    $row.find('.crm-lead-mk-status')
+                        .removeClass('status-pendiente status-asignado status-trabajado')
+                        .addClass('status-' + status)
+                        .text(statusLabel);
+                    if (delegado) {
+                        const $delegateCell = $row.find('td').eq(6);
+                        const href = $row.attr('data-ficha') || ('/alta-de-cliente/?client_id=' + leadId);
+                        $delegateCell.html('<a class="crm-link" href="' + href + '">' + delegado + '</a>');
+                    }
+                    applyFilters();
+                    $btn.prop('disabled', false).text('Asignar');
                 } else {
                     showToast((resp && resp.data && resp.data.message) || 'Error', 'error');
                     $btn.prop('disabled', false).text('Asignar');
@@ -113,5 +145,9 @@
             .always(function () {
                 $btn.prop('disabled', false).text('Sincronizar ahora');
             });
+    });
+
+    $(function () {
+        applyFilters();
     });
 })(jQuery);

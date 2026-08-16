@@ -44,6 +44,48 @@ function crm_user_is_admin($user_id = null) {
 }
 
 /**
+ * Comprueba si el usuario puede acceder a un cliente concreto.
+ * Los administradores acceden a todos; comerciales a los suyos; visitadores
+ * también a clientes para los que tengan una visita asignada.
+ *
+ * @param int      $client_id ID del cliente.
+ * @param int|null $user_id   ID de usuario; null para el actual.
+ */
+function crm_user_can_access_client($client_id, $user_id = null) {
+    $client_id = (int) $client_id;
+    $user_id = $user_id === null ? get_current_user_id() : (int) $user_id;
+    if ($client_id <= 0 || $user_id <= 0) {
+        return false;
+    }
+    if (crm_user_is_admin($user_id)) {
+        return true;
+    }
+
+    global $wpdb;
+    $owner_id = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT user_id FROM {$wpdb->prefix}crm_clients WHERE id = %d",
+        $client_id
+    ));
+    if ($owner_id > 0 && $owner_id === $user_id) {
+        return true;
+    }
+
+    $user = get_user_by('id', $user_id);
+    if ($user && in_array('visitador', (array) $user->roles, true)) {
+        $assigned_visit = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}crm_visitas
+             WHERE client_id = %d AND comercial_id = %d
+             LIMIT 1",
+            $client_id,
+            $user_id
+        ));
+        return $assigned_visit > 0;
+    }
+
+    return false;
+}
+
+/**
  * Capacidades base del rol comercial.
  */
 function crm_comercial_caps() {
@@ -150,7 +192,7 @@ function crm_user_primary_role($user_id = null) {
         return '';
     }
     $roles = (array) $user->roles;
-    $priority = ['visitador', 'comercial', 'crm_admin', 'administrator'];
+    $priority = ['instalador', 'visitador', 'comercial', 'jefe_instalaciones', 'crm_admin', 'administrator'];
     foreach ($priority as $r) {
         if (in_array($r, $roles, true)) {
             return $r;
@@ -165,10 +207,12 @@ function crm_user_primary_role($user_id = null) {
 function crm_user_role_label($user_id = null) {
     $role = crm_user_primary_role($user_id);
     $labels = [
-        'administrator' => 'Administrador',
-        'crm_admin'     => 'Admin CRM',
-        'comercial'     => 'Comercial',
-        'visitador'     => 'Visitador',
+        'administrator'      => 'Administrador',
+        'crm_admin'          => 'Admin CRM',
+        'comercial'          => 'Comercial',
+        'visitador'          => 'Visitador',
+        'jefe_instalaciones' => 'Jefe de Instalaciones',
+        'instalador'         => 'Instalador',
     ];
     return $labels[$role] ?? '';
 }
@@ -299,6 +343,8 @@ function crm_uninstall_roles() {
     if (function_exists('remove_role')) {
         remove_role('crm_admin');
         remove_role('comercial');
+        remove_role('jefe_instalaciones');
+        remove_role('instalador');
     }
     crm_remove_admin_caps_from_wp_admin();
 }

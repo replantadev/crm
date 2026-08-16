@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.24
+Version: 1.20.25
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.24');
+define('CRM_PLUGIN_VERSION', '1.20.25');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -76,7 +76,10 @@ require_once CRM_PLUGIN_PATH . 'includes/app-shell.php';
 // v1.20.8 — Auto-crea las paginas requeridas (Alta, Mis altas, etc) si no existen.
 require_once CRM_PLUGIN_PATH . 'includes/page-bootstrap.php';
 // v1.20.0 — Sistema de visitas
-require_once CRM_PLUGIN_PATH . 'includes/visitas.php';// v1.20.2 — Shortcode frontend de Mi agenda + bloqueo wp-admin
+require_once CRM_PLUGIN_PATH . 'includes/visitas.php';
+// v1.21.0 — Módulo de control de instalaciones
+require_once CRM_PLUGIN_PATH . 'includes/instalaciones.php';
+// v1.20.2 — Shortcode frontend de Mi agenda + bloqueo wp-admin
 require_once CRM_PLUGIN_PATH . 'includes/shortcode-agenda.php';
 require_once CRM_PLUGIN_PATH . 'includes/admin-lockdown.php';
 // v1.20.3 — Integración Google Calendar (link + feed iCal personal)
@@ -490,6 +493,11 @@ function crm_formulario_alta_cliente()
         ? $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $client_id), ARRAY_A)
         : null;
 
+    if ($client_id && (!$client_data || !crm_user_can_access_client($client_id))) {
+        status_header($client_data ? 403 : 404);
+        return '<p>No tienes permisos para acceder a este cliente.</p>';
+    }
+
     $estado_actual        = $client_data['estado']              ?? 'borrador';
     $estado_por_sector    = crm_safe_unserialize_array($client_data['estado_por_sector']   ?? '');
     $facturas             = crm_safe_unserialize_array($client_data['facturas']            ?? '');
@@ -578,7 +586,7 @@ function crm_formulario_alta_cliente()
                 <div class="crm-header-right">
                     <!-- Estado principal -->
                     <?php if($client_id): ?>
-                        <span class="estado <?php echo $estado_actual; ?>"><?php echo crm_get_estado_label($estado_actual); ?></span>
+                        <span class="estado <?php echo esc_attr($estado_actual); ?>"><?php echo esc_html(crm_get_estado_label($estado_actual)); ?></span>
                     <?php endif; ?>
                     
                     <!-- Solo para comerciales - información condensada -->
@@ -763,6 +771,7 @@ function crm_formulario_alta_cliente()
         <?php wp_nonce_field('crm_alta_cliente_nonce', 'crm_nonce'); ?>
         <input type="hidden" name="action" value="crm_guardar_cliente_ajax">
         <input type="hidden" name="client_id" value="<?php echo esc_attr($client_id); ?>">
+        <input type="hidden" name="record_version" value="<?php echo esc_attr($client_data['actualizado_en'] ?? ''); ?>">
         <input type="hidden" name="estado_formulario" id="estado_formulario" value="<?php echo esc_attr($estado_actual); ?>">
 
         <!-- Datos del Comercial - Solo visible para administradores -->
@@ -1541,6 +1550,20 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         wp_send_json_error(['message' => 'Error de seguridad']);
     }
 
+    if ($is_update && (empty($client) || !crm_user_can_access_client($client_id))) {
+        wp_send_json_error(['message' => 'No tienes permisos para editar este cliente.'], 403);
+    }
+
+    $record_version = isset($_POST['record_version'])
+        ? sanitize_text_field(wp_unslash($_POST['record_version']))
+        : '';
+    if ($is_update && $record_version !== '' && $record_version !== (string) ($client['actualizado_en'] ?? '')) {
+        wp_send_json_error([
+            'message' => 'Esta ficha fue modificada por otro usuario. Recarga la página antes de guardar para no perder cambios.',
+            'code'    => 'crm_edit_conflict',
+        ], 409);
+    }
+
 
     // normalizar singular/plural
     foreach (['factura' => 'facturas', 'presupuestos' => 'presupuesto', 'contrato_firmado' => 'contratos_firmados'] as $sing => $plu) {
@@ -1755,7 +1778,10 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
 
         // 2) Admin forzando estado específico
         if ($forzar && isset($_POST["estado_{$s}"])) {
-            $e = sanitize_text_field($_POST["estado_{$s}"]);
+            $estado_candidato = sanitize_key($_POST["estado_{$s}"]);
+            $e = in_array($estado_candidato, crm_get_orden_estados(), true)
+                ? $estado_candidato
+                : $e;
             $estado_forzado = true;
         }
 
@@ -1789,7 +1815,10 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
 
     // estado global
       if ($forzar && isset($_POST['estado'])) {
-        $estado = sanitize_text_field($_POST['estado']);
+                $estado_candidato = sanitize_key($_POST['estado']);
+                $estado = in_array($estado_candidato, crm_get_orden_estados(), true)
+                        ? $estado_candidato
+                        : crm_calcula_estado_global($new_estado);
     } else {
         // Siempre calcular el estado global basándose en los estados por sector
         $estado = crm_calcula_estado_global($new_estado);
@@ -2018,6 +2047,22 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         $data['lead_mk_touched_at'] = current_time('mysql');
     }
 
+    if ($is_update && $record_version !== '') {
+        $previous_update = DateTimeImmutable::createFromFormat(
+            'Y-m-d H:i:s',
+            $record_version,
+            wp_timezone()
+        );
+        $next_update = DateTimeImmutable::createFromFormat(
+            'Y-m-d H:i:s',
+            $data['actualizado_en'],
+            wp_timezone()
+        );
+        if ($previous_update && $next_update && $next_update <= $previous_update) {
+            $data['actualizado_en'] = $previous_update->modify('+1 second')->format('Y-m-d H:i:s');
+        }
+    }
+
     if ($estado === 'enviado') {
         $data['enviado_por']   = get_current_user_id();
         $data['fecha_enviado'] = current_time('mysql');
@@ -2029,10 +2074,26 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
             crm_debug_sector_save($client_id, 'before_update', ['old' => $client, 'new' => $data]);
         }
 
-        $result = $wpdb->update($table, $data, ['id' => $client_id]);
+        $where = ['id' => $client_id];
+        if ($record_version !== '') {
+            $where['actualizado_en'] = $record_version;
+        }
+        $result = $wpdb->update($table, $data, $where);
         if ($result === false) {
             error_log('CRM: error actualizando cliente ' . (int) $client_id . ': ' . $wpdb->last_error);
             wp_send_json_error(['message' => 'Error al actualizar cliente en la base de datos: ' . $wpdb->last_error]);
+        }
+        if ($result === 0 && $record_version !== '') {
+            $latest_version = (string) $wpdb->get_var($wpdb->prepare(
+                "SELECT actualizado_en FROM {$table} WHERE id = %d",
+                $client_id
+            ));
+            if ($latest_version !== $record_version) {
+                wp_send_json_error([
+                    'message' => 'Esta ficha fue modificada mientras la estabas editando. Recarga la página y revisa los cambios.',
+                    'code'    => 'crm_edit_conflict',
+                ], 409);
+            }
         }
 
         // Auditoría: registrar después de actualizar
@@ -2408,6 +2469,38 @@ function crm_debug_sector_save($client_id, $action, $data) {
  *
  * @param string $tipo Tipo de archivo a subir (factura, presupuesto, contrato_firmado).
  */
+function crm_pending_uploads_get() {
+    $user_id = get_current_user_id();
+    if ($user_id <= 0) {
+        return [];
+    }
+    $urls = get_transient('crm_pending_uploads_' . $user_id);
+    return is_array($urls) ? $urls : [];
+}
+
+function crm_pending_uploads_add($url) {
+    $user_id = get_current_user_id();
+    if ($user_id <= 0 || !crm_is_uploads_url($url)) {
+        return;
+    }
+    $urls = crm_pending_uploads_get();
+    $urls[] = esc_url_raw($url);
+    set_transient(
+        'crm_pending_uploads_' . $user_id,
+        array_slice(array_values(array_unique($urls)), -100),
+        HOUR_IN_SECONDS
+    );
+}
+
+function crm_pending_uploads_remove($url) {
+    $user_id = get_current_user_id();
+    if ($user_id <= 0) {
+        return;
+    }
+    $urls = array_values(array_diff(crm_pending_uploads_get(), [$url]));
+    set_transient('crm_pending_uploads_' . $user_id, $urls, HOUR_IN_SECONDS);
+}
+
 function crm_subir_archivo_generico($tipo)
 {
     // Permisos
@@ -2438,6 +2531,7 @@ function crm_subir_archivo_generico($tipo)
         wp_send_json_error(['message' => $result->get_error_message()]);
         return;
     }
+    crm_pending_uploads_add($result['url']);
 
     // Log
     $client_id    = isset($_POST['client_id']) ? intval($_POST['client_id']) : null;
@@ -2490,8 +2584,62 @@ function crm_eliminar_archivo_generico($tipo)
         return;
     }
 
+    $field_map = [
+        'factura'          => 'facturas',
+        'presupuesto'      => 'presupuesto',
+        'contrato_firmado' => 'contratos_firmados',
+    ];
+    if (!isset($field_map[$tipo])) {
+        wp_send_json_error(['message' => 'Tipo de archivo no válido.'], 400);
+        return;
+    }
+
+    $client_id = isset($_POST['client_id']) ? (int) $_POST['client_id'] : 0;
+    $field = $field_map[$tipo];
+    $stored_files = [];
+    $is_registered = false;
+    if ($client_id > 0 && crm_user_can_access_client($client_id)) {
+        global $wpdb;
+        $serialized = $wpdb->get_var($wpdb->prepare(
+            "SELECT {$field} FROM {$wpdb->prefix}crm_clients WHERE id = %d",
+            $client_id
+        ));
+        $stored_files = crm_safe_unserialize_array($serialized);
+        $stored_files = is_array($stored_files) ? $stored_files : [];
+        foreach ($stored_files as $urls) {
+            if (is_array($urls) && in_array($file_url, $urls, true)) {
+                $is_registered = true;
+                break;
+            }
+        }
+    }
+
+    $is_pending = in_array($file_url, crm_pending_uploads_get(), true);
+    if (!$is_registered && !$is_pending) {
+        wp_send_json_error(['message' => 'No tienes permisos sobre este archivo.'], 403);
+        return;
+    }
+
     if (crm_delete_uploaded_file_by_url($file_url)) {
-        $client_id    = isset($_POST['client_id']) ? intval($_POST['client_id']) : null;
+        if ($is_registered) {
+            foreach ($stored_files as $sector => $urls) {
+                if (!is_array($urls)) {
+                    continue;
+                }
+                $stored_files[$sector] = array_values(array_diff($urls, [$file_url]));
+                if (empty($stored_files[$sector])) {
+                    unset($stored_files[$sector]);
+                }
+            }
+            $wpdb->update(
+                $wpdb->prefix . 'crm_clients',
+                [$field => maybe_serialize($stored_files)],
+                ['id' => $client_id],
+                ['%s'],
+                ['%d']
+            );
+        }
+        crm_pending_uploads_remove($file_url);
         $current_user = wp_get_current_user();
         $file_name    = sanitize_file_name(basename(parse_url($file_url, PHP_URL_PATH)));
         $log_details  = sprintf('Archivo eliminado: %s | Tipo: %s', $file_name, $tipo);
@@ -2899,11 +3047,13 @@ function crm_obtener_altas()
 
     // Determinar si el usuario puede ver las altas de otro comercial
     $current_user_id = get_current_user_id();
-    // v1.20.16: visitador y admin sin filtro ven todas las altas.
+    // El administrador puede ver todas las altas. El visitador solo ve las
+    // propias y aquellas para las que tiene una visita asignada.
     $is_visitador_user = function_exists('crm_user_is_visitador') && crm_user_is_visitador();
     $is_admin_user     = function_exists('crm_user_is_admin') && crm_user_is_admin();
     $see_all_post      = !empty($_POST['see_all']) && ($_POST['see_all'] === 'true' || $_POST['see_all'] === '1' || $_POST['see_all'] === true);
-    $see_all = ($is_visitador_user || $is_admin_user) && ($see_all_post || (!$requested_user_id && $is_visitador_user));
+    $see_all = $is_admin_user && $see_all_post;
+    $see_assigned = $is_visitador_user && !$is_admin_user;
 
     if ($requested_user_id && (!current_user_can('crm_admin') || $requested_user_id === $current_user_id)) {
         $user_id = $current_user_id;
@@ -2920,6 +3070,16 @@ function crm_obtener_altas()
        FROM $table_name
        ORDER BY actualizado_en DESC
     ", ARRAY_A);
+    } elseif ($see_assigned) {
+        $visitas_table = $wpdb->prefix . 'crm_visitas';
+        $clientes = $wpdb->get_results($wpdb->prepare("
+        SELECT DISTINCT c.id, c.fecha, c.cliente_nombre, c.empresa, c.email_cliente, c.estado, c.actualizado_en, c.user_id,
+            c.facturas, c.presupuesto, c.contratos_firmados, c.contratos_generados, c.intereses, c.estado_por_sector, c.reenvios, c.fecha_envio_por_sector, c.usuario_envio_por_sector
+        FROM $table_name c
+        LEFT JOIN $visitas_table v ON v.client_id = c.id AND v.comercial_id = %d
+        WHERE c.user_id = %d OR v.id IS NOT NULL
+        ORDER BY c.actualizado_en DESC
+        ", $current_user_id, $current_user_id), ARRAY_A);
     } else {
         $clientes = $wpdb->get_results($wpdb->prepare("
        SELECT id, fecha, cliente_nombre, empresa, email_cliente, estado, actualizado_en, user_id,
@@ -2993,9 +3153,8 @@ function crm_obtener_altas()
                 $cliente['usuario_envio_por_sector'] = [];
             }
 
-            // v1.20.16: cuando vista see_all, pintar nombre del comercial
-            // asignado para que el visitador sepa de quien es la ficha.
-            if ($see_all) {
+            // En vistas compartidas, mostrar quién es el comercial propietario.
+            if ($see_all || $see_assigned) {
                 $cuid = isset($cliente['user_id']) ? (int) $cliente['user_id'] : 0;
                 if ($cuid > 0) {
                     $cu = get_userdata($cuid);
@@ -3048,16 +3207,8 @@ function crm_editar_cliente()
         return "<p>Cliente no encontrado.</p>";
     }
 
-    // Asegurarse de que el usuario tenga permiso para editar.
-    // v1.20.16: el visitador puede abrir y editar la ficha de cualquier
-    // cliente para anotar el resultado de la visita / cambiar estado /
-    // dejar notas, aunque el cliente este asignado a otro comercial.
-    $is_visitador_user = function_exists('crm_user_is_visitador') && crm_user_is_visitador();
-    if (
-        (empty($client_data['user_id']) || intval($client_data['user_id']) !== get_current_user_id()) &&
-        !current_user_can('crm_admin') &&
-        !$is_visitador_user
-    ) {
+    // El visitador accede a clientes propios o con una visita asignada.
+    if (!crm_user_can_access_client($client_id)) {
         return "<p>No tienes permisos para editar este cliente.</p>";
     }
 
@@ -3168,6 +3319,33 @@ function crm_obtener_todas_altas()
     }
 }
 
+function crm_purge_client_related_data($client_id, array $client_data = []) {
+    global $wpdb;
+    $client_id = (int) $client_id;
+    if ($client_id <= 0) {
+        return;
+    }
+
+    foreach (['facturas', 'presupuesto', 'contratos_firmados'] as $field) {
+        $bundle = crm_safe_unserialize_array($client_data[$field] ?? []);
+        foreach ($bundle as $items) {
+            if (!is_array($items)) {
+                continue;
+            }
+            foreach ($items as $url) {
+                if (is_string($url) && crm_is_uploads_url($url)) {
+                    crm_delete_uploaded_file_by_url($url);
+                }
+            }
+        }
+    }
+
+    if (defined('CRM_NOTES_TABLE')) {
+        $wpdb->delete($wpdb->prefix . CRM_NOTES_TABLE, ['client_id' => $client_id], ['%d']);
+    }
+    $wpdb->delete($wpdb->prefix . 'crm_visitas', ['client_id' => $client_id], ['%d']);
+}
+
 add_action('wp_ajax_crm_borrar_cliente', 'crm_borrar_cliente');
 function crm_borrar_cliente()
 {
@@ -3197,28 +3375,10 @@ function crm_borrar_cliente()
         return;
     }
 
-    // Purgar archivos asociados antes de borrar el registro
-    $bundles = [
-        crm_safe_unserialize_array($client_data['facturas']           ?? []),
-        crm_safe_unserialize_array($client_data['presupuesto']        ?? []),
-        crm_safe_unserialize_array($client_data['contratos_firmados'] ?? []),
-    ];
-    foreach ($bundles as $bundle) {
-        foreach ($bundle as $items) {
-            if (!is_array($items)) {
-                continue;
-            }
-            foreach ($items as $url) {
-                if (is_string($url) && crm_is_uploads_url($url)) {
-                    crm_delete_uploaded_file_by_url($url);
-                }
-            }
-        }
-    }
-
     $deleted = $wpdb->delete($table_name, ['id' => $client_id], ['%d']);
 
     if ($deleted) {
+        crm_purge_client_related_data($client_id, $client_data);
         $current_user = wp_get_current_user();
         $log_details  = sprintf(
             'Cliente eliminado: %s | Email: %s | Teléfono: %s | Estado: %s',
@@ -3897,6 +4057,12 @@ function crm_plugin_activation() {
     if (function_exists('crm_visitas_install_table')) {
         crm_visitas_install_table();
     }
+    if (function_exists('crm_instalaciones_install_tables')) {
+        crm_instalaciones_install_tables();
+    }
+    if (function_exists('crm_install_instalaciones_roles')) {
+        crm_install_instalaciones_roles();
+    }
     crm_protect_backup_directory();
     if (function_exists('crm_logger_schedule_cron')) {
         crm_logger_schedule_cron();
@@ -3910,6 +4076,7 @@ function crm_plugin_activation() {
     update_option('crm_roles_installed_version', CRM_PLUGIN_VERSION, false);
     update_option('crm_notes_installed_version', CRM_PLUGIN_VERSION, false);
     update_option('crm_visitas_installed_version', CRM_PLUGIN_VERSION, false);
+    update_option('crm_instalaciones_installed_version', CRM_PLUGIN_VERSION, false);
 }
 
 /**
@@ -3918,7 +4085,11 @@ function crm_plugin_activation() {
  */
 function crm_plugin_deactivation() {
     crm_remove_admin_caps_from_wp_admin();
+    if (function_exists('crm_remove_instalaciones_caps_from_wp_admin')) {
+        crm_remove_instalaciones_caps_from_wp_admin();
+    }
     delete_option('crm_roles_installed_version');
+    delete_option('crm_instalaciones_installed_version');
     wp_clear_scheduled_hook('crm_daily_maintenance');
     if (function_exists('crm_logger_unschedule_cron')) {
         crm_logger_unschedule_cron();
@@ -4082,6 +4253,9 @@ add_action('plugins_loaded', function() {
         if (function_exists('crm_visitas_install_table')) {
             crm_visitas_install_table();
         }
+        if (function_exists('crm_instalaciones_install_tables')) {
+            crm_instalaciones_install_tables();
+        }
         update_option('crm_plugin_version', CRM_PLUGIN_VERSION);
     }
 });
@@ -4101,10 +4275,14 @@ function crm_ajax_quitar_interes() {
     }
     
     $client_id = intval($_POST['client_id'] ?? 0);
-    $sector = sanitize_text_field($_POST['sector'] ?? '');
+    $sector = sanitize_key($_POST['sector'] ?? '');
     
-    if (!$client_id || !$sector) {
+    if (!$client_id || !crm_is_valid_sector($sector)) {
         wp_send_json_error(['message' => 'Datos incompletos.']);
+    }
+
+    if (!crm_user_can_access_client($client_id)) {
+        wp_send_json_error(['message' => 'No tienes permisos para editar este cliente.'], 403);
     }
     
     global $wpdb;
@@ -4117,28 +4295,16 @@ function crm_ajax_quitar_interes() {
         wp_send_json_error(['message' => 'Cliente no encontrado.']);
     }
     
-    // Verificar permisos de edición
-    if (!current_user_can('crm_admin') && intval($client['user_id']) !== get_current_user_id()) {
-        wp_send_json_error(['message' => 'No tienes permisos para editar este cliente.']);
-    }
-    
     // Obtener intereses actuales
-    $intereses_actuales = maybe_unserialize($client['intereses'] ?? []);
-    if (!is_array($intereses_actuales)) {
-        $intereses_actuales = [];
-    }
+    $intereses_actuales = crm_safe_unserialize_array($client['intereses'] ?? []);
     
     // Remover el sector de la lista de intereses
     $intereses_actuales = array_diff($intereses_actuales, [$sector]);
     
     // Obtener datos de archivos
-    $facturas = maybe_unserialize($client['facturas'] ?? []);
-    $presupuestos = maybe_unserialize($client['presupuesto'] ?? []);
-    $contratos_firmados = maybe_unserialize($client['contratos_firmados'] ?? []);
-    
-    if (!is_array($facturas)) $facturas = [];
-    if (!is_array($presupuestos)) $presupuestos = [];
-    if (!is_array($contratos_firmados)) $contratos_firmados = [];
+    $facturas = crm_safe_unserialize_array($client['facturas'] ?? []);
+    $presupuestos = crm_safe_unserialize_array($client['presupuesto'] ?? []);
+    $contratos_firmados = crm_safe_unserialize_array($client['contratos_firmados'] ?? []);
     
     // Eliminar archivos del sector
     $archivos_eliminados = 0;
@@ -4174,10 +4340,7 @@ function crm_ajax_quitar_interes() {
     }
     
     // Obtener estado por sector y limpiarlo
-    $estado_por_sector = maybe_unserialize($client['estado_por_sector'] ?? []);
-    if (!is_array($estado_por_sector)) {
-        $estado_por_sector = [];
-    }
+    $estado_por_sector = crm_safe_unserialize_array($client['estado_por_sector'] ?? []);
     
     // Remover el estado del sector
     if (isset($estado_por_sector[$sector])) {

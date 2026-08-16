@@ -23,11 +23,18 @@ if (file_exists($plugin_dir . 'includes/roles.php')) {
         crm_uninstall_roles();
     }
 }
+if (file_exists($plugin_dir . 'includes/instalaciones.php')) {
+    require_once $plugin_dir . 'includes/instalaciones.php';
+    if (function_exists('crm_uninstall_instalaciones_roles')) {
+        crm_uninstall_instalaciones_roles();
+    }
+}
 
 // Eliminar opciones del plugin
 $options_to_delete = [
     'crm_plugin_version',
     'crm_roles_installed_version',
+    'crm_instalaciones_installed_version',
     'crm_email_settings',
     'crm_login_page_id',
     'crm_post_login_page_id',
@@ -56,6 +63,17 @@ foreach ((array) $schema_opts as $opt) {
 // Borrar tablas solo si el usuario lo pide explícitamente
 if (defined('CRM_DROP_TABLES_ON_UNINSTALL') && CRM_DROP_TABLES_ON_UNINSTALL) {
     $wpdb->query("DROP TABLE IF EXISTS `{$wpdb->prefix}crm_clients`");
+    $inst_tables = [
+        'crm_instalaciones',
+        'crm_instalacion_instaladores',
+        'crm_instalacion_trabajos',
+        'crm_instalacion_documentos',
+        'crm_instalacion_agenda',
+        'crm_instalacion_log',
+    ];
+    foreach ($inst_tables as $tbl) {
+        $wpdb->query('DROP TABLE IF EXISTS `' . esc_sql($wpdb->prefix . $tbl) . '`');
+    }
     $log_tables = $wpdb->get_col(
         $wpdb->prepare(
             'SHOW TABLES LIKE %s',

@@ -152,8 +152,13 @@ add_action('wp_head', 'hide_header_with_css_on_login_page');
 function hide_header_with_css_on_login_page() {
     $login_page_id = crm_get_login_page_id();
     if ($login_page_id && is_page($login_page_id) && !is_user_logged_in()) {
+        // v1.20.90: ".ast-header-break-point" NO es un contenedor del menu
+        // movil — Astra lo pone como CLASE DEL <body> por debajo del
+        // breakpoint de cabecera. Ocultarlo ocultaba el body entero en
+        // movil (pagina en blanco). El contenedor real a ocultar es
+        // ".ast-mobile-header-wrap".
         echo '<style>
-            .ast-header-break-point, .ast-mobile-header-wrap { display: none !important; }
+            .ast-mobile-header-wrap { display: none !important; }
             header { display: none !important; }
         </style>';
     }

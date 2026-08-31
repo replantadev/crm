@@ -766,6 +766,77 @@ body.crm-app-mode .crm-shell-main {
 }
 .crm-topbar__logout:hover { color: #fff !important; }
 
+/* Variante clara — instalador (marca propia, ver crm_app_shell_render_topbar()). */
+.crm-topbar--light {
+    background: #fff;
+    color: #111827;
+    box-shadow: 0 1px 0 rgba(0,0,0,.06);
+    border-bottom: 1px solid #e5e7eb;
+}
+.crm-topbar--light .crm-topbar__brand { color: #111827; border-right-color: #e5e7eb; }
+.crm-topbar--light .crm-topbar__brand:hover { color: #111827; }
+.crm-topbar--light .crm-topbar__link { color: #4b5563; }
+.crm-topbar--light .crm-topbar__link:hover,
+.crm-topbar--light .crm-topbar__link:focus { background: #f3f4f6; color: #111827; }
+.crm-topbar--light .crm-topbar__link.is-current {
+    background: var(--crm-panel-inst-accent, #15803d);
+    color: #fff;
+}
+.crm-topbar--light .crm-topbar__user { color: #4b5563; border-left-color: #e5e7eb; }
+.crm-topbar--light .crm-topbar__avatar {
+    background: var(--crm-panel-inst-accent, #15803d);
+    color: #fff;
+}
+.crm-topbar--light .crm-topbar__user-name { color: #111827; }
+.crm-topbar--light .crm-topbar__user-role { color: #9ca3af; }
+.crm-topbar--light .crm-topbar__logout { color: #6b7280 !important; }
+.crm-topbar--light .crm-topbar__logout:hover { color: #111827 !important; }
+
+/* Campana de notificaciones (ver crm_notificaciones_render_campana()). */
+.crm-topbar__notif { position: relative; display: inline-flex; }
+.crm-topbar__notif-btn {
+    position: relative;
+    background: none; border: none; cursor: pointer;
+    color: inherit; padding: 4px; display: inline-flex; align-items: center;
+}
+.crm-topbar__notif-badge {
+    position: absolute; top: -2px; right: -2px;
+    background: #dc2626; color: #fff;
+    font-size: 10px; font-weight: 700; line-height: 1;
+    min-width: 15px; height: 15px; border-radius: 999px;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0 3px;
+}
+.crm-topbar__notif-dropdown {
+    position: absolute; top: calc(100% + 10px); right: 0;
+    width: 320px; max-height: 420px; overflow-y: auto;
+    background: #fff; color: #1f2937;
+    border: 1px solid #e5e7eb; border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.18);
+    z-index: 2000; font-size: 13px;
+}
+.crm-topbar__notif-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-bottom: 1px solid #f3f4f6; font-size: 13px;
+}
+.crm-topbar__notif-header button {
+    background: none; border: none; color: #2563eb; cursor: pointer; font-size: 12px; padding: 0;
+}
+.crm-topbar__notif-empty { padding: 16px 14px; color: #9ca3af; margin: 0; }
+.crm-topbar__notif-item {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 10px 14px; border-bottom: 1px solid #f3f4f6;
+    text-decoration: none; color: #374151;
+}
+.crm-topbar__notif-item:hover { background: #f9fafb; }
+.crm-topbar__notif-item.is-unread { background: #eff6ff; font-weight: 600; }
+.crm-topbar__notif-msg { color: inherit; }
+.crm-topbar__notif-fecha { font-size: 11px; color: #9ca3af; font-weight: 400; }
+.crm-topbar__notif-viewall {
+    display: block; text-align: center; padding: 10px; font-weight: 600;
+    color: #2563eb; text-decoration: none; font-size: 12.5px;
+}
+
 @media (max-width: 720px) {
     .crm-topbar__brand { padding-right: var(--crm-sp-3); margin-right: var(--crm-sp-2); }
     .crm-topbar__brand span:not(.crm-topbar__logo) { display: none; }

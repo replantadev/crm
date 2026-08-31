@@ -3394,6 +3394,68 @@ button.aceptar-presupuesto{background:#25C685;color:#fff;font-size:12px;margin:4
     color: #065f46;
 }
 
+/* v1.20.27 — badge de instalación creada (módulo de instalaciones, Fase 2) */
+.status-instalacion-creada {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+/* v1.20.27 — badges de estado del listado de instalaciones (Fase 2) */
+.status-inst-borrador {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+.status-inst-pendiente {
+    background: #fef3c7;
+    color: #92400e;
+}
+.status-inst-planificada {
+    background: #dbeafe;
+    color: #1e40af;
+}
+.status-inst-en_ejecucion {
+    background: #e0e7ff;
+    color: #3730a3;
+}
+.status-inst-bloqueada {
+    background: #fee2e2;
+    color: #991b1b;
+}
+.status-inst-lista {
+    background: #cffafe;
+    color: #155e75;
+}
+.status-inst-finalizada {
+    background: #d1fae5;
+    color: #065f46;
+}
+.status-inst-reagendada {
+    background: #ffedd5;
+    color: #9a3412;
+}
+.status-inst-cancelada {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+/* v1.20.29 — migas de pan compactas del módulo de instalaciones */
+.crm-inst-breadcrumb {
+    font-size: 12px;
+    color: #6b7280;
+    margin-bottom: 12px;
+}
+.crm-inst-breadcrumb a {
+    color: #0073aa;
+    text-decoration: none;
+}
+.crm-inst-breadcrumb a:hover {
+    text-decoration: underline;
+}
+.crm-inst-breadcrumb-sep {
+    margin: 0 4px;
+    color: #d1d5db;
+}
+
 /* Chart Summary */
 .chart-summary-compact {
     display: flex;

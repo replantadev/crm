@@ -189,6 +189,35 @@ function crm_leads_sheets_get_access_token(array $sa) {
  * @param bool $force Si true, ignora cursor_ids y reimporta todo (solo para diagnóstico).
  */
 function crm_leads_sheets_run_sync($force = false) {
+    $lock_option = 'crm_leads_sheets_sync_lock';
+    $lock_token = wp_generate_uuid4();
+    $lock = ['token' => $lock_token, 'created_at' => time()];
+
+    if (!add_option($lock_option, $lock, '', false)) {
+        $existing = get_option($lock_option, []);
+        if (is_array($existing) && (int) ($existing['created_at'] ?? 0) < time() - 300) {
+            delete_option($lock_option);
+        }
+        if (!add_option($lock_option, $lock, '', false)) {
+            return new WP_Error('crm_sheets_locked', 'Ya hay una sincronización de Google Sheets en curso.');
+        }
+    }
+
+    try {
+        return crm_leads_sheets_run_sync_unlocked($force);
+    } finally {
+        $current_lock = get_option($lock_option, []);
+        if (is_array($current_lock) && ($current_lock['token'] ?? '') === $lock_token) {
+            delete_option($lock_option);
+        }
+    }
+}
+
+/**
+ * Implementación interna. Usar crm_leads_sheets_run_sync() para garantizar
+ * que cron y ejecución manual no importen simultáneamente las mismas filas.
+ */
+function crm_leads_sheets_run_sync_unlocked($force = false) {
     $s = crm_leads_sheets_get_settings();
     if (empty($s['enabled'])) {
         return new WP_Error('crm_sheets_disabled', 'Sincronización deshabilitada');

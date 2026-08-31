@@ -102,6 +102,8 @@ function crm_visita_sanitize($input, $is_update = false) {
 
     if ($client_id <= 0) {
         $errors->add('client_id', 'Cliente no válido.');
+    } elseif (!function_exists('crm_user_can_access_client') || !crm_user_can_access_client($client_id)) {
+        $errors->add('client_id', 'No tienes permisos sobre este cliente.');
     }
     if ($comercial_id <= 0) {
         $errors->add('comercial_id', 'Comercial no válido.');
@@ -527,6 +529,35 @@ function crm_visita_handle_save() {
             wp_die('Sin permisos para crear visitas.', '', ['response' => 403]);
         }
         $res = crm_visita_create($input);
+    }
+
+    // v1.20.52: notificación in-app cuando la visita queda asignada/reprogramada
+    // a alguien distinto de quien la guarda (comercial delegando en un
+    // visitador, o admin asignando a un comercial) — mismo canal que ya usa
+    // el módulo de instalaciones (crm_notificar(), includes/notificaciones-inapp.php).
+    if (!is_wp_error($res) && function_exists('crm_notificar')) {
+        $target_comercial_id = isset($input['comercial_id']) ? (int) $input['comercial_id'] : 0;
+        if ($target_comercial_id > 0 && $target_comercial_id !== $current_id) {
+            global $wpdb;
+            $client_id_notif = isset($input['client_id']) ? (int) $input['client_id'] : 0;
+            $cliente_nombre  = $client_id_notif > 0 ? $wpdb->get_var($wpdb->prepare(
+                "SELECT cliente_nombre FROM {$wpdb->prefix}crm_clients WHERE id = %d",
+                $client_id_notif
+            )) : '';
+            $fecha_label = '';
+            if (!empty($input['fecha_visita'])) {
+                $ts = strtotime((string) $input['fecha_visita']);
+                if ($ts) {
+                    $fecha_label = ' para ' . date_i18n('d/m/Y H:i', $ts);
+                }
+            }
+            crm_notificar(
+                $target_comercial_id,
+                $id > 0 ? 'visita_reprogramada' : 'visita_asignada',
+                ($id > 0 ? 'Visita reprogramada' : 'Nueva visita asignada') . $fecha_label . ($cliente_nombre ? ' — ' . $cliente_nombre : '') . '.',
+                home_url('/mi-agenda/')
+            );
+        }
     }
 
     // v1.20.18: fallback frontend. Si referer vacio, ir a la ficha del cliente

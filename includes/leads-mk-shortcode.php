@@ -301,7 +301,10 @@ function crm_lead_assign_ajax() {
 
     global $wpdb;
     $table = $wpdb->prefix . 'crm_clients';
-    $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id = %d", $lead_id), ARRAY_A);
+    $row = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM $table WHERE id = %d AND origen_lead = 'lead_mk'",
+        $lead_id
+    ), ARRAY_A);
     if (!$row) {
         wp_send_json_error(['message' => 'Lead no encontrado']);
     }
@@ -373,10 +376,13 @@ function crm_lead_to_cold_ajax() {
             'actualizado_en' => current_time('mysql'),
             'actualizado_por' => get_current_user_id(),
         ],
-        ['id' => $lead_id]
+        ['id' => $lead_id, 'origen_lead' => 'lead_mk']
     );
     if ($ok === false) {
         wp_send_json_error(['message' => 'Error BD: ' . $wpdb->last_error]);
+    }
+    if ($ok === 0) {
+        wp_send_json_error(['message' => 'Lead MK no encontrado'], 404);
     }
     if (function_exists('crm_notes_add')) {
         crm_notes_add([
@@ -401,14 +407,24 @@ function crm_lead_delete_ajax() {
         wp_send_json_error(['message' => 'lead_id requerido']);
     }
     global $wpdb;
-    $ok = $wpdb->delete($wpdb->prefix . 'crm_clients', ['id' => $lead_id]);
+    $client_data = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM {$wpdb->prefix}crm_clients WHERE id = %d AND origen_lead = 'lead_mk'",
+        $lead_id
+    ), ARRAY_A);
+    if (!$client_data) {
+        wp_send_json_error(['message' => 'Lead MK no encontrado'], 404);
+    }
+    $ok = $wpdb->delete(
+        $wpdb->prefix . 'crm_clients',
+        ['id' => $lead_id, 'origen_lead' => 'lead_mk']
+    );
     if ($ok === false) {
         wp_send_json_error(['message' => 'Error BD: ' . $wpdb->last_error]);
     }
-    // Borrar notas asociadas
-    if (defined('CRM_NOTES_TABLE')) {
-        $wpdb->delete($wpdb->prefix . CRM_NOTES_TABLE, ['client_id' => $lead_id]);
+    if ($ok === 0) {
+        wp_send_json_error(['message' => 'Lead MK no encontrado'], 404);
     }
+    crm_purge_client_related_data($lead_id, $client_data);
     wp_send_json_success(['message' => 'Lead eliminado']);
 }
 

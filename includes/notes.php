@@ -490,18 +490,8 @@ add_action('wp_ajax_crm_note_delete', 'crm_notes_ajax_delete');
  * @return bool
  */
 function crm_notes_user_can_access_client($client_id) {
-    if (!is_user_logged_in()) {
-        return false;
-    }
-    if (current_user_can('crm_admin') || current_user_can('manage_options')) {
-        return true;
-    }
-    global $wpdb;
-    $owner = (int) $wpdb->get_var($wpdb->prepare(
-        "SELECT user_id FROM {$wpdb->prefix}crm_clients WHERE id = %d",
-        (int) $client_id
-    ));
-    return $owner > 0 && $owner === get_current_user_id();
+    return function_exists('crm_user_can_access_client')
+        && crm_user_can_access_client((int) $client_id);
 }
 
 /**

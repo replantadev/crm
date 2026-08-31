@@ -92,6 +92,9 @@ function crm_instalaciones_install_tables() {
   proveedor_confirmado_en DATETIME DEFAULT NULL,
   proveedor_notas TEXT DEFAULT NULL,
   proveedor_entrega_estimada DATE DEFAULT NULL,
+  proveedor_numero_pedido VARCHAR(100) DEFAULT NULL,
+  holded_purchase_order_id VARCHAR(100) DEFAULT NULL,
+  holded_purchase_order_numero VARCHAR(50) DEFAULT NULL,
   estado ENUM('borrador','pendiente','planificada','en_ejecucion','bloqueada','lista','finalizada','reagendada','cancelada') NOT NULL DEFAULT 'borrador',
   jefe_instalaciones_id BIGINT(20) UNSIGNED DEFAULT NULL,
   fecha_creacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1574,6 +1577,9 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 		'proveedor_confirmado_en' => $inst['proveedor_confirmado_en'],
 		'proveedor_notas'         => $inst['proveedor_notas'],
 		'proveedor_entrega_estimada' => $inst['proveedor_entrega_estimada'],
+		'proveedor_numero_pedido' => $inst['proveedor_numero_pedido'],
+		'holded_purchase_order_id'     => $inst['holded_purchase_order_id'],
+		'holded_purchase_order_numero' => $inst['holded_purchase_order_numero'],
 		'tipo_instalacion'    => $inst['tipo_instalacion'],
 		'tipo_instalacion_label' => $tipos[ $inst['tipo_instalacion'] ] ?? $inst['tipo_instalacion'],
 		'subtipo_instalacion' => $inst['subtipo_instalacion'],
@@ -2987,16 +2993,57 @@ function crm_inst_ajax_notificar_proveedor() {
 	}
 
 	global $wpdb;
-	$wpdb->update( crm_inst_table_instalaciones(), [
+	$update = [
 		'proveedor_notificado_en' => current_time( 'mysql' ),
 		'proveedor_pedido_token'  => $token,
 		'proveedor_pedido_estado' => 'enviado',
 		'proveedor_confirmado_en' => null,
 		'proveedor_notas'         => null,
-	], [ 'id' => $instalacion_id ] );
+	];
+
+	// v1.20.92: opcional — además del email, crear el pedido de compra real
+	// en Holded (documento "purchase-order", sin aprobar: el jefe revisa las
+	// líneas y lo aprueba a mano en Holded). Best-effort: un fallo aquí no
+	// debe impedir que el aviso al proveedor ya enviado cuente como enviado.
+	$crear_pedido_holded = ! empty( $_POST['crear_pedido_holded'] );
+	$pedido_holded_info  = null;
+	if ( $crear_pedido_holded ) {
+		$proveedor_contact_id = trim( (string) get_option( 'crm_proveedor_holded_contact_id', '' ) );
+		if ( $proveedor_contact_id === '' ) {
+			$pedido_holded_info = [ 'creado' => false, 'error' => 'No hay ningún contacto de Holded vinculado al proveedor — configúralo en Ajustes.' ];
+		} elseif ( ! function_exists( 'crm_holded_crear_pedido_compra' ) ) {
+			$pedido_holded_info = [ 'creado' => false, 'error' => 'Módulo de Holded no disponible.' ];
+		} else {
+			$items = array_map( function ( $m ) {
+				$item = [ 'name' => $m['unidades'] . ' × ' . $m['descripcion'], 'units' => (float) $m['unidades'] ];
+				if ( ! empty( $m['holded_product_id'] ) ) {
+					$item['product_id'] = $m['holded_product_id'];
+				}
+				return $item;
+			}, array_values( $pendientes ) );
+
+			$resultado = crm_holded_crear_pedido_compra(
+				$proveedor_contact_id,
+				$items,
+				'Pedido para la instalación #' . $instalacion_id . ' — ' . $data['cliente_nombre']
+			);
+
+			if ( is_wp_error( $resultado ) ) {
+				$pedido_holded_info = [ 'creado' => false, 'error' => $resultado->get_error_message() ];
+				crm_inst_log_action( $instalacion_id, 'instalacion', 'pedido_compra_holded_error', 'No se pudo crear el pedido de compra en Holded: ' . $resultado->get_error_message() );
+			} else {
+				$update['holded_purchase_order_id']     = $resultado['id'];
+				$update['holded_purchase_order_numero'] = $resultado['document_number'];
+				$pedido_holded_info = [ 'creado' => true, 'document_number' => $resultado['document_number'] ];
+				crm_inst_log_action( $instalacion_id, 'instalacion', 'pedido_compra_holded_creado', 'Pedido de compra #' . $resultado['document_number'] . ' creado en Holded (sin aprobar, pendiente de revisión).' );
+			}
+		}
+	}
+
+	$wpdb->update( crm_inst_table_instalaciones(), $update, [ 'id' => $instalacion_id ] );
 	crm_inst_log_action( $instalacion_id, 'instalacion', 'notificar_proveedor', 'Aviso enviado a ' . $proveedor_email . ' (' . count( $pendientes ) . ' materiales pendientes).' );
 
-	wp_send_json_success( [ 'enviado_a' => $proveedor_email, 'pendientes' => count( $pendientes ) ] );
+	wp_send_json_success( [ 'enviado_a' => $proveedor_email, 'pendientes' => count( $pendientes ), 'pedido_holded' => $pedido_holded_info ] );
 }
 
 /**
@@ -3088,6 +3135,8 @@ function crm_inst_shortcode_confirmar_pedido() {
 		<?php endif; ?>
 		<label style="display:block; font-size:13px; font-weight:600; margin:16px 0 6px;">Fecha de entrega estimada</label>
 		<input type="date" id="crm-confirmar-fecha" style="padding:8px 10px; border:1px solid #e5e7eb; border-radius:6px; font-family:inherit;">
+		<label style="display:block; font-size:13px; font-weight:600; margin:16px 0 6px;">Vuestro número de pedido</label>
+		<input type="text" id="crm-confirmar-numero-pedido" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #e5e7eb; border-radius:6px; font-family:inherit;" placeholder="Opcional — para identificarlo en vuestro sistema">
 		<label style="display:block; font-size:13px; font-weight:600; margin:16px 0 6px;">Notas (disponibilidad, condiciones...)</label>
 		<textarea id="crm-confirmar-notas" rows="3" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #e5e7eb; border-radius:6px; font-family:inherit;" placeholder="Opcional"></textarea>
 		<button type="button" id="crm-confirmar-btn" style="margin-top:12px; padding:10px 18px; background:#15803d; color:#fff; border:none; border-radius:6px; font-weight:600; cursor:pointer;">Confirmar disponibilidad</button>
@@ -3110,6 +3159,7 @@ function crm_inst_shortcode_confirmar_pedido() {
 			body.set('nonce', nonce);
 			body.set('notas', document.getElementById('crm-confirmar-notas').value);
 			body.set('fecha_entrega', document.getElementById('crm-confirmar-fecha').value);
+			body.set('numero_pedido', document.getElementById('crm-confirmar-numero-pedido').value);
 			fetch(ajaxurl, { method: 'POST', body: body })
 				.then(function (r) { return r.json(); })
 				.then(function (resp) {
@@ -3153,8 +3203,9 @@ function crm_inst_ajax_confirmar_pedido() {
 		wp_send_json_error( [ 'message' => 'Este pedido ya fue confirmado.' ] );
 	}
 
-	$notas         = sanitize_textarea_field( wp_unslash( $_POST['notas'] ?? '' ) );
-	$fecha_entrega = sanitize_text_field( wp_unslash( $_POST['fecha_entrega'] ?? '' ) );
+	$notas          = sanitize_textarea_field( wp_unslash( $_POST['notas'] ?? '' ) );
+	$fecha_entrega  = sanitize_text_field( wp_unslash( $_POST['fecha_entrega'] ?? '' ) );
+	$numero_pedido  = sanitize_text_field( wp_unslash( $_POST['numero_pedido'] ?? '' ) );
 	// Validación estricta: solo aceptar YYYY-MM-DD real (lo que manda un
 	// <input type="date">), cualquier otra cosa se descarta sin avisar — no
 	// es un dato crítico y no merece bloquear la confirmación por esto.
@@ -3167,11 +3218,15 @@ function crm_inst_ajax_confirmar_pedido() {
 		'proveedor_confirmado_en'    => current_time( 'mysql' ),
 		'proveedor_notas'            => $notas !== '' ? $notas : null,
 		'proveedor_entrega_estimada' => $fecha_entrega !== '' ? $fecha_entrega : null,
+		'proveedor_numero_pedido'    => $numero_pedido !== '' ? $numero_pedido : null,
 	], [ 'id' => $inst['id'] ] );
 
 	$detalle_log = 'El proveedor confirmó el pedido';
 	if ( $fecha_entrega !== '' ) {
 		$detalle_log .= ' — entrega estimada ' . date_i18n( 'd/m/Y', strtotime( $fecha_entrega ) );
+	}
+	if ( $numero_pedido !== '' ) {
+		$detalle_log .= ' — su nº de pedido: ' . $numero_pedido;
 	}
 	$detalle_log .= $notas !== '' ? ': "' . $notas . '"' : '.';
 	crm_inst_log_action( (int) $inst['id'], 'instalacion', 'proveedor_confirmado', $detalle_log );
@@ -4352,6 +4407,12 @@ function crm_inst_shortcode_ficha() {
 							</table>
 						</div>
 						<small id="crm-inst-materiales-info" class="crm-inst-field-info"></small>
+						<?php if ( trim( (string) get_option( 'crm_proveedor_holded_contact_id', '' ) ) !== '' ) : ?>
+							<label class="crm-inst-field-info" style="display:block; margin-top:6px;">
+								<input type="checkbox" id="crm-inst-crear-pedido-holded" <?php checked( empty( $data['holded_purchase_order_id'] ) ); ?>>
+								Crear también un pedido de compra en Holded (sin aprobar, para revisar antes)
+							</label>
+						<?php endif; ?>
 						<p class="crm-inst-proveedor-row">
 							<button type="button" class="crm-btn" id="crm-inst-notificar-proveedor-btn">Notificar proveedor</button>
 							<span id="crm-inst-proveedor-msg">
@@ -4359,6 +4420,9 @@ function crm_inst_shortcode_ficha() {
 									(último aviso: <?php echo esc_html( $data['proveedor_notificado_en'] ); ?>)
 								<?php endif; ?>
 							</span>
+							<?php if ( ! empty( $data['holded_purchase_order_numero'] ) ) : ?>
+								<span class="crm-inst-extra-badge crm-inst-extra-badge-neutro">Pedido de compra Holded #<?php echo esc_html( $data['holded_purchase_order_numero'] ); ?></span>
+							<?php endif; ?>
 							<?php if ( $data['proveedor_pedido_estado'] === 'enviado' ) : ?>
 								<span class="crm-inst-extra-badge crm-inst-extra-badge-pendiente">Enviado — esperando confirmación</span>
 								<button type="button" class="crm-btn" id="crm-inst-proveedor-confirmar-mano-btn">Marcar confirmado a mano</button>
@@ -4375,6 +4439,9 @@ function crm_inst_shortcode_ficha() {
 								<?php if ( $en_riesgo ) : ?>
 									<span id="crm-inst-riesgo-proveedor-wrap"><a href="#crm-inst-agenda-fecha" class="crm-btn" id="crm-inst-reprogramar-atajo-btn">Reprogramar visita</a></span>
 								<?php endif; ?>
+								<?php endif; ?>
+								<?php if ( ! empty( $data['proveedor_numero_pedido'] ) ) : ?>
+									<br><small class="crm-inst-field-info">Nº de pedido del proveedor: <strong><?php echo esc_html( $data['proveedor_numero_pedido'] ); ?></strong></small>
 								<?php endif; ?>
 								<?php if ( ! empty( $data['proveedor_notas'] ) ) : ?>
 									<br><small class="crm-inst-field-info">"<?php echo esc_html( $data['proveedor_notas'] ); ?>" — <?php echo esc_html( date_i18n( 'd/m/Y H:i', strtotime( $data['proveedor_confirmado_en'] ) ) ); ?></small>
@@ -4811,11 +4878,15 @@ function crm_inst_shortcode_ficha() {
 
 		$('#crm-inst-notificar-proveedor-btn').on('click', function () {
 			var btn = $(this).prop('disabled', true).text('Enviando…');
-			$.post(ajaxurl, { action: 'crm_inst_notificar_proveedor', nonce: nonce, instalacion_id: instalacionId }, function (resp) {
+			var crearPedidoHolded = $('#crm-inst-crear-pedido-holded').is(':checked') ? '1' : '';
+			$.post(ajaxurl, { action: 'crm_inst_notificar_proveedor', nonce: nonce, instalacion_id: instalacionId, crear_pedido_holded: crearPedidoHolded }, function (resp) {
 				if (!resp.success) {
 					btn.prop('disabled', false).text('Notificar proveedor');
 					$('#crm-inst-proveedor-msg').css('color', '#991b1b').text(resp.data.message);
 					return;
+				}
+				if (resp.data.pedido_holded && resp.data.pedido_holded.creado === false) {
+					alert('Aviso enviado al proveedor, pero no se pudo crear el pedido de compra en Holded: ' + resp.data.pedido_holded.error);
 				}
 				location.reload();
 			});
@@ -5337,7 +5408,7 @@ MERMAID,
 	];
 
 	$diagramas[] = [
-		'title'       => 'Instalaciones — stock, proveedor Santoki y transición a "Lista" (Fase 3, actualizado v1.20.57-67)',
+		'title'       => 'Instalaciones — stock, proveedor Santoki y transición a "Lista" (Fase 3, actualizado v1.20.57-92)',
 		'description' => 'El catálogo de Holded ya tiene productos con stock real (antes vacío) — el badge de la ficha distingue línea enganchada por ID (fiable) de coincidencia por nombre (best-effort, nunca toca inventario real). El invariante de "Lista" lo mantiene crm_inst_sync_estado_con_materiales() en los dos sentidos.',
 		'mermaid'     => <<<'MERMAID'
 flowchart TD
@@ -5347,7 +5418,10 @@ flowchart TD
     C --> E{"quedan materiales sin marcar Recibido"}
     D --> E
     E -->|"si"| F["Notificar proveedor: email a Santoki con token de un clic"]
-    F --> G["Santoki confirma en /confirmar-pedido/: fecha de entrega + notas (o el jefe lo marca a mano de respaldo)"]
+    F --> F2{"contacto de Holded del proveedor vinculado y casilla marcada"}
+    F2 -->|"si"| F3["Se crea tambien un pedido de compra en Holded (purchase-order), sin aprobar"]
+    F2 -->|"no"| G
+    F3 --> G["Santoki confirma en /confirmar-pedido/: fecha de entrega + su numero de pedido + notas (o el jefe lo marca a mano de respaldo)"]
     G --> H{"fecha de entrega es igual o posterior a la visita"}
     H -->|"si"| I["Aviso de riesgo en la ficha + atajo Reprogramar visita"]
     H -->|"no"| J["Sin aviso"]

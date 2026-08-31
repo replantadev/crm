@@ -107,12 +107,15 @@ function crm_guia_admin_render_instalaciones_modulo() {
                 <ol>
                     <li>En la ficha, pulsa <strong>"Notificar proveedor"</strong>: se envía un email a Santoki con la lista de materiales pendientes de esa instalación.</li>
                     <li>El correo incluye un <strong>enlace de confirmación de un clic</strong> que no requiere cuenta ni contraseña — el proveedor pulsa, ve la lista y confirma disponibilidad.</li>
-                    <li>El proveedor puede indicar la <strong>fecha de entrega estimada</strong> y notas (por ejemplo, la agencia de transporte).</li>
-                    <li>La ficha muestra el estado del pedido (enviado / confirmado) y la fecha de entrega, con un aviso en rojo si la entrega estimada coincide o es <strong>posterior</strong> a la fecha de la visita programada — con un acceso directo para reprogramarla.</li>
+                    <li>El proveedor puede indicar la <strong>fecha de entrega estimada</strong>, su <strong>número de pedido</strong> (para identificarlo en su propio sistema) y notas (por ejemplo, la agencia de transporte).</li>
+                    <li>La ficha muestra el estado del pedido (enviado / confirmado), la fecha de entrega y el número de pedido del proveedor, con un aviso en rojo si la entrega estimada coincide o es <strong>posterior</strong> a la fecha de la visita programada — con un acceso directo para reprogramarla.</li>
                 </ol>
             </div>
             <div class="tip-box">
                 <p>La página de confirmación que ve el proveedor es pública y no muestra ningún menú ni marca del CRM — solo el pedido, para no exponer información interna a un tercero externo.</p>
+            </div>
+            <div class="tip-box">
+                <p>Si en Ajustes hay un contacto de Holded vinculado al proveedor, al notificarlo aparece la opción de <strong>crear también un pedido de compra real en Holded</strong> con esas mismas líneas — se crea sin aprobar, para que se revise antes en Holded.</p>
             </div>
         </div>
     </section>

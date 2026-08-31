@@ -779,6 +779,62 @@ function crm_holded_aprobar_albaran_salida($waybill_id) {
     return true;
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Fase 3 (v1.20.92) — Pedido de compra real en Holded al notificar al proveedor
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Crea un pedido de compra (documento `purchase-order`) en Holded contra el
+ * contacto del proveedor — un pedido de compra es solo la intención de
+ * comprar, no mueve stock ni dinero (a diferencia del albarán de salida o
+ * una factura), así que se crea sin aprobar: el usuario revisa y aprueba a
+ * mano en Holded si las líneas son correctas.
+ *
+ * @param string $contact_id  holded_contact_id del proveedor.
+ * @param array  $items       [['name'=>, 'product_id'=>(opcional), 'units'=>], ...]
+ * @param string $descripcion Texto libre del documento.
+ * @return array|WP_Error ['id','document_number']
+ */
+function crm_holded_crear_pedido_compra($contact_id, array $items, $descripcion = '') {
+    $contact_id = trim((string) $contact_id);
+    if ($contact_id === '' || empty($items)) {
+        return new WP_Error('crm_holded_po_invalid', 'Datos del pedido de compra no válidos (falta contacto o líneas).');
+    }
+
+    $lineas = array_map(function ($it) {
+        $linea = [
+            'name'  => (string) ($it['name'] ?? ''),
+            'type'  => 'product',
+            'units' => (float) ($it['units'] ?? 0),
+        ];
+        if (!empty($it['product_id'])) {
+            $linea['product_id'] = (string) $it['product_id'];
+        }
+        return $linea;
+    }, $items);
+
+    $creado = crm_holded_request('POST', 'purchase-orders', [
+        'body' => [
+            'contact_id'  => $contact_id,
+            'description' => $descripcion !== '' ? $descripcion : null,
+            'date'        => current_time('Y-m-d'),
+            'items'       => $lineas,
+        ],
+    ]);
+    if (is_wp_error($creado)) {
+        return $creado;
+    }
+    $po_id = (string) ($creado['id'] ?? '');
+    if ($po_id === '') {
+        return new WP_Error('crm_holded_po_no_id', 'Holded no devolvió un ID de pedido de compra.');
+    }
+
+    return [
+        'id'              => $po_id,
+        'document_number' => $creado['document_number'] ?? '',
+    ];
+}
+
 /**
  * Normaliza texto para comparar nombres de línea vs nombres de producto
  * (minúsculas, sin acentos, sin puntuación).

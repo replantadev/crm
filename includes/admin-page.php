@@ -91,6 +91,18 @@ function crm_register_admin_settings() {
         'default'           => '',
         'sanitize_callback' => 'sanitize_email',
     ]);
+    // v1.20.92: contacto de Holded del proveedor — para poder crear un pedido
+    // de compra real en Holded desde el mismo botón de "Notificar proveedor".
+    register_setting('crm_settings', 'crm_proveedor_holded_contact_id', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
+    register_setting('crm_settings', 'crm_proveedor_holded_contact_nombre', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
     // v1.20.57 — contra qué almacén de Holded se comprueba el stock por línea.
     register_setting('crm_settings', 'crm_holded_warehouse_id', [
         'type'              => 'string',
@@ -746,6 +758,23 @@ function crm_admin_render_settings() {
                 </td>
             </tr>
             <tr>
+                <th><label for="crm-proveedor-holded-buscar">Contacto de Holded del proveedor</label></th>
+                <td>
+                    <input type="hidden" id="crm_proveedor_holded_contact_id" name="crm_proveedor_holded_contact_id" value="<?php echo esc_attr((string) get_option('crm_proveedor_holded_contact_id', '')); ?>">
+                    <input type="hidden" id="crm_proveedor_holded_contact_nombre" name="crm_proveedor_holded_contact_nombre" value="<?php echo esc_attr((string) get_option('crm_proveedor_holded_contact_nombre', '')); ?>">
+                    <div id="crm-proveedor-holded-vinculado" <?php echo get_option('crm_proveedor_holded_contact_id', '') === '' ? 'style="display:none;"' : ''; ?>>
+                        Vinculado a: <strong id="crm-proveedor-holded-nombre"><?php echo esc_html((string) get_option('crm_proveedor_holded_contact_nombre', '')); ?></strong>
+                        <button type="button" class="button" id="crm-proveedor-holded-quitar">Quitar</button>
+                    </div>
+                    <div id="crm-proveedor-holded-buscador" <?php echo get_option('crm_proveedor_holded_contact_id', '') !== '' ? 'style="display:none;"' : ''; ?>>
+                        <input type="text" id="crm-proveedor-holded-buscar" placeholder="Nombre, email o CIF del proveedor…" class="regular-text">
+                        <button type="button" class="button" id="crm-proveedor-holded-buscar-btn">Buscar</button>
+                        <div id="crm-proveedor-holded-resultados"></div>
+                    </div>
+                    <p class="description">Necesario para poder crear un pedido de compra real en Holded al notificar al proveedor (opcional, ver más abajo). Guarda los Ajustes después de vincular.</p>
+                </td>
+            </tr>
+            <tr>
                 <th><label for="crm_holded_warehouse_id">ID de almacén (Holded)</label></th>
                 <td>
                     <input type="text" id="crm_holded_warehouse_id" name="crm_holded_warehouse_id" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_holded_warehouse_id', '')); ?>" placeholder="69c975f9f8c5399a6b07ac16 (Almacén Ecovolt, por defecto)">
@@ -861,6 +890,58 @@ function crm_admin_render_settings() {
         </table>
         <?php submit_button(); ?>
     </form>
+
+    <script>
+    jQuery(function ($) {
+        // v1.20.92 — buscador/vinculador del contacto de Holded del proveedor
+        // (para poder crear pedidos de compra reales). Mismo endpoint que el
+        // buscador de contactos del Panel — solo cambia qué se hace con el
+        // resultado elegido.
+        $('#crm-proveedor-holded-buscar-btn').on('click', function () {
+            var query = $('#crm-proveedor-holded-buscar').val();
+            var cont = $('#crm-proveedor-holded-resultados').html('<p>Buscando…</p>');
+            $.post(ajaxurl, {
+                action: 'crm_admin_buscar_contactos_holded',
+                nonce: '<?php echo wp_create_nonce('crm_inst_holded'); ?>',
+                query: query
+            }, function (resp) {
+                if (!resp.success) {
+                    cont.html('<p style="color:#991b1b;">' + (resp.data && resp.data.message ? resp.data.message : 'Error.') + '</p>');
+                    return;
+                }
+                if (!resp.data.items.length) {
+                    cont.html('<p>Sin resultados.</p>');
+                    return;
+                }
+                var html = '';
+                resp.data.items.forEach(function (c) {
+                    html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">' +
+                        '<span>' + $('<div>').text(c.name).html() + (c.email ? ' — ' + $('<div>').text(c.email).html() : '') + '</span>' +
+                        '<button type="button" class="button crm-proveedor-holded-elegir" data-id="' + $('<div>').text(c.id).html() + '" data-name="' + $('<div>').text(c.name).html() + '">Elegir</button>' +
+                        '</div>';
+                });
+                cont.html(html);
+            });
+        });
+
+        $(document).on('click', '.crm-proveedor-holded-elegir', function () {
+            var id = $(this).data('id');
+            var name = $(this).data('name');
+            $('#crm_proveedor_holded_contact_id').val(id);
+            $('#crm_proveedor_holded_contact_nombre').val(name);
+            $('#crm-proveedor-holded-nombre').text(name);
+            $('#crm-proveedor-holded-vinculado').show();
+            $('#crm-proveedor-holded-buscador').hide();
+        });
+
+        $('#crm-proveedor-holded-quitar').on('click', function () {
+            $('#crm_proveedor_holded_contact_id').val('');
+            $('#crm_proveedor_holded_contact_nombre').val('');
+            $('#crm-proveedor-holded-vinculado').hide();
+            $('#crm-proveedor-holded-buscador').show();
+        });
+    });
+    </script>
 
     <?php if (isset($_GET['holded_test'])): ?>
         <?php if ($_GET['holded_test'] === 'ok'): ?>

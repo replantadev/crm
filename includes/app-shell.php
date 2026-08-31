@@ -618,7 +618,10 @@ function crm_app_shell_render_topbar() {
             </span>
             <span><?php echo esc_html($brand_label); ?></span>
         </a>
-        <nav class="crm-topbar__nav" aria-label="Navegación CRM">
+        <button type="button" class="crm-topbar__burger" id="crm-topbar-burger" aria-label="Abrir menú" aria-expanded="false" aria-controls="crm-topbar-nav">
+            <?php echo $icon('list', 20); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+        </button>
+        <nav class="crm-topbar__nav" id="crm-topbar-nav" aria-label="Navegación CRM">
             <?php foreach (crm_app_shell_menu_items() as $item):
                 if (!crm_app_shell_user_can_see_item($item)) {
                     continue;
@@ -651,6 +654,24 @@ function crm_app_shell_render_topbar() {
             <?php endif; ?>
         </div>
     </header>
+    <script>
+    (function () {
+        var burger = document.getElementById('crm-topbar-burger');
+        var nav = document.getElementById('crm-topbar-nav');
+        if (!burger || !nav) { return; }
+        burger.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var isOpen = nav.classList.toggle('is-open');
+            burger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
+        document.addEventListener('click', function (e) {
+            if (nav.classList.contains('is-open') && !nav.contains(e.target) && e.target !== burger && !burger.contains(e.target)) {
+                nav.classList.remove('is-open');
+                burger.setAttribute('aria-expanded', 'false');
+            }
+        });
+    })();
+    </script>
     <?php
 }
 

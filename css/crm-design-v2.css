@@ -694,6 +694,27 @@ body.crm-app-mode .crm-shell-main {
     scrollbar-width: none;
 }
 .crm-topbar__nav::-webkit-scrollbar { display: none; }
+.crm-topbar__burger {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    margin-right: var(--crm-sp-2);
+    padding: 0;
+    border: 0;
+    border-radius: var(--crm-r-md);
+    background: transparent;
+    color: var(--crm-on-brand);
+    cursor: pointer;
+}
+.crm-topbar__burger:hover,
+.crm-topbar__burger:focus {
+    background: rgba(255,255,255,.1);
+}
+.crm-topbar--light .crm-topbar__burger { color: #111827; }
+.crm-topbar--light .crm-topbar__burger:hover,
+.crm-topbar--light .crm-topbar__burger:focus { background: #f3f4f6; }
 .crm-topbar__link {
     display: inline-flex;
     align-items: center;
@@ -841,6 +862,32 @@ body.crm-app-mode .crm-shell-main {
     .crm-topbar__brand { padding-right: var(--crm-sp-3); margin-right: var(--crm-sp-2); }
     .crm-topbar__brand span:not(.crm-topbar__logo) { display: none; }
     .crm-topbar__user-meta { display: none; }
+
+    /* v1.20.91: con muchos enlaces (hasta 9 para administrator/crm_admin), el
+       scroll horizontal de escritorio no es descubrible en un movil — se
+       sustituye por un menu hamburguesa con desplegable a pantalla completa. */
+    .crm-topbar__burger { display: inline-flex; }
+    .crm-topbar__nav {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        gap: 0;
+        max-height: calc(100vh - var(--crm-topbar-h));
+        overflow-y: auto;
+        background: var(--crm-brand);
+        box-shadow: var(--crm-sh-2);
+        padding: var(--crm-sp-2) 0;
+    }
+    .crm-topbar__nav.is-open { display: flex; }
+    .crm-topbar__link {
+        border-radius: 0;
+        padding: 14px var(--crm-sp-4);
+        white-space: normal;
+    }
+    .crm-topbar--light .crm-topbar__nav { background: #fff; border-top: 1px solid #e5e7eb; }
 }
 
 /* =====================================================================

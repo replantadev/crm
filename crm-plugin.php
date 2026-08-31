@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.25
+Version: 1.20.89
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.25');
+define('CRM_PLUGIN_VERSION', '1.20.89');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -68,6 +68,9 @@ require_once CRM_PLUGIN_PATH . 'includes/notes.php';
 require_once CRM_PLUGIN_PATH . 'includes/duplicates.php';
 require_once CRM_PLUGIN_PATH . 'includes/leads-sheets.php';
 require_once CRM_PLUGIN_PATH . 'includes/notifications.php';
+// v1.20.50 — Notificaciones in-app (campana + historial), distinto del email
+// de asignación de arriba: canal nuevo, por usuario, con historial de admin.
+require_once CRM_PLUGIN_PATH . 'includes/notificaciones-inapp.php';
 require_once CRM_PLUGIN_PATH . 'includes/leads-mk-shortcode.php';
 // v1.19.0 — Sistema de diseño v2 (iconos, badges, app shell)
 require_once CRM_PLUGIN_PATH . 'includes/icons.php';
@@ -79,6 +82,15 @@ require_once CRM_PLUGIN_PATH . 'includes/page-bootstrap.php';
 require_once CRM_PLUGIN_PATH . 'includes/visitas.php';
 // v1.21.0 — Módulo de control de instalaciones
 require_once CRM_PLUGIN_PATH . 'includes/instalaciones.php';
+// v1.20.41 — Fase 4: panel branded del instalador (calendario, sin App Shell)
+require_once CRM_PLUGIN_PATH . 'includes/instalador-panel.php';
+// v1.20.26 — Cliente API de Holded (presupuestos, productos, almacenes)
+require_once CRM_PLUGIN_PATH . 'includes/holded-api.php';
+// v1.20.87 — Andamiaje de WhatsApp Business (Meta Cloud API), sin credenciales
+// reales todavía — ver includes/whatsapp-api.php.
+require_once CRM_PLUGIN_PATH . 'includes/whatsapp-api.php';
+// v1.20.32 — Servicio de geocodificación (Nominatim), genérico y reutilizable
+require_once CRM_PLUGIN_PATH . 'includes/geocoding.php';
 // v1.20.2 — Shortcode frontend de Mi agenda + bloqueo wp-admin
 require_once CRM_PLUGIN_PATH . 'includes/shortcode-agenda.php';
 require_once CRM_PLUGIN_PATH . 'includes/admin-lockdown.php';
@@ -92,6 +104,9 @@ require_once CRM_PLUGIN_PATH . 'shortcodes.php';
 if (is_admin()) {
     require_once CRM_PLUGIN_PATH . 'includes/admin-page.php';
     require_once CRM_PLUGIN_PATH . 'includes/agenda-page.php';
+    // v1.20.38 — Página "Flujos": diagramas mermaid de cómo funciona el CRM,
+    // registrados por cada módulo junto a su propio código.
+    require_once CRM_PLUGIN_PATH . 'includes/flujos-page.php';
 }
 
 // Incluir páginas de ayuda
@@ -110,9 +125,10 @@ add_action('plugins_loaded', function () {
 add_action('wp_enqueue_scripts', 'crm_enqueue_styles');
 function crm_enqueue_styles()
 {
-    wp_enqueue_style('crm-styles', CRM_PLUGIN_URL . 'crm-styles.css', [], CRM_PLUGIN_VERSION);
+    // v1.20.29 — todo el CSS del plugin vive en /css, sin excepciones.
+    wp_enqueue_style('crm-styles', CRM_PLUGIN_URL . 'css/crm-styles.css', [], CRM_PLUGIN_VERSION);
     // v1.19.0 — sistema de diseño v2 (cargado siempre, después del CSS legacy)
-    wp_enqueue_style('crm-design-v2', CRM_PLUGIN_URL . 'assets/css/crm-design-v2.css', ['crm-styles'], CRM_PLUGIN_VERSION);
+    wp_enqueue_style('crm-design-v2', CRM_PLUGIN_URL . 'css/crm-design-v2.css', ['crm-styles'], CRM_PLUGIN_VERSION);
     
     // Cargar estilos para documentación en páginas que contengan los shortcodes de guías
     global $post;
@@ -1259,6 +1275,14 @@ function crm_formulario_alta_cliente()
                                 </div>
                             </div>
                         <?php endif; ?>
+
+                        <?php
+                        // v1.20.33 — Fase 2 instalaciones: resumen de instalaciones vinculadas,
+                        // solo en la card de renovables (único sector con instalaciones físicas).
+                        if ($sector === 'renovables' && $client_id && function_exists('crm_inst_render_resumen_cliente')) {
+                            crm_inst_render_resumen_cliente($client_id);
+                        }
+                        ?>
 
                     </div>
                 </div>
@@ -4002,6 +4026,8 @@ function crm_update_clients_table_structure() {
         'lead_meta' => "LONGTEXT DEFAULT NULL",
         'lead_mk_status' => "VARCHAR(16) NOT NULL DEFAULT 'pendiente'",
         'lead_mk_touched_at' => "DATETIME DEFAULT NULL",
+        // v1.20.27 — Fase 2 instalaciones: vincula el cliente con su contacto de Holded.
+        'holded_contact_id' => "VARCHAR(100) DEFAULT NULL",
     ];
     
     foreach ($required_columns as $column => $definition) {
@@ -4034,6 +4060,7 @@ function crm_update_clients_table_structure() {
         'lead_mk_status'    => "ALTER TABLE $table_name ADD INDEX lead_mk_status (lead_mk_status)",
         'es_cliente_activo' => "ALTER TABLE $table_name ADD INDEX es_cliente_activo (es_cliente_activo)",
         'user_id'           => "ALTER TABLE $table_name ADD INDEX user_id (user_id)",
+        'holded_contact_id' => "ALTER TABLE $table_name ADD INDEX holded_contact_id (holded_contact_id)",
     ];
     foreach ($needed_indexes as $idx => $sql_idx) {
         if (!in_array($idx, $existing_indexes, true)) {
@@ -4060,10 +4087,16 @@ function crm_plugin_activation() {
     if (function_exists('crm_instalaciones_install_tables')) {
         crm_instalaciones_install_tables();
     }
+    if (function_exists('crm_notificaciones_install_table')) {
+        crm_notificaciones_install_table();
+    }
     if (function_exists('crm_install_instalaciones_roles')) {
         crm_install_instalaciones_roles();
     }
     crm_protect_backup_directory();
+    if (function_exists('crm_inst_aviso_schedule_cron')) {
+        crm_inst_aviso_schedule_cron();
+    }
     if (function_exists('crm_logger_schedule_cron')) {
         crm_logger_schedule_cron();
     }
@@ -4091,6 +4124,7 @@ function crm_plugin_deactivation() {
     delete_option('crm_roles_installed_version');
     delete_option('crm_instalaciones_installed_version');
     wp_clear_scheduled_hook('crm_daily_maintenance');
+    wp_clear_scheduled_hook('crm_inst_aviso_cron_hourly');
     if (function_exists('crm_logger_unschedule_cron')) {
         crm_logger_unschedule_cron();
     }
@@ -4255,6 +4289,9 @@ add_action('plugins_loaded', function() {
         }
         if (function_exists('crm_instalaciones_install_tables')) {
             crm_instalaciones_install_tables();
+        }
+        if (function_exists('crm_notificaciones_install_table')) {
+            crm_notificaciones_install_table();
         }
         update_option('crm_plugin_version', CRM_PLUGIN_VERSION);
     }

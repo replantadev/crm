@@ -47,6 +47,26 @@ function restrict_access_for_guests() {
         return;
     }
 
+    // v1.20.57: "confirmar-pedido" es pública a propósito — a ella llega el
+    // proveedor (Santoki) desde el enlace del email, sin cuenta de WordPress.
+    // La autorización real la hace el token de un solo uso del shortcode, no
+    // el login.
+    if (is_page('confirmar-pedido')) {
+        return;
+    }
+    // v1.20.60: el plan de seguridad se abre en pestaña nueva desde el panel
+    // del instalador — pública para que no dependa de mantener sesión activa
+    // en esa segunda pestaña, y porque no es información sensible.
+    if (is_page('plan-de-seguridad')) {
+        return;
+    }
+    // v1.20.75: "validar-extra" es pública a propósito — a ella llega el
+    // CLIENTE desde el enlace del email para aprobar/rechazar una partida
+    // extra, sin cuenta de WordPress. Mismo criterio que "confirmar-pedido".
+    if (is_page('validar-extra')) {
+        return;
+    }
+
     // Permitir acceso solo si el usuario está logueado o en la página de acceso
     if (!is_user_logged_in() && (!$login_page_id || !is_page($login_page_id))) {
         if ($login_page_url) {
@@ -62,6 +82,20 @@ function custom_login_redirect($redirect_to, $requested_redirect_to, $user) {
     if (is_wp_error($user) || empty($user) || !isset($user->roles)) {
         return $redirect_to;
     }
+
+    // v1.20.42: si el rol tiene un panel de frontend propio configurado
+    // (crm_admin/comercial/visitador/instalador), va directo ahí desde el
+    // login — antes solo se aplicaba al intentar entrar a wp-admin (ver
+    // crm_get_role_panel_url() en admin-lockdown.php, misma fuente para
+    // los dos sitios). Los roles sin panel propio (administrator...) siguen
+    // yendo a la página genérica de siempre, sin cambios.
+    if (function_exists('crm_get_role_panel_url')) {
+        $role_url = crm_get_role_panel_url($user);
+        if ($role_url !== '') {
+            return $role_url;
+        }
+    }
+
     $target_id = crm_get_post_login_redirect_id();
     if ($target_id) {
         $url = get_permalink($target_id);

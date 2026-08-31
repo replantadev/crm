@@ -67,6 +67,56 @@ function crm_required_pages() {
             'title'   => 'Mi agenda',
             'content' => '[crm_mi_agenda]',
         ],
+        [
+            'slug'    => 'instalaciones',
+            'title'   => 'Instalaciones',
+            'content' => '[crm_inst_listado]',
+        ],
+        [
+            'slug'    => 'nueva-instalacion',
+            'title'   => 'Nueva instalación',
+            'content' => '[crm_inst_nueva_desde_presupuesto]',
+        ],
+        [
+            'slug'    => 'instalacion',
+            'title'   => 'Ficha de instalación',
+            'content' => '[crm_inst_ficha]',
+        ],
+        [
+            'slug'    => 'panel-instalador',
+            'title'   => 'Panel del instalador',
+            'content' => '[crm_inst_panel_instalador]',
+        ],
+        [
+            'slug'    => 'calendario-instalador',
+            'title'   => 'Calendario del instalador',
+            'content' => '[crm_inst_panel_calendario]',
+        ],
+        [
+            'slug'    => 'notificaciones',
+            'title'   => 'Notificaciones',
+            'content' => '[crm_notificaciones_lista]',
+        ],
+        [
+            'slug'    => 'mi-perfil-instalador',
+            'title'   => 'Mi perfil',
+            'content' => '[crm_inst_panel_perfil]',
+        ],
+        [
+            'slug'    => 'confirmar-pedido',
+            'title'   => 'Confirmar pedido',
+            'content' => '[crm_inst_confirmar_pedido]',
+        ],
+        [
+            'slug'    => 'plan-de-seguridad',
+            'title'   => 'Plan de seguridad y prevención',
+            'content' => '[crm_inst_plan_seguridad]',
+        ],
+        [
+            'slug'    => 'validar-extra',
+            'title'   => 'Validar trabajo adicional',
+            'content' => '[crm_inst_validar_extra_cliente]',
+        ],
     ];
     return apply_filters('crm_required_pages', $pages);
 }

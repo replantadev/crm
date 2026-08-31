@@ -39,6 +39,7 @@ function crm_register_admin_menu() {
     add_submenu_page('crm-dashboard', 'Logs', 'Logs', $cap, 'crm-logs', 'crm_admin_render_logs');
     add_submenu_page('crm-dashboard', 'Actualizaciones', 'Actualizaciones', $cap, 'crm-updates', 'crm_admin_render_updates');
     add_submenu_page('crm-dashboard', 'Leads MK', 'Leads MK', $cap, 'crm-leads-mk', 'crm_admin_render_leads_mk');
+    add_submenu_page('crm-dashboard', 'Flujos', 'Flujos', $cap, 'crm-flujos', 'crm_flujos_render_admin');
     add_submenu_page('crm-dashboard', 'Ajustes', 'Ajustes', $cap, 'crm-settings', 'crm_admin_render_settings');
 }
 
@@ -67,6 +68,132 @@ function crm_register_admin_settings() {
         'default'           => 30,
         'sanitize_callback' => function ($v) { return max(0, (int) $v); },
     ]);
+    // v1.20.26 — Clave de API de Holded. Deja el campo en blanco al guardar
+    // para conservar la clave actual (nunca se imprime en el HTML del formulario).
+    register_setting('crm_settings', 'crm_holded_api_key', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => function ($v) {
+            $v = trim((string) $v);
+            return $v === '' ? get_option('crm_holded_api_key', '') : $v;
+        },
+    ]);
+    // v1.20.32 — Email de contacto para el User-Agent de Nominatim (geocodificación).
+    // No es una clave secreta, así que sí se guarda y se muestra tal cual.
+    register_setting('crm_settings', 'crm_nominatim_contact_email', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_email',
+    ]);
+    // v1.20.37 — Fase 3: email del proveedor al que se notifica material pendiente.
+    register_setting('crm_settings', 'crm_proveedor_email', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_email',
+    ]);
+    // v1.20.57 — contra qué almacén de Holded se comprueba el stock por línea.
+    register_setting('crm_settings', 'crm_holded_warehouse_id', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
+    // v1.20.41 — Fase 4: branding del panel del instalador (hoy Ecovolt, pensado
+    // para poder cambiar de marca el día que haya más de un cliente del CRM).
+    register_setting('crm_settings', 'crm_instalador_panel_brand', [
+        'type'              => 'string',
+        'default'           => 'Ecovolt',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
+    register_setting('crm_settings', 'crm_instalador_panel_color', [
+        'type'              => 'string',
+        'default'           => '#15803d',
+        'sanitize_callback' => function ($v) { return sanitize_hex_color((string) $v) ?: '#15803d'; },
+    ]);
+    register_setting('crm_settings', 'crm_instalador_panel_logo_url', [
+        'type'              => 'string',
+        'default'           => CRM_PLUGIN_URL . 'img/ecovolt-logo.jpg',
+        'sanitize_callback' => 'esc_url_raw',
+    ]);
+    // v1.20.48 — Fase 5: importe máximo que un instalador puede declarar en una
+    // sola partida extra sin más trámite que la validación del jefe. Por encima
+    // de esto tiene que hablarlo por otro canal (no está pensado como límite
+    // duro de negocio, solo como aviso/freno ante errores de tecleo).
+    register_setting('crm_settings', 'crm_inst_extra_max', [
+        'type'              => 'number',
+        'default'           => 500,
+        'sanitize_callback' => function ($v) {
+            $n = (float) str_replace(',', '.', (string) $v);
+            return $n > 0 ? $n : 500;
+        },
+    ]);
+    // v1.20.51 — Fase 4 Entrega 2: si el cierre que declara el instalador
+    // (conformidad+observaciones+fotos) necesita validación del jefe antes de
+    // pasar la instalación a "Finalizada", o si es definitivo al momento.
+    register_setting('crm_settings', 'crm_inst_cierre_requiere_aprobacion', [
+        'type'              => 'boolean',
+        'default'           => false,
+        'sanitize_callback' => function ($v) { return !empty($v); },
+    ]);
+    // v1.20.62 — aviso proactivo si quedan materiales sin recibir a pocos días
+    // de la visita agendada (antes era puramente "pull": solo se veía si
+    // alguien entraba a mirar el listado/ficha).
+    register_setting('crm_settings', 'crm_inst_aviso_dias_antes', [
+        'type'              => 'integer',
+        'default'           => 3,
+        'sanitize_callback' => function ($v) {
+            $n = (int) $v;
+            return $n >= 0 ? $n : 3;
+        },
+    ]);
+    register_setting('crm_settings', 'crm_inst_aviso_hora', [
+        'type'              => 'integer',
+        'default'           => 9,
+        'sanitize_callback' => function ($v) {
+            $n = (int) $v;
+            return ( $n >= 0 && $n <= 23 ) ? $n : 9;
+        },
+    ]);
+    register_setting('crm_settings', 'crm_inst_aviso_canal_inapp', [
+        'type'              => 'boolean',
+        'default'           => true,
+        'sanitize_callback' => function ($v) { return !empty($v); },
+    ]);
+    // v1.20.87 — Andamiaje de WhatsApp Business (Meta Cloud API). Sin
+    // credenciales reales todavía; mismo patrón que crm_holded_api_key: el
+    // token nunca se imprime de vuelta, dejar en blanco al guardar lo conserva.
+    register_setting('crm_settings', 'crm_whatsapp_api_token', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => function ($v) {
+            $v = trim((string) $v);
+            return $v === '' ? get_option('crm_whatsapp_api_token', '') : $v;
+        },
+    ]);
+    register_setting('crm_settings', 'crm_whatsapp_phone_number_id', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
+    register_setting('crm_settings', 'crm_whatsapp_template_aviso_materiales', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
+    register_setting('crm_settings', 'crm_whatsapp_template_validar_extra', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
+    register_setting('crm_settings', 'crm_inst_aviso_canal_whatsapp', [
+        'type'              => 'boolean',
+        'default'           => false,
+        'sanitize_callback' => function ($v) { return !empty($v); },
+    ]);
+    register_setting('crm_settings', 'crm_inst_aviso_canal_email', [
+        'type'              => 'boolean',
+        'default'           => true,
+        'sanitize_callback' => function ($v) { return !empty($v); },
+    ]);
 }
 
 /* ---------------------------------------------------------------------------
@@ -90,6 +217,8 @@ function crm_admin_render_nav() {
         'crm-logs'      => 'Logs',
         'crm-updates'   => 'Actualizaciones',
         'crm-leads-mk'  => 'Leads MK',
+        'crm-flujos'    => 'Flujos',
+        'crm-notificaciones' => 'Notificaciones',
         'crm-settings'  => 'Ajustes',
     ];
     echo '<h2 class="nav-tab-wrapper">';
@@ -117,6 +246,18 @@ function crm_admin_render_dashboard() {
     $months        = crm_get_available_log_months();
     $current_month = current_time('Y_m');
     $level_counts  = crm_logs_count_by_level([$current_month]);
+
+    // v1.20.67 — el módulo de instalaciones no salía en ningún dashboard
+    // general, solo en su propia página. Tarjeta ligera, no un listado
+    // duplicado — para eso ya está /instalaciones/.
+    $total_instalaciones = 0;
+    $atencion_total      = 0;
+    if (function_exists('crm_inst_table_instalaciones')) {
+        $total_instalaciones = (int) $wpdb->get_var('SELECT COUNT(*) FROM ' . crm_inst_table_instalaciones());
+    }
+    if (function_exists('crm_inst_get_atencion_counts')) {
+        $atencion_total = array_sum(crm_inst_get_atencion_counts());
+    }
 
     $version          = defined('CRM_PLUGIN_VERSION') ? CRM_PLUGIN_VERSION : '?';
     $last_update_at   = (int) get_option('crm_last_update_at', 0);
@@ -158,6 +299,18 @@ function crm_admin_render_dashboard() {
             <p class="description">
                 Warnings: <?php echo (int) ($level_counts['warning'] ?? 0); ?> ·
                 Info: <?php echo (int) ($level_counts['info'] ?? 0); ?>
+            </p>
+        </div>
+        <div class="crm-card">
+            <h2>Instalaciones</h2>
+            <p class="crm-metric"><?php echo number_format_i18n($total_instalaciones); ?></p>
+            <p class="description">
+                <?php if ($atencion_total > 0) : ?>
+                    <span style="color:#92400e;font-weight:600;"><?php echo (int) $atencion_total; ?> avisos activos</span>
+                <?php else : ?>
+                    Sin avisos pendientes
+                <?php endif; ?>
+                — <a href="<?php echo esc_url(home_url('/instalaciones/')); ?>">ver listado</a>
             </p>
         </div>
     </div>
@@ -561,8 +714,177 @@ function crm_admin_render_settings() {
                     <p class="description">Página con el shortcode <code>[asignacion_leads_mk modo="mios"]</code>. Si la dejas vacía y no existe la página con slug <code>mis-leads</code>, el item no aparece en el menú.</p>
                 </td>
             </tr>
+            <tr>
+                <th><label for="crm_url_panel_instalador">URL panel del instalador</label></th>
+                <td>
+                    <input type="url" id="crm_url_panel_instalador" name="crm_url_panel_instalador" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_url_panel_instalador', home_url('/panel-instalador/'))); ?>">
+                    <p class="description">Página con el shortcode <code>[crm_inst_panel_instalador]</code> (se autocrea con este slug). Un usuario con <em>solo</em> el rol Instalador va aquí siempre al entrar, nunca al resto del CRM.</p>
+                </td>
+            </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Integración Holded (v1.20.26)</h3></th></tr>
+            <tr>
+                <th><label for="crm_holded_api_key">Clave de API de Holded</label></th>
+                <td>
+                    <input type="password" id="crm_holded_api_key" name="crm_holded_api_key" class="regular-text" value="" autocomplete="off" placeholder="<?php echo crm_holded_is_configured() ? '•••••••••••••••• (clave guardada, deja en blanco para no cambiarla)' : 'Pega aquí la clave de API de Holded'; ?>">
+                    <p class="description">Se usa para buscar presupuestos y consultar stock desde el módulo de instalaciones. Por seguridad nunca se muestra el valor guardado; deja el campo vacío al guardar para conservarlo.</p>
+                </td>
+            </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Geocodificación (v1.20.32)</h3></th></tr>
+            <tr>
+                <th><label for="crm_nominatim_contact_email">Email de contacto (Nominatim)</label></th>
+                <td>
+                    <input type="email" id="crm_nominatim_contact_email" name="crm_nominatim_contact_email" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_nominatim_contact_email', '')); ?>" placeholder="contacto@ecovolt.es">
+                    <p class="description">Nominatim (OpenStreetMap), el servicio gratuito que geocodifica las direcciones de las instalaciones, exige identificarse con un contacto en cada petición. Sin esto configurado, las peticiones igualmente se envían pero sin forma de que Nominatim te avise si hay algún problema.</p>
+                </td>
+            </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Materiales e instalaciones (v1.20.37)</h3></th></tr>
+            <tr>
+                <th><label for="crm_proveedor_email">Email del proveedor</label></th>
+                <td>
+                    <input type="email" id="crm_proveedor_email" name="crm_proveedor_email" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_proveedor_email', '')); ?>" placeholder="pedidos@proveedor.com">
+                    <p class="description">A esta dirección se envía el aviso al pulsar "Notificar proveedor" en la ficha de una instalación, con la lista de materiales aún pendientes de recibir. De momento un único proveedor para todas las instalaciones.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_holded_warehouse_id">ID de almacén (Holded)</label></th>
+                <td>
+                    <input type="text" id="crm_holded_warehouse_id" name="crm_holded_warehouse_id" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_holded_warehouse_id', '')); ?>" placeholder="69c975f9f8c5399a6b07ac16 (Almacén Ecovolt, por defecto)">
+                    <p class="description">Contra qué almacén de Holded se comprueba el stock de cada línea en la ficha. Déjalo en blanco para usar el Almacén Ecovolt por defecto.</p>
+                </td>
+            </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Panel del instalador (v1.20.41)</h3></th></tr>
+            <tr>
+                <th><label for="crm_instalador_panel_brand">Nombre de marca</label></th>
+                <td><input type="text" id="crm_instalador_panel_brand" name="crm_instalador_panel_brand" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_instalador_panel_brand', 'Ecovolt')); ?>"></td>
+            </tr>
+            <tr>
+                <th><label for="crm_instalador_panel_color">Color de acento</label></th>
+                <td><input type="text" id="crm_instalador_panel_color" name="crm_instalador_panel_color" value="<?php echo esc_attr((string) get_option('crm_instalador_panel_color', '#15803d')); ?>" placeholder="#15803d"></td>
+            </tr>
+            <tr>
+                <th><label for="crm_instalador_panel_logo_url">URL del logo</label></th>
+                <td>
+                    <input type="text" id="crm_instalador_panel_logo_url" name="crm_instalador_panel_logo_url" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_instalador_panel_logo_url', CRM_PLUGIN_URL . 'img/ecovolt-logo.jpg')); ?>">
+                    <p class="description">Se usa en la cabecera del panel que ven los instaladores (no en el resto del CRM).</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_inst_extra_max">Máximo por partida extra (€)</label></th>
+                <td>
+                    <input type="number" step="0.01" min="0" id="crm_inst_extra_max" name="crm_inst_extra_max" value="<?php echo esc_attr((string) get_option('crm_inst_extra_max', 500)); ?>">
+                    <p class="description">Importe máximo que un instalador puede declarar en una sola partida extra desde su panel (pendiente de validar por el jefe de instalaciones). Por encima de esto, el formulario no le deja enviarla.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_inst_cierre_requiere_aprobacion">Cierre de instalación requiere aprobación</label></th>
+                <td>
+                    <label>
+                        <input type="checkbox" id="crm_inst_cierre_requiere_aprobacion" name="crm_inst_cierre_requiere_aprobacion" value="1" <?php checked(get_option('crm_inst_cierre_requiere_aprobacion', false)); ?>>
+                        El cierre que declara el instalador (conformidad + observaciones + fotos) queda pendiente hasta que un jefe de instalaciones lo valide
+                    </label>
+                    <p class="description">Desmarcado (por defecto): el cierre del instalador es definitivo al momento — la instalación pasa a "Finalizada" directamente.</p>
+                </td>
+            </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Aviso de materiales pendientes (v1.20.62)</h3></th></tr>
+            <tr>
+                <th><label for="crm_inst_aviso_dias_antes">Avisar con antelación</label></th>
+                <td>
+                    <input type="number" min="0" step="1" id="crm_inst_aviso_dias_antes" name="crm_inst_aviso_dias_antes" value="<?php echo esc_attr((string) get_option('crm_inst_aviso_dias_antes', 3)); ?>" style="width:70px;"> días antes de la visita agendada
+                    <p class="description">Si a esa distancia de la fecha de la visita todavía quedan materiales de Holded sin marcar "Recibido", se avisa automáticamente al jefe de instalaciones — cada día hasta que se resuelva.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_inst_aviso_hora">Hora del aviso</label></th>
+                <td>
+                    <select id="crm_inst_aviso_hora" name="crm_inst_aviso_hora">
+                        <?php $hora_actual = (int) get_option('crm_inst_aviso_hora', 9); ?>
+                        <?php for ($h = 0; $h <= 23; $h++) : ?>
+                            <option value="<?php echo esc_attr($h); ?>" <?php selected($hora_actual, $h); ?>><?php echo esc_html(sprintf('%02d:00', $h)); ?></option>
+                        <?php endfor; ?>
+                    </select>
+                    <p class="description">Hora del servidor a la que se comprueba y se envía (aproximada — depende de que WP-Cron tenga tráfico esa hora).</p>
+                </td>
+            </tr>
+            <tr>
+                <th>Canales</th>
+                <td>
+                    <label style="display:block; margin-bottom:6px;">
+                        <input type="checkbox" name="crm_inst_aviso_canal_inapp" value="1" <?php checked(get_option('crm_inst_aviso_canal_inapp', true)); ?>>
+                        Notificación in-app (campana)
+                    </label>
+                    <label style="display:block; margin-bottom:6px;">
+                        <input type="checkbox" name="crm_inst_aviso_canal_email" value="1" <?php checked(get_option('crm_inst_aviso_canal_email', true)); ?>>
+                        Email
+                    </label>
+                    <label style="display:block;">
+                        <input type="checkbox" name="crm_inst_aviso_canal_whatsapp" value="1" <?php checked(get_option('crm_inst_aviso_canal_whatsapp', false)); ?>>
+                        WhatsApp
+                    </label>
+                    <p class="description">Solo envía algo si abajo hay credenciales de WhatsApp Business configuradas — si no, se ignora sin dar error.</p>
+                </td>
+            </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">WhatsApp Business — Meta Cloud API (v1.20.87)</h3></th></tr>
+            <tr>
+                <td colspan="2" style="padding-top:0;">
+                    <p class="description" style="margin:0 0 10px;">
+                        Requiere una cuenta de Meta Business verificada, un número de teléfono dedicado a WhatsApp Business, y al menos una <strong>plantilla de mensaje aprobada por Meta</strong> por cada aviso (no se puede enviar texto libre a un cliente que no te ha escrito antes). Sin esto configurado, el CRM sigue funcionando exactamente igual que hoy — nunca bloquea nada.
+                    </p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_whatsapp_phone_number_id">Phone Number ID</label></th>
+                <td>
+                    <input type="text" id="crm_whatsapp_phone_number_id" name="crm_whatsapp_phone_number_id" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_phone_number_id', '')); ?>" placeholder="Identificador del número, del panel de Meta for Developers">
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_whatsapp_api_token">Token de acceso</label></th>
+                <td>
+                    <input type="password" id="crm_whatsapp_api_token" name="crm_whatsapp_api_token" class="regular-text" value="" autocomplete="off" placeholder="<?php echo crm_whatsapp_configurado() ? '•••••••••••••••• (token guardado, deja en blanco para no cambiarlo)' : 'Pega aquí el token de acceso de Meta Cloud API'; ?>">
+                    <p class="description">Por seguridad nunca se muestra el valor guardado; deja el campo vacío al guardar para conservarlo.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_whatsapp_template_aviso_materiales">Plantilla — aviso de materiales</label></th>
+                <td>
+                    <input type="text" id="crm_whatsapp_template_aviso_materiales" name="crm_whatsapp_template_aviso_materiales" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_aviso_materiales', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
+                    <p class="description">Nombre exacto (tal cual está en Meta Business Manager) de la plantilla para el aviso de materiales pendientes a jefes de instalaciones.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_whatsapp_template_validar_extra">Plantilla — validar partida extra</label></th>
+                <td>
+                    <input type="text" id="crm_whatsapp_template_validar_extra" name="crm_whatsapp_template_validar_extra" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_validar_extra', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
+                    <p class="description">Nombre exacto de la plantilla que recibe el cliente para aprobar/rechazar una partida extra.</p>
+                </td>
+            </tr>
         </table>
         <?php submit_button(); ?>
+    </form>
+
+    <?php if (isset($_GET['holded_test'])): ?>
+        <?php if ($_GET['holded_test'] === 'ok'): ?>
+            <div class="notice notice-success"><p>Conexión con Holded correcta. Presupuestos encontrados en la primera página: <?php echo esc_html((int) ($_GET['count'] ?? 0)); ?>.</p></div>
+        <?php else: ?>
+            <div class="notice notice-error"><p>Fallo al conectar con Holded: <?php echo esc_html(wp_unslash($_GET['holded_test'])); ?></p></div>
+        <?php endif; ?>
+    <?php endif; ?>
+    <p>
+        <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=crm_holded_test_connection'), 'crm_holded_test_connection')); ?>">Probar conexión con Holded</a>
+    </p>
+
+    <?php if (isset($_GET['geocode_test'])): ?>
+        <?php if ($_GET['geocode_test'] === 'ok'): ?>
+            <div class="notice notice-success"><p>Geocodificado correctamente: lat <?php echo esc_html((string) ($_GET['lat'] ?? '')); ?>, lng <?php echo esc_html((string) ($_GET['lng'] ?? '')); ?>.</p></div>
+        <?php else: ?>
+            <div class="notice notice-error"><p>Fallo al geocodificar: <?php echo esc_html(wp_unslash($_GET['geocode_test'])); ?></p></div>
+        <?php endif; ?>
+    <?php endif; ?>
+    <form method="get" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+        <input type="hidden" name="action" value="crm_geocode_test">
+        <?php wp_nonce_field('crm_geocode_test', '_wpnonce', true, true); ?>
+        <input type="text" name="address" class="regular-text" placeholder="Calle Mayor 1, León" value="<?php echo esc_attr((string) ($_GET['address'] ?? '')); ?>">
+        <button type="submit" class="button">Probar geocodificación</button>
     </form>
 
     <h2>Mantenimiento de logs</h2>
@@ -586,6 +908,49 @@ add_action('admin_post_crm_run_logs_maintenance', function () {
     check_admin_referer('crm_run_logs_maintenance');
     crm_logs_run_maintenance();
     wp_safe_redirect(add_query_arg(['page' => 'crm-settings', 'maintenance' => 'done'], admin_url('admin.php')));
+    exit;
+});
+
+add_action('admin_post_crm_holded_test_connection', function () {
+    if (!current_user_can('crm_admin')) {
+        wp_die('Sin permisos', 403);
+    }
+    check_admin_referer('crm_holded_test_connection');
+
+    delete_transient('crm_holded_estimates_first');
+    $result = crm_holded_get_estimates(1);
+
+    $redirect_args = ['page' => 'crm-settings'];
+    if (is_wp_error($result)) {
+        $redirect_args['holded_test'] = $result->get_error_message();
+    } else {
+        $redirect_args['holded_test'] = 'ok';
+        $redirect_args['count']       = count($result);
+    }
+
+    wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+    exit;
+});
+
+add_action('admin_post_crm_geocode_test', function () {
+    if (!current_user_can('crm_admin')) {
+        wp_die('Sin permisos', 403);
+    }
+    check_admin_referer('crm_geocode_test');
+
+    $address = sanitize_text_field(wp_unslash($_GET['address'] ?? ''));
+    $result  = crm_geo_geocode_address($address);
+
+    $redirect_args = ['page' => 'crm-settings', 'address' => $address];
+    if (is_wp_error($result)) {
+        $redirect_args['geocode_test'] = $result->get_error_message();
+    } else {
+        $redirect_args['geocode_test'] = 'ok';
+        $redirect_args['lat']          = $result['lat'];
+        $redirect_args['lng']          = $result['lng'];
+    }
+
+    wp_safe_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
     exit;
 });
 
@@ -811,5 +1176,49 @@ function crm_admin_leads_mk_run_sync_post() {
     }
     wp_safe_redirect(add_query_arg(['page' => 'crm-leads-mk', 'sync' => rawurlencode($msg)], admin_url('admin.php')));
     exit;
+}
+
+/**
+ * v1.20.87: campo de WhatsApp en el perfil de wp-admin (profile.php), para
+ * que jefe_instalaciones/crm_admin puedan guardar su número — el instalador
+ * ya lo hace desde "Mi perfil" (panel branded, sin acceso a wp-admin); estos
+ * roles sí entran a wp-admin, así que reutilizan la pantalla estándar en vez
+ * de duplicar una página propia. Mismo user-meta `crm_whatsapp` para los dos
+ * casos — es el mismo dato de perfil independientemente de por dónde se edite.
+ */
+add_action('show_user_profile', 'crm_admin_render_whatsapp_profile_field');
+add_action('edit_user_profile', 'crm_admin_render_whatsapp_profile_field');
+function crm_admin_render_whatsapp_profile_field($user) {
+    if (!in_array('jefe_instalaciones', (array) $user->roles, true) && !in_array('crm_admin', (array) $user->roles, true) && !in_array('administrator', (array) $user->roles, true)) {
+        return;
+    }
+    $whatsapp = (string) get_user_meta($user->ID, 'crm_whatsapp', true);
+    ?>
+    <h2>CRM — Avisos de instalaciones</h2>
+    <table class="form-table">
+        <tr>
+            <th><label for="crm_whatsapp">WhatsApp</label></th>
+            <td>
+                <input type="text" id="crm_whatsapp" name="crm_whatsapp" class="regular-text" value="<?php echo esc_attr($whatsapp); ?>" placeholder="+34600000000">
+                <p class="description">Número al que llegarían los avisos de materiales pendientes por WhatsApp, si ese canal está activado en Ajustes. En blanco, no recibes nada por este canal (el email sigue funcionando igual).</p>
+            </td>
+        </tr>
+    </table>
+    <?php
+}
+add_action('personal_options_update', 'crm_admin_guardar_whatsapp_profile_field');
+add_action('edit_user_profile_update', 'crm_admin_guardar_whatsapp_profile_field');
+function crm_admin_guardar_whatsapp_profile_field($user_id) {
+    if (!current_user_can('edit_user', $user_id)) {
+        return;
+    }
+    if (!isset($_POST['crm_whatsapp'])) {
+        return;
+    }
+    $whatsapp = sanitize_text_field(wp_unslash($_POST['crm_whatsapp']));
+    if ($whatsapp !== '' && !preg_match('/^[0-9+\s()-]{6,20}$/', $whatsapp)) {
+        return; // Mismo criterio que el perfil del instalador: si no parece un teléfono, no se guarda nada raro.
+    }
+    update_user_meta($user_id, 'crm_whatsapp', $whatsapp);
 }
 

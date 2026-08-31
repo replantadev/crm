@@ -86,8 +86,11 @@ function crm_shortcode_mi_agenda($atts = []) {
 
         <h2 style="display:flex; align-items:center; gap:10px; margin-top:0;">
             <?php echo function_exists('crm_icon') ? crm_icon('calendar', 22) : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
-            Mi agenda
+            <?php echo $is_admin ? 'Agenda' : 'Mi agenda'; ?>
         </h2>
+        <?php if ($is_admin) : ?>
+            <p style="color:#6b7280; font-size:13px; margin-top:-6px;">Todas las visitas comerciales y citas de instalación, de todo el equipo.</p>
+        <?php endif; ?>
 
         <?php if ($msg === 'created'): ?>
             <div style="padding:10px; background:#e6ffed; border:1px solid #5ad06e; border-radius:6px; margin-bottom:12px;">Visita creada correctamente.</div>
@@ -223,6 +226,50 @@ function crm_shortcode_mi_agenda($atts = []) {
                         'sector'    => (string) $v['sector'],
                         'asignado'  => $com_user ? $com_user->display_name : '',
                         'client_id' => $cid,
+                    ],
+                ];
+            }
+        }
+
+        // v1.20.67: para administrator/crm_admin, la agenda combina también
+        // las citas del módulo de instalaciones (crm_instalacion_agenda,
+        // ajena a crm_visitas) — mismo calendario, color propio, para tener
+        // "el global de todo" en un solo sitio en vez de dos vistas sueltas.
+        if ($is_admin && function_exists('crm_inst_table_agenda')) {
+            global $wpdb;
+            $tabla_agenda_inst = crm_inst_table_agenda();
+            $tabla_inst_inst   = crm_inst_table_instalaciones();
+            $client_table_inst = $wpdb->prefix . 'crm_clients';
+            $rows_inst = $wpdb->get_results($wpdb->prepare(
+                "SELECT a.instalacion_id, a.fecha_cita, i.estado AS inst_estado, c.cliente_nombre
+                 FROM {$tabla_agenda_inst} a
+                 INNER JOIN {$tabla_inst_inst} i ON i.id = a.instalacion_id
+                 LEFT JOIN {$client_table_inst} c ON c.id = i.client_id
+                 WHERE a.fecha_cita BETWEEN %s AND %s",
+                $args_cal['desde'] . ' 00:00:00',
+                $args_cal['hasta'] . ' 23:59:59'
+            ), ARRAY_A);
+            foreach ((array) $rows_inst as $ri) {
+                try {
+                    $dt_start = new DateTime($ri['fecha_cita']);
+                    $start = $dt_start->format('Y-m-d\TH:i:s');
+                    $dt_end = clone $dt_start;
+                    $dt_end->modify('+60 minutes');
+                    $end = $dt_end->format('Y-m-d\TH:i:s');
+                } catch (Exception $e) {
+                    continue;
+                }
+                $eventos_cal[] = [
+                    'id'              => 'inst-' . $ri['instalacion_id'],
+                    'title'           => 'Instalación — ' . ($ri['cliente_nombre'] ?: ('#' . $ri['instalacion_id'])),
+                    'start'           => $start,
+                    'end'             => $end,
+                    'backgroundColor' => '#7c3aed',
+                    'borderColor'     => '#7c3aed',
+                    'extendedProps'   => [
+                        'tipo'           => 'instalacion',
+                        'instalacion_id' => (int) $ri['instalacion_id'],
+                        'estado'         => $ri['inst_estado'],
                     ],
                 ];
             }
@@ -395,11 +442,14 @@ function crm_shortcode_mi_agenda($atts = []) {
         <div class="crm-agenda-view crm-agenda-view-calendar" style="display:none;">
             <div id="crm-agenda-calendar" style="background:#fff; padding:14px; border:1px solid #e2e8f0; border-radius:6px;"></div>
             <p style="font-size:12px; color:#64748b; margin-top:8px;">
-                Pulsa una visita para abrir la ficha del cliente. Colores:
+                Pulsa un evento para abrir su ficha. Colores:
                 <span style="display:inline-block; width:10px; height:10px; background:#3b82f6; border-radius:50%; vertical-align:middle;"></span> programada ·
                 <span style="display:inline-block; width:10px; height:10px; background:#10b981; border-radius:50%; vertical-align:middle;"></span> realizada ·
-                <span style="display:inline-block; width:10px; height:10px; background:#f59e0b; border-radius:50%; vertical-align:middle;"></span> no se present\u00f3 ·
+                <span style="display:inline-block; width:10px; height:10px; background:#f59e0b; border-radius:50%; vertical-align:middle;"></span> no se presentó ·
                 <span style="display:inline-block; width:10px; height:10px; background:#94a3b8; border-radius:50%; vertical-align:middle;"></span> cancelada
+                <?php if ($is_admin) : ?>
+                    · <span style="display:inline-block; width:10px; height:10px; background:#7c3aed; border-radius:50%; vertical-align:middle;"></span> cita de instalación
+                <?php endif; ?>
             </p>
         </div>
 
@@ -409,6 +459,7 @@ function crm_shortcode_mi_agenda($atts = []) {
             var STORAGE_KEY = 'crmAgendaView';
             var events = <?php echo $eventos_json; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>;
             var fichaUrl = <?php echo wp_json_encode(home_url('/editar-cliente/')); ?>;
+            var instFichaUrl = <?php echo wp_json_encode(home_url('/instalacion/')); ?>;
 
             var wrap = document.querySelector('.crm-mi-agenda-wrap');
             if (!wrap) return;
@@ -445,7 +496,12 @@ function crm_shortcode_mi_agenda($atts = []) {
                             eventTimeFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
                             eventClick: function(info){
                                 info.jsEvent.preventDefault();
-                                var cid = info.event.extendedProps.client_id;
+                                var p = info.event.extendedProps;
+                                if (p.tipo === 'instalacion') {
+                                    window.location.href = instFichaUrl + '?id=' + p.instalacion_id;
+                                    return;
+                                }
+                                var cid = p.client_id;
                                 if (cid) {
                                     var sep = fichaUrl.indexOf('?') === -1 ? '?' : '&';
                                     window.location.href = fichaUrl + sep + 'client_id=' + cid;

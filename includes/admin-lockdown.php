@@ -33,24 +33,53 @@ if (!defined('ABSPATH')) {
  *  3. URL de la página configurada como "Página de login" (crm_login_page_id).
  *  4. home_url('/') como último recurso.
  */
+/**
+ * URL del panel de frontend que corresponde al rol del usuario, o '' si ese
+ * rol no tiene uno configurado (administrator, por ejemplo). Única fuente
+ * de este mapeo — la usan tanto el bloqueo de wp-admin de este archivo como
+ * el redirect de login en acceso.php, para no mantener la lista de roles
+ * en dos sitios.
+ *
+ * @param WP_User $user
+ * @return string
+ */
+function crm_get_role_panel_url($user) {
+    if (!$user || empty($user->ID)) {
+        return '';
+    }
+    $roles = (array) $user->roles;
+
+    $url_admin      = trim((string) get_option('crm_url_panel_admin', ''));
+    $url_comercial  = trim((string) get_option('crm_url_panel_comercial', ''));
+    $url_agenda     = trim((string) get_option('crm_url_mi_agenda', ''));
+    // v1.20.43: a diferencia de las anteriores (páginas que hay que crear y
+    // pegar a mano), la del instalador se autocrea con slug fijo — así que
+    // el resguardo aquí es la URL real, no '', y funciona sin que nadie
+    // tenga que abrir Ajustes y guardar primero para que exista la opción.
+    $url_instalador = trim((string) get_option('crm_url_panel_instalador', home_url('/panel-instalador/')));
+
+    if (in_array('crm_admin', $roles, true)) {
+        return $url_admin;
+    }
+    if (in_array('comercial', $roles, true)) {
+        return $url_comercial !== '' ? $url_comercial : $url_agenda;
+    }
+    if (in_array('visitador', $roles, true)) {
+        return $url_agenda;
+    }
+    if (in_array('instalador', $roles, true)) {
+        // v1.20.41 — Fase 4: instalador puro va a su propio panel, nunca al
+        // resto del CRM (jefe_instalaciones sí sigue usando /instalaciones/).
+        return $url_instalador;
+    }
+    return '';
+}
+
 function crm_get_redirect_url_for_user($user) {
     if (!$user || empty($user->ID)) {
         return home_url('/');
     }
-    $roles = (array) $user->roles;
-
-    $url_admin     = trim((string) get_option('crm_url_panel_admin', ''));
-    $url_comercial = trim((string) get_option('crm_url_panel_comercial', ''));
-    $url_agenda    = trim((string) get_option('crm_url_mi_agenda', ''));
-
-    $candidate = '';
-    if (in_array('crm_admin', $roles, true)) {
-        $candidate = $url_admin;
-    } elseif (in_array('comercial', $roles, true)) {
-        $candidate = $url_comercial !== '' ? $url_comercial : $url_agenda;
-    } elseif (in_array('visitador', $roles, true)) {
-        $candidate = $url_agenda;
-    }
+    $candidate = crm_get_role_panel_url($user);
     if ($candidate !== '') {
         return $candidate;
     }
@@ -214,6 +243,13 @@ function crm_register_redirect_urls_setting() {
         'type'              => 'string',
         'sanitize_callback' => 'esc_url_raw',
         'default'           => '',
+    ]);
+    // v1.20.41 — Fase 4: pre-rellenada porque la página se auto-crea
+    // (page-bootstrap.php), a diferencia de las anteriores que exigen pegarla a mano.
+    register_setting('crm_settings', 'crm_url_panel_instalador', [
+        'type'              => 'string',
+        'sanitize_callback' => 'esc_url_raw',
+        'default'           => home_url('/panel-instalador/'),
     ]);
 }
 

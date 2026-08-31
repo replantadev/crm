@@ -38,6 +38,16 @@ function crm_app_shell_get_settings() {
             'crm',
             'mi-agenda',
             'mis-leads',
+            'instalaciones',
+            'nueva-instalacion',
+            'instalacion',
+            // v1.20.46: el instalador entra al mismo App Shell que el resto de
+            // roles (misma topbar, variante clara con su marca) en vez de vivir
+            // en una página 100% aparte — ver crm_app_shell_render_topbar().
+            'panel-instalador',
+            'calendario-instalador',
+            'notificaciones',
+            'mi-perfil-instalador',
         ],
         'brand_label' => 'CRM',
     ];
@@ -78,6 +88,13 @@ function crm_app_shell_trigger_shortcodes() {
         'asignacion_leads_mk',
         'crm_guia_admin',
         'crm_guia_comerciales',
+        'crm_inst_nueva_desde_presupuesto',
+        'crm_inst_listado',
+        'crm_inst_ficha',
+        'crm_inst_panel_instalador',
+        'crm_inst_panel_calendario',
+        'crm_inst_panel_perfil',
+        'crm_notificaciones_lista',
     ]);
 }
 
@@ -108,20 +125,19 @@ add_action('after_setup_theme', function () {
     }
 });
 
-add_action('wp_head', function () {
-    if (!crm_app_shell_is_modal_request()) {
-        return;
-    }
-    // CSS muy especifico para neutralizar chrome del tema dentro del modal.
-    // Cubre Astra (.ast-*, #masthead) y selectores genericos de WP.
-    ?>
-    <style id="crm-modal-chromeless">
-    html, body {
-        margin: 0 !important;
-        padding: 0 !important;
-        background: #fff !important;
-    }
-    html.wp-toolbar { padding-top: 0 !important; }
+/**
+ * Selectores para anular el chrome del tema (Astra: .ast-*, #masthead, y
+ * genéricos de WP) — probados en el modo "chromeless" del modal. Extraído a
+ * función para que cualquier página 100% propia del CRM (el modal, el panel
+ * del instalador...) pueda ocultar el mismo menú de Astra sin duplicar la
+ * lista de selectores en cada sitio que lo necesite.
+ *
+ * @param bool $reset_layout Si también se resetean paddings/márgenes del
+ *             contenedor de contenido (crm-shell-main). Los que no usan ese
+ *             wrapper (p.ej. el panel del instalador) pasan false.
+ */
+function crm_app_shell_chromeless_css($reset_layout = true) {
+    $css = "
     #wpadminbar,
     header.site-header,
     #masthead,
@@ -140,18 +156,40 @@ add_action('wp_head', function () {
     .crm-topbar {
         display: none !important;
     }
-    .ast-container,
-    .site-content,
-    #content,
-    .ast-row,
-    .entry-content,
-    .ast-article-single,
-    main {
-        padding: 0 !important;
-        margin: 0 !important;
-        max-width: 100% !important;
+    html.wp-toolbar { padding-top: 0 !important; }
+    ";
+    if ($reset_layout) {
+        $css .= "
+        .ast-container,
+        .site-content,
+        #content,
+        .ast-row,
+        .entry-content,
+        .ast-article-single,
+        main {
+            padding: 0 !important;
+            margin: 0 !important;
+            max-width: 100% !important;
+        }
+        body.crm-app-mode .crm-shell-main { padding-top: 0 !important; }
+        ";
     }
-    body.crm-app-mode .crm-shell-main { padding-top: 0 !important; }
+    return $css;
+}
+
+add_action('wp_head', function () {
+    if (!crm_app_shell_is_modal_request()) {
+        return;
+    }
+    // CSS muy especifico para neutralizar chrome del tema dentro del modal.
+    ?>
+    <style id="crm-modal-chromeless">
+    html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+    }
+    <?php echo crm_app_shell_chromeless_css(true); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
     </style>
     <?php
 }, 9999);
@@ -234,6 +272,102 @@ add_action('wp_footer', function () {
 }, 999);
 
 /**
+ * Busca una página publicada que contenga el shortcode dado y devuelve su
+ * permalink. Se usa para resolver el enlace a las guías de uso sin depender
+ * de un slug fijo (las páginas de guía las crea el propio usuario en
+ * WordPress, el slug puede ser cualquiera).
+ *
+ * Cacheado 12h en transient porque es una query LIKE sobre post_content.
+ *
+ * @param string $shortcode_tag Nombre del shortcode, p.ej. 'crm_guia_admin'.
+ * @return string URL o '' si no se encontró ninguna página.
+ */
+function crm_app_shell_find_page_url_by_shortcode($shortcode_tag) {
+    $transient_key = 'crm_guia_url_' . $shortcode_tag;
+    $cached = get_transient($transient_key);
+    if ($cached !== false) {
+        return $cached;
+    }
+    global $wpdb;
+    $post_id = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT ID FROM {$wpdb->posts}
+         WHERE post_type = 'page' AND post_status = 'publish'
+         AND post_content LIKE %s
+         ORDER BY ID ASC LIMIT 1",
+        '%[' . $wpdb->esc_like($shortcode_tag) . '%'
+    ));
+    $url = $post_id ? (string) get_permalink($post_id) : '';
+    set_transient($transient_key, $url, 12 * HOUR_IN_SECONDS);
+    return $url;
+}
+
+/**
+ * Invalida la caché de URLs de guía cuando se guarda cualquier página, para
+ * que un cambio de slug o una guía movida/creada se refleje sin esperar
+ * las 12h del transient.
+ */
+add_action('save_post_page', function () {
+    delete_transient('crm_guia_url_crm_guia_admin');
+    delete_transient('crm_guia_url_crm_guia_comerciales');
+});
+
+/**
+ * Devuelve la URL de la guía de uso que corresponde al usuario actual, según
+ * el mismo criterio de acceso que usan los shortcodes de guía
+ * (crm_guia_admin_shortcode / crm_guia_comerciales_shortcode en guia-*.php):
+ * administrator/crm_admin/jefe_instalaciones → guía de administrador,
+ * comercial/visitador/instalador → guía de usuario.
+ *
+ * @return string URL o '' si el usuario no tiene guía o no existe la página.
+ */
+function crm_app_shell_guia_url() {
+    if (!is_user_logged_in()) {
+        return '';
+    }
+    $user  = wp_get_current_user();
+    $roles = (array) $user->roles;
+    $is_full_admin = function_exists('crm_user_is_admin') && crm_user_is_admin();
+    $is_jefe_inst  = !$is_full_admin && in_array('jefe_instalaciones', $roles, true);
+
+    if ($is_full_admin || $is_jefe_inst) {
+        return crm_app_shell_find_page_url_by_shortcode('crm_guia_admin');
+    }
+    if (array_intersect(['comercial', 'visitador', 'instalador'], $roles)) {
+        return crm_app_shell_find_page_url_by_shortcode('crm_guia_comerciales');
+    }
+    return '';
+}
+
+/**
+ * Pie de página propio del App Shell: un único enlace a "Guía de uso", que
+ * resuelve automáticamente a la guía que le corresponde al rol del usuario
+ * (ver crm_app_shell_guia_url()). Sustituye a mantener el enlace a mano en
+ * el footer del tema, que además queda oculto en las páginas del CRM.
+ */
+add_action('wp_footer', function () {
+    if (!crm_app_shell_is_crm_page()) {
+        return;
+    }
+    $guia_url = crm_app_shell_guia_url();
+    if ($guia_url === '') {
+        return;
+    }
+    ?>
+    <footer class="crm-shell-footer">
+        <a href="<?php echo esc_url($guia_url); ?>">
+            <?php echo function_exists('crm_icon') ? crm_icon('file-text', 14) : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+            <span>Guía de uso</span>
+        </a>
+    </footer>
+    <style>
+    .crm-shell-footer { display:flex; justify-content:center; padding:18px 20px 28px; }
+    .crm-shell-footer a { display:inline-flex; align-items:center; gap:6px; color:#9ca3af; text-decoration:none; font-size:12px; font-weight:500; }
+    .crm-shell-footer a:hover { color:#4a5568; text-decoration:underline; }
+    </style>
+    <?php
+}, 1000);
+
+/**
  * Lista de items del menú del shell. Filtrable por rol.
  *
  * Cada item: label, slug (fallback), icon, roles (whitelist ESTRICTA de roles
@@ -300,17 +434,57 @@ function crm_app_shell_menu_items() {
             'roles'  => ['comercial', 'visitador'],
         ],
         [
+            // v1.20.67: administrator/crm_admin ven la MISMA página con otra
+            // etiqueta — ahí ya ven todas las visitas (sin filtro) más las
+            // citas de instalación combinadas (crm_shortcode_mi_agenda()), así
+            // que "Mi agenda" no describe lo que ven; "Agenda" sí.
+            'label'  => 'Agenda',
+            'slug'   => 'mi-agenda',
+            'option' => 'crm_url_mi_agenda',
+            'icon'   => 'calendar',
+            'roles'  => ['administrator', 'crm_admin'],
+        ],
+        [
             'label'  => 'Mi agenda',
             'slug'   => 'mi-agenda',
             'option' => 'crm_url_mi_agenda',
             'icon'   => 'calendar',
-            'roles'  => ['administrator', 'crm_admin', 'comercial', 'visitador'],
+            'roles'  => ['comercial', 'visitador'],
         ],
         [
             'label' => 'Panel',
             'slug'  => 'panel-de-control',
             'icon'  => 'gear',
             'roles' => ['administrator', 'crm_admin'],
+        ],
+        [
+            // v1.20.27 — Fase 2 del módulo de instalaciones. Apunta al listado;
+            // la alta desde presupuesto se abre con el botón "+ Nueva instalación"
+            // de esa misma pantalla, no hay submenú anidado en esta topbar.
+            'label' => 'Instalaciones',
+            'slug'  => 'instalaciones',
+            'icon'  => 'map-pin',
+            'roles' => ['administrator', 'crm_admin', 'jefe_instalaciones'],
+        ],
+        [
+            // v1.20.46 — el instalador puro entra al mismo App Shell que el
+            // resto de roles (antes vivía en una página aparte sin menú).
+            'label' => 'Mis instalaciones',
+            'slug'  => 'panel-instalador',
+            'icon'  => 'map-pin',
+            'roles' => ['instalador'],
+        ],
+        [
+            'label' => 'Calendario',
+            'slug'  => 'calendario-instalador',
+            'icon'  => 'calendar',
+            'roles' => ['instalador'],
+        ],
+        [
+            'label' => 'Mi perfil',
+            'slug'  => 'mi-perfil-instalador',
+            'icon'  => 'gear',
+            'roles' => ['instalador'],
         ],
     ];
 
@@ -407,11 +581,33 @@ function crm_app_shell_render_topbar() {
         }
     }
 
+    // v1.20.46: el instalador puro ve la misma topbar, pero con la marca del
+    // panel de instalador (Ecovolt hoy) en vez del logo genérico del CRM, y
+    // en una variante clara ("aunque blanca") — reutiliza los ajustes que ya
+    // existían para la página aparte del instalador (crm_instalador_panel_*).
+    $is_instalador = $user && in_array('instalador', (array) $user->roles, true);
+    $accent = '';
+    if ($is_instalador && function_exists('crm_inst_panel_get_settings')) {
+        $inst = crm_inst_panel_get_settings();
+        if ($inst['brand'] !== '') {
+            $brand_label = $inst['brand'];
+        }
+        if ($inst['logo'] !== '') {
+            $logo_url = $inst['logo'];
+        }
+        $accent = $inst['color'] !== '' ? $inst['color'] : '#15803d';
+        // v1.20.55: el logo debe llevar a "Mis instalaciones", no a la home
+        // genérica del sitio — un instalador no tiene nada que hacer ahí.
+        $home_url = home_url('/panel-instalador/');
+    }
+    $topbar_class = 'crm-topbar' . ($is_instalador ? ' crm-topbar--light' : '');
+    $topbar_style = $accent !== '' ? ' style="--crm-panel-inst-accent:' . esc_attr($accent) . ';"' : '';
+
     $icon = function ($name, $size = 16) {
         return function_exists('crm_icon') ? crm_icon($name, $size) : '';
     };
     ?>
-    <header class="crm-topbar" role="banner">
+    <header class="<?php echo esc_attr($topbar_class); ?>" role="banner"<?php echo $topbar_style; /* phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped */ ?>>
         <a href="<?php echo esc_url($home_url); ?>" class="crm-topbar__brand">
             <span class="crm-topbar__logo">
                 <?php if ($logo_url): ?>
@@ -439,6 +635,9 @@ function crm_app_shell_render_topbar() {
             <?php if ($user && $user->ID):
                 $role_label = function_exists('crm_user_role_label') ? crm_user_role_label() : '';
             ?>
+                <?php if (function_exists('crm_notificaciones_render_campana')) {
+                    echo crm_notificaciones_render_campana(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+                } ?>
                 <span class="crm-topbar__avatar"><?php echo esc_html($iniciales); ?></span>
                 <span class="crm-topbar__user-meta">
                     <span class="crm-topbar__user-name"><?php echo esc_html($user->display_name); ?></span>

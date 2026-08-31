@@ -685,6 +685,60 @@ function crm_admin_panel_widget() {
                 <button type="button" id="auto-refresh-toggle" class="crm-btn">Auto-refresh: OFF</button>
             </div>
         </div>
+
+        <!-- Holded (Ecovolt) — v1.20.67 -->
+        <div class="crm-panel-section">
+            <h3>Holded (Ecovolt)</h3>
+            <?php if (!function_exists('crm_holded_is_configured') || !crm_holded_is_configured()) : ?>
+                <p style="color: rgb(107,114,128);">Configura la clave de API de Holded en Ajustes para ver estas estadísticas.</p>
+            <?php else :
+                $holded_stats = function_exists('crm_holded_get_resumen_stats') ? crm_holded_get_resumen_stats() : null;
+                if (is_wp_error($holded_stats)) : ?>
+                    <p style="color: rgb(153,27,27);">No se pudo consultar Holded: <?php echo esc_html($holded_stats->get_error_message()); ?></p>
+                <?php elseif ($holded_stats) : ?>
+                    <div class="crm-stats-grid">
+                        <div class="crm-stat-card">
+                            <h4><?php echo (int) $holded_stats['total_clientes']; ?></h4>
+                            <p>Clientes en Holded</p>
+                        </div>
+                        <div class="crm-stat-card">
+                            <h4><?php echo (int) $holded_stats['total_presupuestos']; ?></h4>
+                            <p>Presupuestos totales</p>
+                        </div>
+                        <div class="crm-stat-card">
+                            <h4><?php echo (int) $holded_stats['con_instalacion']; ?></h4>
+                            <p>Con instalación creada</p>
+                        </div>
+                        <div class="crm-stat-card">
+                            <h4><?php echo (int) $holded_stats['sin_instalacion']; ?></h4>
+                            <p>Sin instalación todavía</p>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
+                <h4 style="margin: 24px 0 10px; color: rgb(30,41,59);">Buscar / importar contacto de Holded</h4>
+                <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+                    <input type="text" id="crm-holded-buscar-contacto" placeholder="Nombre, email o CIF…" style="flex:1; min-width:220px; padding:8px 10px; border:1px solid rgb(203,213,225); border-radius:6px;">
+                    <button type="button" id="crm-holded-buscar-contacto-btn" class="crm-btn">Buscar</button>
+                </div>
+                <div id="crm-holded-contactos-resultados"></div>
+            <?php endif; ?>
+        </div>
+
+        <?php if (function_exists('crm_roadmap_get_fases')) : ?>
+        <!-- Roadmap y Flujos — v1.20.89, misma fuente que wp-admin → CRM → Flujos -->
+        <div class="crm-panel-section">
+            <style><?php echo crm_flujos_roadmap_shared_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></style>
+            <h3>Roadmap del módulo de instalaciones</h3>
+            <?php echo crm_roadmap_render_html(crm_roadmap_get_fases()); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+        </div>
+
+        <div class="crm-panel-section">
+            <h3>Flujos — cómo funciona cada pieza</h3>
+            <p style="color:rgb(107,114,128);">Diagramas del módulo de instalaciones, siempre junto al código que describen.</p>
+            <?php echo crm_flujos_render_diagramas_html(crm_flujos_get_diagramas()); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+        </div>
+        <?php endif; ?>
     </div>
     <?php
     return ob_get_clean();
@@ -1230,6 +1284,57 @@ function crm_comerciales_estadisticas_widget() {
                 ]
             });
         }
+
+        // v1.20.67 — Buscador/importador de contactos de Holded.
+        $('#crm-holded-buscar-contacto-btn').on('click', function () {
+            var query = $('#crm-holded-buscar-contacto').val();
+            $('#crm-holded-contactos-resultados').html('<p>Buscando…</p>');
+            $.post(ajaxurl, {
+                action: 'crm_admin_buscar_contactos_holded',
+                nonce: '<?php echo wp_create_nonce("crm_inst_holded"); ?>',
+                query: query
+            }, function (resp) {
+                if (!resp.success) {
+                    $('#crm-holded-contactos-resultados').html('<p style="color:rgb(153,27,27);">' + (resp.data && resp.data.message ? resp.data.message : 'Error.') + '</p>');
+                    return;
+                }
+                if (!resp.data.items.length) {
+                    $('#crm-holded-contactos-resultados').html('<p>Sin resultados.</p>');
+                    return;
+                }
+                var rows = resp.data.items.map(function (c) {
+                    var accion = c.client_id
+                        ? '<span style="color:rgb(6,95,70);font-weight:600;">Ya importado #' + c.client_id + '</span>'
+                        : '<button type="button" class="crm-btn crm-holded-importar-btn" data-contact-id="' + c.id + '">Importar</button>';
+                    return '<tr>' +
+                        '<td>' + $('<div>').text(c.name).html() + '</td>' +
+                        '<td>' + $('<div>').text(c.type || '').html() + '</td>' +
+                        '<td>' + $('<div>').text(c.email || '—').html() + '</td>' +
+                        '<td>' + accion + '</td>' +
+                        '</tr>';
+                }).join('');
+                $('#crm-holded-contactos-resultados').html(
+                    '<div class="table-responsive-compact"><table class="crm-table-compact"><thead><tr><th>Nombre</th><th>Tipo</th><th>Email</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+                );
+            });
+        });
+
+        $(document).on('click', '.crm-holded-importar-btn', function () {
+            var btn = $(this).prop('disabled', true).text('Importando…');
+            var contactId = btn.data('contact-id');
+            $.post(ajaxurl, {
+                action: 'crm_admin_importar_contacto_holded',
+                nonce: '<?php echo wp_create_nonce("crm_inst_holded"); ?>',
+                contact_id: contactId
+            }, function (resp) {
+                if (!resp.success) {
+                    btn.prop('disabled', false).text('Importar');
+                    alert(resp.data && resp.data.message ? resp.data.message : 'Error.');
+                    return;
+                }
+                btn.closest('td').html('<span style="color:rgb(6,95,70);font-weight:600;">Importado #' + resp.data.client_id + '</span>');
+            });
+        });
     });
     </script>
     <?php
@@ -1256,6 +1361,73 @@ function crm_ajax_send_test_email() {
     } else {
         wp_send_json_error('Error al enviar el email de prueba');
     }
+}
+
+// v1.20.67 — Buscador/importador de contactos de Holded, en el Panel.
+add_action('wp_ajax_crm_admin_buscar_contactos_holded', 'crm_admin_ajax_buscar_contactos_holded');
+function crm_admin_ajax_buscar_contactos_holded() {
+    if (!current_user_can('crm_admin') || !check_ajax_referer('crm_inst_holded', 'nonce', false)) {
+        wp_send_json_error(['message' => 'Sin permisos.'], 403);
+    }
+    if (!function_exists('crm_holded_search_contacts')) {
+        wp_send_json_error(['message' => 'Módulo de Holded no disponible.']);
+    }
+    $query = sanitize_text_field(wp_unslash($_POST['query'] ?? ''));
+    $resultados = crm_holded_search_contacts($query, 50);
+    if (is_wp_error($resultados)) {
+        wp_send_json_error(['message' => $resultados->get_error_message()]);
+    }
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'crm_clients';
+    $out = array_map(function ($c) use ($wpdb, $table) {
+        $holded_id = (string) ($c['id'] ?? '');
+        $client_id = $holded_id !== '' ? (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$table} WHERE holded_contact_id = %s LIMIT 1",
+            $holded_id
+        )) : 0;
+        return [
+            'id'        => $holded_id,
+            'name'      => $c['name'] ?? '',
+            'type'      => $c['type'] ?? '',
+            'email'     => $c['email'] ?? '',
+            'client_id' => $client_id > 0 ? $client_id : null,
+        ];
+    }, $resultados);
+
+    wp_send_json_success(['items' => $out]);
+}
+
+/**
+ * Importa/empareja un contacto de Holded como cliente del CRM — reutiliza
+ * exactamente la misma lógica que ya usa la Fase 2 al dar de alta una
+ * instalación desde un presupuesto (crm_inst_match_or_create_client_from_holded_contact()),
+ * pero disparada desde el buscador, sin necesitar un presupuesto de por medio.
+ */
+add_action('wp_ajax_crm_admin_importar_contacto_holded', 'crm_admin_ajax_importar_contacto_holded');
+function crm_admin_ajax_importar_contacto_holded() {
+    if (!current_user_can('crm_admin') || !check_ajax_referer('crm_inst_holded', 'nonce', false)) {
+        wp_send_json_error(['message' => 'Sin permisos.'], 403);
+    }
+    if (!function_exists('crm_holded_get_contact') || !function_exists('crm_inst_match_or_create_client_from_holded_contact')) {
+        wp_send_json_error(['message' => 'Módulo de Holded no disponible.']);
+    }
+    $contact_id = sanitize_text_field(wp_unslash($_POST['contact_id'] ?? ''));
+    if ($contact_id === '') {
+        wp_send_json_error(['message' => 'Contacto no válido.']);
+    }
+    $contact = crm_holded_get_contact($contact_id);
+    if (is_wp_error($contact)) {
+        wp_send_json_error(['message' => $contact->get_error_message()]);
+    }
+    $client_id = crm_inst_match_or_create_client_from_holded_contact($contact);
+    if (is_wp_error($client_id)) {
+        wp_send_json_error(['message' => $client_id->get_error_message()]);
+    }
+    if (function_exists('crm_log_action')) {
+        crm_log_action('cliente_importado_holded', 'Cliente #' . $client_id . ' importado/emparejado desde Holded (contacto ' . $contact_id . ').');
+    }
+    wp_send_json_success(['client_id' => (int) $client_id]);
 }
 
 add_action('wp_ajax_crm_clean_old_logs', 'crm_ajax_clean_old_logs');

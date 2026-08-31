@@ -384,7 +384,13 @@ function showToast(msg, tipo, duration = 4000) {
         const btn = e.target;
         const url = btn.dataset.url;
         const tipo = btn.dataset.tipo;
-        const body = new URLSearchParams({ action: `crm_eliminar_${tipo}`, url, nonce: crmData.nonce });
+        const clientIdInput = form.querySelector('input[name="client_id"]');
+        const body = new URLSearchParams({
+            action: `crm_eliminar_${tipo}`,
+            url,
+            nonce: crmData.nonce,
+            client_id: clientIdInput ? clientIdInput.value : "0"
+        });
         try {
             const res = await fetch(crmData.ajaxurl, {
                 method: "POST",

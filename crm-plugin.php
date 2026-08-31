@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.92
+Version: 1.20.93
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.92');
+define('CRM_PLUGIN_VERSION', '1.20.93');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -144,14 +144,17 @@ add_action('wp_enqueue_scripts', 'crm_enqueue_scripts');
 
 function crm_enqueue_scripts()
 {
-    // Condicionar la carga del script
-    if (is_page(['alta-de-clientes',  'editar-cliente'])) {
-        //lo cargo en el form para pasar estado
-    }
-    if (is_page(['mis-altas-de-cliente']) || is_page(['resumen'])) {
-        // Encolar jQuery primero, porque DataTables depende de jQuery
-        wp_enqueue_script('jquery');
+    // v1.20.93: jQuery lo usan practicamente todas las paginas del CRM
+    // (shortcodes, topbar del App Shell, ficha de instalaciones...), pero
+    // antes solo se encolaba explicitamente en un par de paginas concretas
+    // -- el resto dependia de que Elementor (u otro plugin) lo cargara de
+    // rebote. Al desactivar Elementor se rompio "alta-de-cliente" con
+    // "jQuery is not defined": el bloque que deberia haberlo encolado ahi
+    // comprobaba el slug en plural ("alta-de-clientes", que no existe) y
+    // ademas estaba vacio. Se carga siempre para no depender de terceros.
+    wp_enqueue_script('jquery');
 
+    if (is_page(['mis-altas-de-cliente']) || is_page(['resumen'])) {
         // Encolar DataTables (JavaScript y CSS)
         wp_enqueue_script('datatables-js', 'https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js', ['jquery'], null, true);
         wp_enqueue_style('datatables-css', 'https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css');

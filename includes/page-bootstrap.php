@@ -28,6 +28,13 @@ if (!defined('ABSPATH')) {
 function crm_required_pages() {
     $pages = [
         [
+            // v1.20.94: pagina de login nativa del plugin — antes dependia
+            // por completo de Elementor + el widget de login de Members.
+            'slug'    => 'acceso',
+            'title'   => 'Acceso',
+            'content' => '[crm_login]',
+        ],
+        [
             'slug'    => 'alta-de-cliente',
             'title'   => 'Alta de cliente',
             'content' => '[crm_alta_cliente]',

@@ -60,7 +60,7 @@ function crm_register_admin_settings() {
     ]);
     register_setting('crm_settings', 'crm_login_page_id', [
         'type'              => 'integer',
-        'default'           => 2,
+        'default'           => 0,
         'sanitize_callback' => function ($v) { return max(0, (int) $v); },
     ]);
     register_setting('crm_settings', 'crm_post_login_page_id', [
@@ -690,7 +690,10 @@ function crm_admin_render_settings() {
             </tr>
             <tr>
                 <th><label for="crm_login_page_id">Página de login (ID)</label></th>
-                <td><input type="number" min="0" id="crm_login_page_id" name="crm_login_page_id" value="<?php echo esc_attr((int) get_option('crm_login_page_id', 2)); ?>"></td>
+                <td>
+                    <input type="number" min="0" id="crm_login_page_id" name="crm_login_page_id" value="<?php echo esc_attr((int) get_option('crm_login_page_id', 0)); ?>" placeholder="en blanco = página &quot;Acceso&quot; autocreada">
+                    <p class="description">Déjalo en blanco (0) para usar la página <strong>"Acceso"</strong> que el plugin crea solo (shortcode <code>[crm_login]</code>, formulario propio, no depende de Elementor ni de Members). Solo rellena esto si quieres usar otra página distinta.</p>
+                </td>
             </tr>
             <tr>
                 <th><label for="crm_post_login_page_id">Página tras login (ID)</label></th>

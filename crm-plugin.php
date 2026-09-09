@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.94
+Version: 1.20.95
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.94');
+define('CRM_PLUGIN_VERSION', '1.20.95');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -86,6 +86,9 @@ require_once CRM_PLUGIN_PATH . 'includes/instalaciones.php';
 require_once CRM_PLUGIN_PATH . 'includes/instalador-panel.php';
 // v1.20.26 — Cliente API de Holded (presupuestos, productos, almacenes)
 require_once CRM_PLUGIN_PATH . 'includes/holded-api.php';
+// v1.20.95 — Sincronización periódica de clientes desde Holded (todos los
+// contactos de la cuenta de Ecovolt, interés renovables).
+require_once CRM_PLUGIN_PATH . 'includes/holded-clientes-sync.php';
 // v1.20.87 — Andamiaje de WhatsApp Business (Meta Cloud API), sin credenciales
 // reales todavía — ver includes/whatsapp-api.php.
 require_once CRM_PLUGIN_PATH . 'includes/whatsapp-api.php';
@@ -4031,6 +4034,21 @@ function crm_update_clients_table_structure() {
         'lead_mk_touched_at' => "DATETIME DEFAULT NULL",
         // v1.20.27 — Fase 2 instalaciones: vincula el cliente con su contacto de Holded.
         'holded_contact_id' => "VARCHAR(100) DEFAULT NULL",
+        // v1.20.95 — sincronización de clientes desde Holded (todos los contactos de
+        // la cuenta de Ecovolt, interés renovables). Último presupuesto conocido,
+        // cacheado en el propio cliente para no depender de una llamada en vivo a
+        // Holded cada vez que se abre la ficha.
+        'holded_estimate_id'       => "VARCHAR(100) DEFAULT NULL",
+        'holded_estimate_numero'   => "VARCHAR(50) DEFAULT NULL",
+        'holded_estimate_total'    => "DECIMAL(10,2) DEFAULT NULL",
+        'holded_estimate_moneda'   => "VARCHAR(10) DEFAULT NULL",
+        'holded_estimate_aprobado' => "TINYINT(1) DEFAULT NULL",
+        'holded_last_synced_at'    => "DATETIME DEFAULT NULL",
+        // `updated_at` que Holded devuelve en el propio contacto — permite
+        // saltar la llamada a /estimates cuando el contacto no ha cambiado
+        // desde la última pasada, en vez de consultar los ~2000 contactos
+        // de la cuenta cada hora sin necesidad.
+        'holded_contact_updated_at' => "VARCHAR(40) DEFAULT NULL",
     ];
     
     foreach ($required_columns as $column => $definition) {

@@ -3880,8 +3880,21 @@ function crm_inst_get_instalaciones_resumen_by_client( $client_id ) {
  * @param int $client_id
  */
 function crm_inst_render_resumen_cliente( $client_id ) {
+	global $wpdb;
+	$cliente = $wpdb->get_row( $wpdb->prepare(
+		"SELECT holded_contact_id, holded_estimate_numero, holded_estimate_total, holded_estimate_moneda, holded_estimate_aprobado, holded_last_synced_at
+		 FROM {$wpdb->prefix}crm_clients WHERE id = %d",
+		(int) $client_id
+	), ARRAY_A );
+
 	$instalaciones = crm_inst_get_instalaciones_resumen_by_client( $client_id );
-	if ( empty( $instalaciones ) ) {
+
+	// v1.20.95: un cliente puede venir de la sincronización de contactos de
+	// Holded sin tener todavía ninguna instalación creada — antes esta
+	// función no mostraba nada en ese caso (return temprano). Ahora se
+	// muestra el presupuesto/estado de Holded igualmente, y la lista de
+	// instalaciones solo si existe alguna.
+	if ( empty( $instalaciones ) && empty( $cliente['holded_contact_id'] ) ) {
 		return;
 	}
 
@@ -3889,17 +3902,36 @@ function crm_inst_render_resumen_cliente( $client_id ) {
 	$ficha_url       = home_url( '/instalacion/' );
 	?>
 	<div class="crm-inst-resumen-cliente">
-		<strong>Instalaciones</strong>
-		<?php foreach ( $instalaciones as $inst ) : ?>
-			<div class="crm-inst-resumen-fila">
-				<span class="status-badge status-inst-<?php echo esc_attr( $inst['estado'] ); ?>"><?php echo esc_html( $inst['estado_label'] ); ?></span>
-				<span><?php echo esc_html( $inst['tipo_instalacion_label'] ); ?><?php echo $inst['subtipo_instalacion_label'] ? ' — ' . esc_html( $inst['subtipo_instalacion_label'] ) : ''; ?></span>
-				<span class="crm-inst-resumen-fecha"><?php echo esc_html( $inst['fecha_creacion'] ); ?></span>
-				<?php if ( $puede_gestionar ) : ?>
-					<a href="<?php echo esc_url( $ficha_url . '?id=' . $inst['id'] ); ?>" class="crm-btn crm-inst-resumen-ver">Ver</a>
-				<?php endif; ?>
-			</div>
-		<?php endforeach; ?>
+		<?php if ( ! empty( $cliente['holded_contact_id'] ) ) : ?>
+			<strong>Presupuesto Holded</strong>
+			<?php if ( empty( $cliente['holded_estimate_numero'] ) ) : ?>
+				<div class="crm-inst-resumen-fila">
+					<span class="crm-inst-resumen-fecha">Contacto vinculado, todavía sin ningún presupuesto en Holded.</span>
+				</div>
+			<?php else : ?>
+				<div class="crm-inst-resumen-fila">
+					<span class="status-badge status-inst-<?php echo $cliente['holded_estimate_aprobado'] ? 'lista' : 'pendiente'; ?>"><?php echo $cliente['holded_estimate_aprobado'] ? 'Aprobado' : 'Pendiente de aprobar'; ?></span>
+					<span>#<?php echo esc_html( $cliente['holded_estimate_numero'] ); ?><?php echo $cliente['holded_estimate_total'] !== null ? ' — ' . esc_html( number_format_i18n( (float) $cliente['holded_estimate_total'], 2 ) ) . ' ' . esc_html( $cliente['holded_estimate_moneda'] ?: '€' ) : ''; ?></span>
+					<?php if ( ! empty( $cliente['holded_last_synced_at'] ) ) : ?>
+						<span class="crm-inst-resumen-fecha">Sincronizado <?php echo esc_html( date_i18n( 'd/m/Y H:i', strtotime( $cliente['holded_last_synced_at'] ) ) ); ?></span>
+					<?php endif; ?>
+				</div>
+			<?php endif; ?>
+		<?php endif; ?>
+
+		<?php if ( ! empty( $instalaciones ) ) : ?>
+			<strong<?php echo ! empty( $cliente['holded_contact_id'] ) ? ' style="margin-top:10px;"' : ''; ?>>Instalaciones</strong>
+			<?php foreach ( $instalaciones as $inst ) : ?>
+				<div class="crm-inst-resumen-fila">
+					<span class="status-badge status-inst-<?php echo esc_attr( $inst['estado'] ); ?>"><?php echo esc_html( $inst['estado_label'] ); ?></span>
+					<span><?php echo esc_html( $inst['tipo_instalacion_label'] ); ?><?php echo $inst['subtipo_instalacion_label'] ? ' — ' . esc_html( $inst['subtipo_instalacion_label'] ) : ''; ?></span>
+					<span class="crm-inst-resumen-fecha"><?php echo esc_html( $inst['fecha_creacion'] ); ?></span>
+					<?php if ( $puede_gestionar ) : ?>
+						<a href="<?php echo esc_url( $ficha_url . '?id=' . $inst['id'] ); ?>" class="crm-btn crm-inst-resumen-ver">Ver</a>
+					<?php endif; ?>
+				</div>
+			<?php endforeach; ?>
+		<?php endif; ?>
 	</div>
 	<style>
 	.crm-inst-resumen-cliente { margin-top:14px; border-top:1px solid #e5e7eb; padding-top:10px; }
@@ -5573,6 +5605,13 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		'titulo'  => 'Alta de instalación desde un presupuesto de Holded',
 		'estado'  => 'en_pruebas',
 		'detalle' => 'Buscador de presupuestos aprobados, creación de cliente/instalación desde sus líneas — construido, sin una ronda de prueba formal todavía (con cliente nuevo y existente).',
+	];
+
+	$fases[] = [
+		'fase'    => 'Fase 2bis',
+		'titulo'  => 'Sincronización periódica de TODOS los clientes desde Holded',
+		'estado'  => 'en_pruebas',
+		'detalle' => 'Cron horario (activable en Ajustes) que crea/actualiza cada contacto de Holded como cliente, con su último presupuesto y estado real (reflejado automáticamente, sin retroceder nunca contratos_generados/firmados). Construido, sin ninguna prueba real todavía contra la cuenta de producción.',
 	];
 
 	$fases[] = [

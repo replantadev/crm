@@ -109,6 +109,12 @@ function crm_register_admin_settings() {
         'default'           => '',
         'sanitize_callback' => 'sanitize_text_field',
     ]);
+    // v1.20.95 — sincronización periódica de clientes desde Holded.
+    register_setting('crm_settings', 'crm_holded_sync_clientes_enabled', [
+        'type'              => 'boolean',
+        'default'           => false,
+        'sanitize_callback' => function ($v) { return !empty($v); },
+    ]);
     // v1.20.41 — Fase 4: branding del panel del instalador (hoy Ecovolt, pensado
     // para poder cambiar de marca el día que haya más de un cliente del CRM).
     register_setting('crm_settings', 'crm_instalador_panel_brand', [
@@ -784,6 +790,21 @@ function crm_admin_render_settings() {
                     <p class="description">Contra qué almacén de Holded se comprueba el stock de cada línea en la ficha. Déjalo en blanco para usar el Almacén Ecovolt por defecto.</p>
                 </td>
             </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Sincronización de clientes desde Holded (v1.20.95)</h3></th></tr>
+            <tr>
+                <th><label for="crm_holded_sync_clientes_enabled">Activar sincronización</label></th>
+                <td>
+                    <label><input type="checkbox" id="crm_holded_sync_clientes_enabled" name="crm_holded_sync_clientes_enabled" value="1" <?php checked(get_option('crm_holded_sync_clientes_enabled', false)); ?>> Cada hora, todos los contactos del Holded de Ecovolt se crean/actualizan como cliente del CRM (interés renovables), con su último presupuesto y estado reales.</label>
+                    <p class="description">
+                        Última pasada:
+                        <?php $last = (int) get_option('crm_holded_sync_clientes_last_run', 0); ?>
+                        <?php echo $last ? esc_html(date_i18n('d/m/Y H:i', $last)) : '—'; ?>
+                        &nbsp;
+                        <button type="button" class="button" id="crm-holded-sync-clientes-ahora-btn">Sincronizar ahora</button>
+                        <span id="crm-holded-sync-clientes-msg"></span>
+                    </p>
+                </td>
+            </tr>
             <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Panel del instalador (v1.20.41)</h3></th></tr>
             <tr>
                 <th><label for="crm_instalador_panel_brand">Nombre de marca</label></th>
@@ -942,6 +963,27 @@ function crm_admin_render_settings() {
             $('#crm_proveedor_holded_contact_nombre').val('');
             $('#crm-proveedor-holded-vinculado').hide();
             $('#crm-proveedor-holded-buscador').show();
+        });
+
+        // v1.20.95 — sincronización de clientes desde Holded, botón "Sincronizar ahora".
+        $('#crm-holded-sync-clientes-ahora-btn').on('click', function () {
+            var btn = $(this).prop('disabled', true).text('Sincronizando…');
+            var msg = $('#crm-holded-sync-clientes-msg');
+            msg.css('color', '#6b7280').text('');
+            $.post(ajaxurl, {
+                action: 'crm_holded_sync_clientes_ahora',
+                nonce: '<?php echo wp_create_nonce('crm_admin_actions'); ?>'
+            }, function (resp) {
+                btn.prop('disabled', false).text('Sincronizar ahora');
+                if (!resp.success) {
+                    msg.css('color', '#991b1b').text((resp.data && resp.data.message) ? resp.data.message : 'Error.');
+                    return;
+                }
+                msg.css('color', '#065f46').text(resp.data.procesados + ' procesados, ' + resp.data.creados + ' creados, ' + resp.data.errores + ' errores.');
+            }).fail(function () {
+                btn.prop('disabled', false).text('Sincronizar ahora');
+                msg.css('color', '#991b1b').text('Error de conexión.');
+            });
         });
     });
     </script>

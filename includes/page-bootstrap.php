@@ -124,6 +124,17 @@ function crm_required_pages() {
             'title'   => 'Validar trabajo adicional',
             'content' => '[crm_inst_validar_extra_cliente]',
         ],
+        [
+            // v1.20.96 — menú "Ventas".
+            'slug'    => 'ventas-presupuestos',
+            'title'   => 'Presupuestos',
+            'content' => '[crm_ventas_presupuestos]',
+        ],
+        [
+            'slug'    => 'ventas-resumen',
+            'title'   => 'Resumen de ventas',
+            'content' => '[crm_ventas_resumen]',
+        ],
     ];
     return apply_filters('crm_required_pages', $pages);
 }

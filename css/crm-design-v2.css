@@ -738,6 +738,45 @@ body.crm-app-mode .crm-shell-main {
     background: rgba(255,255,255,.14);
     color: var(--crm-on-brand);
 }
+
+/* v1.20.96 — desplegables "Clientes"/"Ventas" (<details>/<summary> nativo). */
+.crm-topbar__dropdown {
+    position: relative;
+    display: inline-flex;
+}
+.crm-topbar__dropdown > summary {
+    list-style: none;
+    cursor: pointer;
+}
+.crm-topbar__dropdown > summary::-webkit-details-marker { display: none; }
+.crm-topbar__dropdown.is-current > summary {
+    background: rgba(255,255,255,.14);
+    color: var(--crm-on-brand);
+}
+.crm-topbar__dropdown[open] > summary {
+    background: rgba(255,255,255,.08);
+    color: var(--crm-on-brand);
+}
+.crm-topbar__dropdown-panel {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 200px;
+    margin-top: 4px;
+    padding: 6px;
+    background: var(--crm-brand);
+    border-radius: var(--crm-r-md);
+    box-shadow: var(--crm-sh-2);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    z-index: 1001;
+}
+.crm-topbar__dropdown-panel .crm-topbar__link { white-space: nowrap; }
+.crm-topbar--light .crm-topbar__dropdown.is-current > summary,
+.crm-topbar--light .crm-topbar__dropdown[open] > summary { background: #f3f4f6; color: #111827; }
+.crm-topbar--light .crm-topbar__dropdown-panel { background: #fff; border: 1px solid #e5e7eb; }
+
 .crm-topbar__user {
     margin-left: auto;
     display: inline-flex;
@@ -888,6 +927,21 @@ body.crm-app-mode .crm-shell-main {
         white-space: normal;
     }
     .crm-topbar--light .crm-topbar__nav { background: #fff; border-top: 1px solid #e5e7eb; }
+
+    /* v1.20.96: dentro del panel móvil a pantalla completa, un desplegable
+       se comporta como un acordeón en línea, no como un popover flotante. */
+    .crm-topbar__dropdown { display: flex; flex-direction: column; width: 100%; }
+    .crm-topbar__dropdown > summary { width: 100%; }
+    .crm-topbar__dropdown-panel {
+        position: static;
+        margin-top: 0;
+        margin-left: var(--crm-sp-4);
+        padding: 0;
+        background: transparent;
+        box-shadow: none;
+        border-left: 2px solid rgba(255,255,255,.2);
+    }
+    .crm-topbar--light .crm-topbar__dropdown-panel { background: transparent; border-left-color: #e5e7eb; }
 }
 
 /* =====================================================================

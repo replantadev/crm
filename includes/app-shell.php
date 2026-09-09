@@ -399,32 +399,51 @@ function crm_app_shell_menu_items() {
             'slug'  => 'alta-de-cliente',
             'icon'  => 'plus',
             // v1.20.7: visitador tambien puede dar altas (actua como comercial).
-            'roles' => ['administrator', 'crm_admin', 'comercial', 'visitador'],
+            'roles' => ['comercial', 'visitador'],
         ],
         [
             'label' => 'Mis altas',
             'slug'  => 'mis-altas-de-cliente',
             'icon'  => 'list-bullets',
             // v1.20.7: visitador ve sus propias altas igual que un comercial.
-            'roles' => ['administrator', 'crm_admin', 'comercial', 'visitador'],
+            'roles' => ['comercial', 'visitador'],
         ],
         [
-            'label' => 'Todas las altas',
-            'slug'  => 'todas-las-altas-de-cliente',
+            // v1.20.96: administrator/crm_admin ven estas 4 páginas agrupadas
+            // bajo un único menú desplegable "Clientes" en vez de 4 enlaces
+            // sueltos — comercial/visitador conservan los enlaces planos de
+            // arriba (Alta/Mis altas), sin dropdown, tal y como estaban.
+            'label' => 'Clientes',
             'icon'  => 'users',
             'roles' => ['administrator', 'crm_admin'],
+            'children' => [
+                ['label' => 'Nuevo cliente', 'slug' => 'alta-de-cliente', 'icon' => 'plus'],
+                ['label' => 'Mis clientes', 'slug' => 'mis-altas-de-cliente', 'icon' => 'list-bullets'],
+                ['label' => 'Todos los clientes', 'slug' => 'todas-las-altas-de-cliente', 'icon' => 'users'],
+                ['label' => 'Leads de marketing', 'slug' => 'asignar-leads', 'icon' => 'target'],
+            ],
         ],
         [
-            'label' => 'Resumen',
+            // v1.20.96: "Resumen" pasa a llamarse "Equipo" — la página no
+            // cambia (mismo slug 'resumen'), solo la etiqueta del menú; el
+            // contenido de la página se amplía con un listado de
+            // instaladores (crm_instaladores_estadisticas) además del ya
+            // existente de comerciales.
+            'label' => 'Equipo',
             'slug'  => 'resumen',
             'icon'  => 'chart-bar',
             'roles' => ['administrator', 'crm_admin'],
         ],
         [
-            'label' => 'Leads MK',
-            'slug'  => 'asignar-leads',
-            'icon'  => 'target',
+            // v1.20.96 — nuevo menú "Ventas": presupuestos de Holded (todos,
+            // con estado y cliente) y un resumen de ventas por mes.
+            'label' => 'Ventas',
+            'icon'  => 'chart-bar',
             'roles' => ['administrator', 'crm_admin'],
+            'children' => [
+                ['label' => 'Presupuestos', 'slug' => 'ventas-presupuestos', 'icon' => 'file-text'],
+                ['label' => 'Resumen', 'slug' => 'ventas-resumen', 'icon' => 'chart-bar'],
+            ],
         ],
         [
             'label'  => 'Mis leads',
@@ -492,8 +511,15 @@ function crm_app_shell_menu_items() {
     // v1.20.8: antes ocultabamos items sin pagina con `continue` lo cual hacia que el
     // menu desapareciera para comercial/visitador si las paginas no estaban creadas.
     // Ahora siempre devolvemos URL (fallback) y el bootstrap de paginas las crea.
-    $resolved = [];
-    foreach ($items as $item) {
+    // v1.20.96: la resolución se extrae a una función recursiva para poder
+    // aplicarla también a los "children" de un desplegable (Clientes, Ventas)
+    // — un item con children no tiene slug/URL propia, solo agrupa.
+    $resolver = function ($item) use (&$resolver) {
+        if (!empty($item['children'])) {
+            $item['children'] = array_values(array_filter(array_map($resolver, $item['children'])));
+            return empty($item['children']) ? null : $item;
+        }
+
         $url = '';
         if (!empty($item['option'])) {
             $url = (string) get_option($item['option'], '');
@@ -513,11 +539,13 @@ function crm_app_shell_menu_items() {
             $url = home_url('/' . ltrim($item['slug'], '/') . '/');
         }
         if ($url === '') {
-            continue;
+            return null;
         }
         $item['url'] = $url;
-        $resolved[] = $item;
-    }
+        return $item;
+    };
+
+    $resolved = array_values(array_filter(array_map($resolver, $items)));
 
     return apply_filters('crm_app_shell_menu_items', $resolved);
 }
@@ -626,7 +654,41 @@ function crm_app_shell_render_topbar() {
                 if (!crm_app_shell_user_can_see_item($item)) {
                     continue;
                 }
-                $is_current = ($current_slug === $item['slug']) ? ' is-current' : '';
+                // v1.20.96: un item con "children" es un desplegable (Clientes,
+                // Ventas) — se renderiza como <details>/<summary> nativo, que
+                // funciona igual de bien como popover en escritorio (con la
+                // CSS de abajo) que como acordeón dentro del panel a pantalla
+                // completa del móvil, sin JS propio para abrir/cerrar.
+                if (!empty($item['children'])):
+                    $grupo_activo = false;
+                    foreach ($item['children'] as $child) {
+                        if (($child['slug'] ?? null) === $current_slug) {
+                            $grupo_activo = true;
+                            break;
+                        }
+                    }
+                ?>
+                    <details class="crm-topbar__dropdown<?php echo $grupo_activo ? ' is-current' : ''; ?>">
+                        <summary class="crm-topbar__link">
+                            <?php echo $icon($item['icon'], 16); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                            <span><?php echo esc_html($item['label']); ?></span>
+                            <?php echo $icon('caret-down', 11); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                        </summary>
+                        <div class="crm-topbar__dropdown-panel">
+                            <?php foreach ($item['children'] as $child):
+                                $child_current = (($child['slug'] ?? null) === $current_slug) ? ' is-current' : '';
+                            ?>
+                                <a class="crm-topbar__link<?php echo esc_attr($child_current); ?>" href="<?php echo esc_url($child['url']); ?>">
+                                    <?php echo $icon($child['icon'], 16); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                                    <span><?php echo esc_html($child['label']); ?></span>
+                                </a>
+                            <?php endforeach; ?>
+                        </div>
+                    </details>
+                <?php
+                    continue;
+                endif;
+                $is_current = (isset($item['slug']) && $current_slug === $item['slug']) ? ' is-current' : '';
             ?>
                 <a class="crm-topbar__link<?php echo esc_attr($is_current); ?>" href="<?php echo esc_url($item['url']); ?>">
                     <?php echo $icon($item['icon'], 16); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
@@ -669,6 +731,27 @@ function crm_app_shell_render_topbar() {
                 nav.classList.remove('is-open');
                 burger.setAttribute('aria-expanded', 'false');
             }
+        });
+
+        // v1.20.96 — desplegables "Clientes"/"Ventas": <details> nativo no
+        // cierra un desplegable cuando se abre otro, ni al hacer clic fuera —
+        // se añade aquí lo mínimo para que se comporten como un menú normal.
+        var dropdowns = nav.querySelectorAll('.crm-topbar__dropdown');
+        dropdowns.forEach(function (dd) {
+            dd.addEventListener('toggle', function () {
+                if (dd.open) {
+                    dropdowns.forEach(function (other) {
+                        if (other !== dd) { other.open = false; }
+                    });
+                }
+            });
+        });
+        document.addEventListener('click', function (e) {
+            dropdowns.forEach(function (dd) {
+                if (dd.open && !dd.contains(e.target)) {
+                    dd.open = false;
+                }
+            });
         });
     })();
     </script>

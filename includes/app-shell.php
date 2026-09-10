@@ -736,13 +736,34 @@ function crm_app_shell_render_topbar() {
         // v1.20.96 — desplegables "Clientes"/"Ventas": <details> nativo no
         // cierra un desplegable cuando se abre otro, ni al hacer clic fuera —
         // se añade aquí lo mínimo para que se comporten como un menú normal.
+        //
+        // v1.20.97: en escritorio, .crm-topbar__nav tiene overflow-x:auto
+        // para el scroll horizontal — eso obliga a overflow-y a valer "auto"
+        // también (regla de la spec CSS), lo que recorta invisible el panel
+        // (position:absolute) en cuanto se abre. Se corrige reposicionándolo
+        // a position:fixed con las coordenadas reales del <summary>, que
+        // escapa del clip del <nav>. En móvil (acordeón en línea, ver CSS)
+        // no se toca nada.
         var dropdowns = nav.querySelectorAll('.crm-topbar__dropdown');
         dropdowns.forEach(function (dd) {
+            var panel = dd.querySelector('.crm-topbar__dropdown-panel');
             dd.addEventListener('toggle', function () {
                 if (dd.open) {
                     dropdowns.forEach(function (other) {
                         if (other !== dd) { other.open = false; }
                     });
+                    if (panel && window.innerWidth > 720) {
+                        var rect = dd.querySelector('summary').getBoundingClientRect();
+                        panel.style.position  = 'fixed';
+                        panel.style.top       = Math.round(rect.bottom + 4) + 'px';
+                        panel.style.left      = Math.round(rect.left) + 'px';
+                        panel.style.marginTop = '0';
+                    }
+                } else if (panel) {
+                    panel.style.position  = '';
+                    panel.style.top       = '';
+                    panel.style.left      = '';
+                    panel.style.marginTop = '';
                 }
             });
         });

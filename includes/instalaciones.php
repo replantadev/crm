@@ -5662,12 +5662,9 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		'detalle' => 'Buscador de presupuestos aprobados, creación de cliente/instalación desde sus líneas — construido, sin una ronda de prueba formal todavía (con cliente nuevo y existente).',
 	];
 
-	$fases[] = [
-		'fase'    => 'Fase 2bis',
-		'titulo'  => 'Sincronización periódica de TODOS los clientes desde Holded',
-		'estado'  => 'en_pruebas',
-		'detalle' => 'Cron horario (activable en Ajustes) que crea/actualiza cada contacto de Holded como cliente, con su último presupuesto y estado real (reflejado automáticamente, sin retroceder nunca contratos_generados/firmados). Construido, sin ninguna prueba real todavía contra la cuenta de producción.',
-	];
+	// Fase 2bis (sincronización de clientes desde Holded) se registra ahora
+	// en includes/holded-clientes-sync.php, que es donde vive ese código
+	// desde que se le dio su propio archivo.
 
 	$fases[] = [
 		'fase'    => 'Fase 3',

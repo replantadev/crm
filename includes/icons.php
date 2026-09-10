@@ -69,6 +69,11 @@ function crm_icon_path($name) {
             // v1.20.14 — paraguas (sector seguros) y hoja (sector renovables).
             'umbrella'     => '<path d="M128,24a8,8,0,0,0-8,8v8.41A104.16,104.16,0,0,0,24,144a8,8,0,0,0,8,8H120v48a32,32,0,0,1-64,0,8,8,0,0,0-16,0,48,48,0,0,0,96,0V152h88a8,8,0,0,0,8-8A104.16,104.16,0,0,0,136,40.41V32A8,8,0,0,0,128,24Z" fill="currentColor"/>',
             'leaf'         => '<path d="M223.45,40.07a8,8,0,0,0-7.52-7.52C139.8,28.08,78.82,51,52.82,94.14c-18,29.85-17.65,66.32.92,103A175.31,175.31,0,0,0,46.07,217a8,8,0,1,0,15.86,2c.65-5.31,1.94-10.49,3.78-15.49a128,128,0,0,0,33.93,9.42,138.43,138.43,0,0,0,21.94,1.62c20.72,0,40.61-7,57.31-19.6C223.65,162.06,228.42,77.84,223.45,40.07Z" fill="currentColor"/>',
+            // v1.20.100 — item de menú "Flujos" (diagramas + roadmap). No es un
+            // path de Phosphor: 3 nodos conectados dibujados a mano con formas
+            // básicas, para no depender de encontrar el path exacto sin acceso
+            // a la librería original.
+            'diagram'      => '<circle cx="60" cy="60" r="28" fill="none" stroke="currentColor" stroke-width="14"/><circle cx="196" cy="60" r="28" fill="none" stroke="currentColor" stroke-width="14"/><circle cx="128" cy="196" r="28" fill="none" stroke="currentColor" stroke-width="14"/><line x1="88" y1="60" x2="168" y2="60" stroke="currentColor" stroke-width="14"/><line x1="72" y1="84" x2="112" y2="172" stroke="currentColor" stroke-width="14"/><line x1="184" y1="84" x2="144" y2="172" stroke="currentColor" stroke-width="14"/>',
         ];
     }
     return $paths[$name] ?? '';

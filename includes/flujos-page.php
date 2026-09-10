@@ -156,6 +156,32 @@ function crm_flujos_render_diagramas_html(array $diagramas, $incluir_mermaid_js 
     return ob_get_clean();
 }
 
+/**
+ * [crm_flujos] — la misma vista de wp-admin/CRM/Flujos (y de la sección
+ * equivalente en /panel-de-control/), como página propia del App Shell
+ * (v1.20.100): un enlace directo en el menú principal para que el cliente
+ * pueda entrar a revisar el estado real del CRM sin tener que rebuscarlo
+ * dentro del panel general.
+ */
+add_shortcode('crm_flujos', 'crm_flujos_shortcode');
+function crm_flujos_shortcode() {
+    if (!current_user_can('crm_admin')) {
+        return '<p>No tienes permiso para ver esta sección.</p>';
+    }
+    ob_start();
+    ?>
+    <style><?php echo crm_flujos_roadmap_shared_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></style>
+    <div class="crm-flujo-card">
+        <h2 style="margin-top:0;">Roadmap del CRM</h2>
+        <p style="max-width:820px;color:#555;">Estado real de cada parte del CRM — hecho, en pruebas, pendiente o bloqueado. Lo registra cada módulo junto a su propio código (no es un documento aparte), para que nunca se desincronice de lo que el CRM hace de verdad.</p>
+        <?php echo crm_roadmap_render_html(crm_roadmap_get_fases()); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+    </div>
+    <p style="max-width:820px;color:#555;">Diagramas de los flujos principales del CRM:</p>
+    <?php echo crm_flujos_render_diagramas_html(crm_flujos_get_diagramas()); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+    <?php
+    return ob_get_clean();
+}
+
 function crm_flujos_render_admin() {
     if (!current_user_can('crm_admin')) {
         wp_die('Sin permisos');

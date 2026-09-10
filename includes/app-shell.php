@@ -477,6 +477,16 @@ function crm_app_shell_menu_items() {
             'roles' => ['administrator', 'crm_admin'],
         ],
         [
+            // v1.20.100: item condensado (sin desplegable, un enlace directo)
+            // para que el cliente pueda revisar qué hace el CRM hoy y qué
+            // queda pendiente, sin tener que entrar al Panel general a
+            // buscarlo. Misma vista que ya existía en wp-admin/CRM/Flujos.
+            'label' => 'Flujos',
+            'slug'  => 'flujos',
+            'icon'  => 'diagram',
+            'roles' => ['administrator', 'crm_admin'],
+        ],
+        [
             // v1.20.27 — Fase 2 del módulo de instalaciones. Apunta al listado;
             // la alta desde presupuesto se abre con el botón "+ Nueva instalación"
             // de esa misma pantalla, no hay submenú anidado en esta topbar.
@@ -869,3 +879,16 @@ function crm_app_shell_render_admin() {
     </div>
     <?php
 }
+
+/**
+ * Roadmap del menú del App Shell (v1.20.96-97) — ver includes/flujos-page.php.
+ */
+add_filter('crm_roadmap_fases', function ($fases) {
+    $fases[] = [
+        'fase'    => 'Menú',
+        'titulo'  => 'Menú de administrator/crm_admin agrupado en "Clientes"/"Ventas" + menú hamburguesa en móvil',
+        'estado'  => 'en_pruebas',
+        'detalle' => 'Confirmado por el usuario funcionando en móvil (hamburguesa + acordeón). El desplegable de escritorio tuvo un bug real (recorte por overflow del nav, corregido en v1.20.97) — pendiente de que el usuario confirme visualmente que ya se ve bien tras el arreglo.',
+    ];
+    return $fases;
+});

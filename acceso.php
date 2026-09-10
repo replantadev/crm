@@ -332,3 +332,16 @@ function mostrar_menu_item_crm_admin($items, $args)
 
     return $items;
 }
+
+/**
+ * Roadmap del login nativo (v1.20.94) — ver includes/flujos-page.php.
+ */
+add_filter('crm_roadmap_fases', function ($fases) {
+    $fases[] = [
+        'fase'    => 'Login',
+        'titulo'  => 'Login nativo del plugin (sin depender de Elementor ni de Members)',
+        'estado'  => 'hecho',
+        'detalle' => 'Formulario propio ([crm_login]) + compatibilidad con "sitio privado" de Members. Confirmado por el usuario funcionando en producción tras desactivar Elementor.',
+    ];
+    return $fases;
+});

@@ -263,3 +263,16 @@ function crm_instaladores_estadisticas_widget() {
     <?php
     return ob_get_clean();
 }
+
+/**
+ * Roadmap del menú "Ventas" (v1.20.96) — ver includes/flujos-page.php.
+ */
+add_filter('crm_roadmap_fases', function ($fases) {
+    $fases[] = [
+        'fase'    => 'Ventas',
+        'titulo'  => 'Menú "Ventas": presupuestos de Holded y resumen mensual',
+        'estado'  => 'en_pruebas',
+        'detalle' => 'Presupuestos (todos los de Holded, con estado y cliente enlazado) y Resumen (generados/aprobados/importe por mes). Construido, sin confirmación del usuario todavía — incluida la carga de la primera visita, que puede tardar con muchos presupuestos en Holded.',
+    ];
+    return $fases;
+});

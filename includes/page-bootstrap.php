@@ -125,6 +125,12 @@ function crm_required_pages() {
             'content' => '[crm_inst_validar_extra_cliente]',
         ],
         [
+            // v1.20.100 — item de menú "Flujos": roadmap + diagramas del CRM.
+            'slug'    => 'flujos',
+            'title'   => 'Flujos',
+            'content' => '[crm_flujos]',
+        ],
+        [
             // v1.20.96 — menú "Ventas".
             'slug'    => 'ventas-presupuestos',
             'title'   => 'Presupuestos',

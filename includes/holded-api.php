@@ -495,6 +495,188 @@ function crm_holded_get_contacts_cached() {
     return $contactos;
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Oportunidades / CRM de ventas de Holded (v1.20.99)
+//
+// Módulo de Holded completamente distinto a contactos/presupuestos — en la
+// API se llama "Leads" (`/api/v2/leads`), aunque en la interfaz de Holded se
+// muestra como "Oportunidades"/Deals. Cada oportunidad vive dentro de un
+// "funnel" (embudo de ventas, ej. "CAPTADORAS") con sus propias etapas
+// (`stage_id`), mucho más detalladas que nuestro estado_por_sector de 6
+// niveles — ver `crm_holded_lead_etapa_a_estado_avanzado()`.
+//
+// Verificado en vivo 2026-09-10 con una oportunidad real:
+// - Se empareja con el contacto por `contact_id` (si es una empresa) o por
+//   `person_id` (si es una persona física) — ambos son el mismo espacio de
+//   IDs que `/contacts` (confirmado pidiendo el contacto de un person_id
+//   real), pero un lead solo rellena uno de los dos, nunca ambos.
+// - `/leads` (listado) NO admite filtrar por contacto — no hay más remedio
+//   que traerlos todos y buscar en memoria, igual que con `/contacts`.
+// - El detalle de la oportunidad NO incluye sus notas, y no existe ningún
+//   `GET` para leerlas (solo `POST`/`PUT` para crear/actualizar una ya
+//   conocida por `note_id`) — las notas que ya existen en Holded no se
+//   pueden importar por API, es una limitación real de Holded, no nuestra.
+// - No hay ningún endpoint `/users` o `/team` en la API v2 para resolver el
+//   `user_id` (comercial asignado) a un nombre — se resuelve contra un mapa
+//   manual guardado en Ajustes, ver `crm_holded_resolver_nombre_usuario()`.
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * stage_id => nombre de etapa, de TODOS los embudos de la cuenta (una
+ * oportunidad solo trae el id de su etapa, nunca el nombre). Cacheado 24h:
+ * la configuración de embudos apenas cambia.
+ *
+ * @return array<string,string>
+ */
+function crm_holded_get_etapas_funnel_cached() {
+    $cache_key = 'crm_holded_etapas_funnel';
+    $cached = get_transient($cache_key);
+    if ($cached !== false) {
+        return $cached;
+    }
+
+    $etapas = [];
+    $result = crm_holded_request('GET', 'funnels', ['query' => ['limit' => 200]]);
+    if (!is_wp_error($result)) {
+        $funnels = isset($result['items']) && is_array($result['items']) ? $result['items'] : [];
+        foreach ($funnels as $funnel) {
+            foreach ((array) ($funnel['stages'] ?? []) as $stage) {
+                if (!empty($stage['id'])) {
+                    $etapas[(string) $stage['id']] = (string) ($stage['name'] ?? '');
+                }
+            }
+        }
+    }
+
+    set_transient($cache_key, $etapas, 24 * HOUR_IN_SECONDS);
+    return $etapas;
+}
+
+/**
+ * Todas las oportunidades de Holded, cacheadas 30 min — mismo patrón de
+ * cursor que contactos/presupuestos/productos.
+ *
+ * @return array|WP_Error
+ */
+function crm_holded_get_leads_cached() {
+    $cache_key = 'crm_holded_leads_all';
+    $cached = get_transient($cache_key);
+    if ($cached !== false) {
+        return $cached;
+    }
+
+    $leads = [];
+    $cursor = null;
+    for ($i = 0; $i < 40; $i++) { // hasta ~2000 oportunidades
+        $query = $cursor ? ['cursor' => $cursor] : [];
+        $result = crm_holded_request('GET', 'leads', ['query' => $query]);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        $items = isset($result['items']) && is_array($result['items']) ? $result['items'] : [];
+        $leads = array_merge($leads, $items);
+        if (empty($result['has_more']) || empty($result['cursor'])) {
+            break;
+        }
+        $cursor = $result['cursor'];
+    }
+
+    set_transient($cache_key, $leads, 30 * MINUTE_IN_SECONDS);
+    return $leads;
+}
+
+/**
+ * La oportunidad más reciente de un contacto de Holded (por `contact_id` o
+ * `person_id`, ver nota de cabecera de esta sección). Si hay varias, gana la
+ * de `updated_at` más reciente.
+ *
+ * @param string $holded_contact_id
+ * @return array{id:string,valor:?float,probabilidad:?int,etapa_id:string,etapa_nombre:string,status:string,user_id:string}|null
+ */
+function crm_holded_get_oportunidad_contacto($holded_contact_id) {
+    $holded_contact_id = trim((string) $holded_contact_id);
+    if ($holded_contact_id === '') {
+        return null;
+    }
+
+    $leads = crm_holded_get_leads_cached();
+    if (is_wp_error($leads)) {
+        return null;
+    }
+
+    $candidatos = array_values(array_filter((array) $leads, function ($lead) use ($holded_contact_id) {
+        return (string) ($lead['contact_id'] ?? '') === $holded_contact_id
+            || (string) ($lead['person_id'] ?? '') === $holded_contact_id;
+    }));
+    if (empty($candidatos)) {
+        return null;
+    }
+
+    usort($candidatos, function ($a, $b) {
+        return strcmp((string) ($b['updated_at'] ?? ''), (string) ($a['updated_at'] ?? ''));
+    });
+    $lead   = $candidatos[0];
+    $etapas = crm_holded_get_etapas_funnel_cached();
+
+    return [
+        'id'           => (string) ($lead['id'] ?? ''),
+        'valor'        => isset($lead['value']) ? (float) str_replace(',', '.', (string) $lead['value']) : null,
+        'probabilidad' => isset($lead['potential']) ? (int) $lead['potential'] : null,
+        'etapa_id'     => (string) ($lead['stage_id'] ?? ''),
+        'etapa_nombre' => $etapas[(string) ($lead['stage_id'] ?? '')] ?? '',
+        'status'       => (string) ($lead['status'] ?? ''),
+        'user_id'      => (string) ($lead['user_id'] ?? ''),
+    ];
+}
+
+/**
+ * Traduce la etapa de una oportunidad a un estado_por_sector MÁS AVANZADO
+ * que "presupuesto_aceptado" — nunca a uno anterior. Solo se ocupa de lo que
+ * el presupuesto de Holded nunca puede saber por sí solo (que hay contrato
+ * enviado/firmado): las demás etapas (Lead, Interes real, Aceptado...) se
+ * quedan sin mapear a propósito, porque en la práctica pueden ir por detrás
+ * del presupuesto real (verificado con un caso real: presupuesto ya
+ * aprobado en Holded mientras la oportunidad seguía en "Interes real") — es
+ * el presupuesto quien manda para esos estados, ver
+ * `crm_holded_sync_actualizar_cliente()`.
+ *
+ * @param string $etapa_nombre
+ * @return string|null
+ */
+function crm_holded_lead_etapa_a_estado_avanzado($etapa_nombre) {
+    $mapa = [
+        'contrato enviado'  => 'contratos_generados',
+        'contrato firmado'  => 'contratos_firmados',
+        'ingreso realizado' => 'contratos_firmados',
+    ];
+    return $mapa[mb_strtolower(trim((string) $etapa_nombre))] ?? null;
+}
+
+/**
+ * Nombre legible de un comercial de Holded a partir de su ID interno. La API
+ * v2 no expone ningún endpoint para resolverlo (verificado: no existe
+ * `/users` ni `/team`) — se resuelve contra el mapa manual de Ajustes
+ * (`crm_holded_usuarios_mapa`, una línea `id=Nombre` por comercial). Si no
+ * está mapeado, se devuelve el ID tal cual, sin ocultar el dato.
+ *
+ * @param string $holded_user_id
+ * @return string
+ */
+function crm_holded_resolver_nombre_usuario($holded_user_id) {
+    $holded_user_id = trim((string) $holded_user_id);
+    if ($holded_user_id === '') {
+        return '';
+    }
+    $mapa_raw = (string) get_option('crm_holded_usuarios_mapa', '');
+    foreach (preg_split('/\r\n|\r|\n/', $mapa_raw) as $linea) {
+        $partes = explode('=', $linea, 2);
+        if (count($partes) === 2 && trim($partes[0]) === $holded_user_id) {
+            return trim($partes[1]);
+        }
+    }
+    return $holded_user_id;
+}
+
 /**
  * Busca contactos por texto libre (nombre, email o CIF/código).
  *

@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.98
+Version: 1.20.99
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.98');
+define('CRM_PLUGIN_VERSION', '1.20.99');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -4051,6 +4051,18 @@ function crm_update_clients_table_structure() {
         // desde la última pasada, en vez de consultar los ~2000 contactos
         // de la cuenta cada hora sin necesidad.
         'holded_contact_updated_at' => "VARCHAR(40) DEFAULT NULL",
+        // v1.20.99 — página web del contacto (relleno solo si estaba vacía).
+        'holded_web' => "VARCHAR(255) DEFAULT NULL",
+        // v1.20.99 — oportunidad ("deal"/lead) del CRM de Holded más reciente de
+        // este contacto: cantidad, probabilidad, etapa del embudo de ventas,
+        // estado (open/won/lost) y comercial asignado (ID de Holded, sin
+        // resolver a nombre — ver crm_holded_resolver_nombre_usuario()).
+        'holded_lead_id'            => "VARCHAR(100) DEFAULT NULL",
+        'holded_lead_valor'         => "DECIMAL(10,2) DEFAULT NULL",
+        'holded_lead_probabilidad'  => "TINYINT DEFAULT NULL",
+        'holded_lead_etapa'         => "VARCHAR(100) DEFAULT NULL",
+        'holded_lead_status'        => "VARCHAR(16) DEFAULT NULL",
+        'holded_lead_user_id'       => "VARCHAR(100) DEFAULT NULL",
     ];
     
     foreach ($required_columns as $column => $definition) {

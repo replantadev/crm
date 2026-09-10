@@ -3907,7 +3907,8 @@ function crm_inst_get_instalaciones_resumen_by_client( $client_id ) {
 function crm_inst_render_resumen_cliente( $client_id ) {
 	global $wpdb;
 	$cliente = $wpdb->get_row( $wpdb->prepare(
-		"SELECT holded_contact_id, holded_estimate_numero, holded_estimate_total, holded_estimate_moneda, holded_estimate_aprobado, holded_last_synced_at
+		"SELECT holded_contact_id, holded_estimate_numero, holded_estimate_total, holded_estimate_moneda, holded_estimate_aprobado, holded_last_synced_at,
+		        holded_web, holded_lead_valor, holded_lead_probabilidad, holded_lead_etapa, holded_lead_status, holded_lead_user_id
 		 FROM {$wpdb->prefix}crm_clients WHERE id = %d",
 		(int) $client_id
 	), ARRAY_A );
@@ -3939,6 +3940,35 @@ function crm_inst_render_resumen_cliente( $client_id ) {
 					<span>#<?php echo esc_html( $cliente['holded_estimate_numero'] ); ?><?php echo $cliente['holded_estimate_total'] !== null ? ' — ' . esc_html( number_format_i18n( (float) $cliente['holded_estimate_total'], 2 ) ) . ' ' . esc_html( $cliente['holded_estimate_moneda'] ?: '€' ) : ''; ?></span>
 					<?php if ( ! empty( $cliente['holded_last_synced_at'] ) ) : ?>
 						<span class="crm-inst-resumen-fecha">Sincronizado <?php echo esc_html( date_i18n( 'd/m/Y H:i', strtotime( $cliente['holded_last_synced_at'] ) ) ); ?></span>
+					<?php endif; ?>
+				</div>
+			<?php endif; ?>
+
+			<?php if ( ! empty( $cliente['holded_web'] ) ) : ?>
+				<div class="crm-inst-resumen-fila">
+					<span class="crm-inst-resumen-fecha">Web:</span>
+					<a href="<?php echo esc_url( $cliente['holded_web'] ); ?>" target="_blank" rel="noopener"><?php echo esc_html( $cliente['holded_web'] ); ?></a>
+				</div>
+			<?php endif; ?>
+
+			<?php if ( ! empty( $cliente['holded_lead_etapa'] ) ) : ?>
+				<strong style="margin-top:10px;">Oportunidad Holded</strong>
+				<div class="crm-inst-resumen-fila">
+					<?php
+					$estado_lead = (string) $cliente['holded_lead_status'];
+					$badge_class = $estado_lead === 'won' ? 'lista' : ( $estado_lead === 'lost' ? 'cancelada' : 'planificada' );
+					$badge_label = $estado_lead === 'won' ? 'Ganado' : ( $estado_lead === 'lost' ? 'Perdido' : 'Abierto' );
+					?>
+					<span class="status-badge status-inst-<?php echo esc_attr( $badge_class ); ?>"><?php echo esc_html( $badge_label ); ?></span>
+					<span><?php echo esc_html( $cliente['holded_lead_etapa'] ); ?></span>
+					<?php if ( $cliente['holded_lead_valor'] !== null ) : ?>
+						<span><?php echo esc_html( number_format_i18n( (float) $cliente['holded_lead_valor'], 2 ) ); ?> €</span>
+					<?php endif; ?>
+					<?php if ( $cliente['holded_lead_probabilidad'] !== null ) : ?>
+						<span class="crm-inst-resumen-fecha"><?php echo (int) $cliente['holded_lead_probabilidad']; ?>% probabilidad</span>
+					<?php endif; ?>
+					<?php if ( ! empty( $cliente['holded_lead_user_id'] ) && function_exists( 'crm_holded_resolver_nombre_usuario' ) ) : ?>
+						<span class="crm-inst-resumen-fecha">Asignado a <?php echo esc_html( crm_holded_resolver_nombre_usuario( $cliente['holded_lead_user_id'] ) ); ?></span>
 					<?php endif; ?>
 				</div>
 			<?php endif; ?>

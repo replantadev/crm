@@ -18,9 +18,23 @@
  *
  * Importante: el sector "renovables" nunca se hace retroceder más allá de
  * lo que Holded puede explicar por sí solo (si existe un presupuesto y si
- * está aprobado) — si un comercial ya avanzó ese sector a mano hasta
- * contratos_generados/firmados, la sincro lo deja intacto, porque Holded no
- * tiene ninguna señal sobre contratos.
+ * está aprobado, más la oportunidad de ventas — ver
+ * `crm_holded_lead_etapa_a_estado_avanzado()`) — si un comercial ya avanzó
+ * ese sector a mano más allá de lo que Holded puede confirmar, la sincro lo
+ * deja intacto.
+ *
+ * v1.20.99 — decisiones confirmadas con el usuario 2026-09-10 tras revisar
+ * un cliente real con datos incompletos:
+ * - Solo los contactos con `type === 'client'` se convierten en cliente del
+ *   CRM (antes se procesaban TODOS los types — proveedores/leads sin
+ *   convertir se estaban colando como fichas de cliente).
+ * - `tipo` (Residencial/Autónomo/Empresa) se rellena solo si estaba vacío,
+ *   a partir de `is_person` del contacto (persona física → Residencial,
+ *   empresa → Empresa) — antes esta sincro nunca lo tocaba.
+ * - La oportunidad de venta ("deal"/lead del CRM de Holded, distinto de
+ *   contactos/presupuestos) del contacto se guarda también, y su etapa
+ *   puede avanzar el estado más allá de lo que el presupuesto sabe (p.ej.
+ *   "Contrato firmado") — ver `includes/holded-api.php`.
  *
  * @package CRM_Energitel
  */
@@ -72,18 +86,25 @@ function crm_holded_get_ultimo_presupuesto_contacto($holded_contact_id) {
 
 /**
  * Actualiza intereses / estado_por_sector['renovables'] / estado global /
- * datos cacheados del último presupuesto, para un cliente ya vinculado a
- * un contacto de Holded.
+ * datos cacheados del último presupuesto y de la oportunidad de venta, para
+ * un cliente ya vinculado a un contacto de Holded.
  *
  * Optimización importante: `GET /contacts` no tiene filtro "modificado
  * desde" (verificado en la API real) — con ~2000 contactos posibles, no es
  * viable pedir /estimates para cada uno en cada pasada horaria. Se compara
  * el `updated_at` que Holded ya trae en el propio contacto contra el que se
  * guardó la última vez: si no ha cambiado Y ya se resolvió antes, se salta
- * la llamada a /estimates entero.
+ * la llamada a /estimates y se reutiliza el presupuesto ya cacheado en el
+ * propio cliente.
+ *
+ * La oportunidad de venta, en cambio, SIEMPRE se recalcula: no cuesta una
+ * llamada extra por contacto (sale de `crm_holded_get_leads_cached()`, un
+ * único listado de toda la cuenta cacheado 30 min, filtrado en memoria) y
+ * puede cambiar de etapa sin que el contacto se entere (su `updated_at` no
+ * se toca al mover una oportunidad de columna en el pipeline de Holded).
  *
  * @param int    $client_id
- * @param array  $contacto Objeto de contacto de Holded (id, updated_at...).
+ * @param array  $contacto Objeto de contacto de Holded (id, updated_at, is_person, website...).
  */
 function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
     $client_id = (int) $client_id;
@@ -96,7 +117,11 @@ function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
     global $wpdb;
     $table  = $wpdb->prefix . 'crm_clients';
     $client = $wpdb->get_row($wpdb->prepare(
-        "SELECT intereses, estado_por_sector, presupuesto, holded_contact_updated_at, holded_last_synced_at FROM {$table} WHERE id = %d",
+        "SELECT intereses, estado_por_sector, presupuesto, tipo, holded_web,
+                holded_estimate_id, holded_estimate_numero, holded_estimate_total,
+                holded_estimate_moneda, holded_estimate_aprobado,
+                holded_contact_updated_at, holded_last_synced_at
+         FROM {$table} WHERE id = %d",
         $client_id
     ), ARRAY_A);
     if (!$client) {
@@ -104,13 +129,21 @@ function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
     }
     $client['id'] = $client_id;
 
-    $ya_procesado_antes = !empty($client['holded_last_synced_at']);
-    $sin_cambios        = $updated_at !== '' && $updated_at === $client['holded_contact_updated_at'];
-    if ($sin_cambios && $ya_procesado_antes) {
-        return; // Nada que Holded haya cambiado desde la última pasada.
-    }
+    $ya_procesado_antes   = !empty($client['holded_last_synced_at']);
+    $contacto_sin_cambios = $updated_at !== '' && $updated_at === $client['holded_contact_updated_at'];
 
-    $presupuesto = crm_holded_get_ultimo_presupuesto_contacto($holded_contact_id);
+    if ($contacto_sin_cambios && $ya_procesado_antes) {
+        $presupuesto = !empty($client['holded_estimate_id']) ? [
+            'id'              => (string) $client['holded_estimate_id'],
+            'document_number' => (string) $client['holded_estimate_numero'],
+            'total'           => $client['holded_estimate_total'] !== null ? (float) $client['holded_estimate_total'] : null,
+            'currency'        => (string) $client['holded_estimate_moneda'],
+            'aprobado'        => !empty($client['holded_estimate_aprobado']),
+        ] : null;
+    } else {
+        $presupuesto = crm_holded_get_ultimo_presupuesto_contacto($holded_contact_id);
+    }
+    $oportunidad = crm_holded_get_oportunidad_contacto($holded_contact_id);
 
     $intereses = crm_safe_unserialize_array($client['intereses'] ?? '');
     if (!in_array('renovables', $intereses, true)) {
@@ -126,6 +159,23 @@ function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
             $estado_por_sector['renovables'] = $presupuesto['aprobado'] ? 'presupuesto_aceptado' : 'presupuesto_generado';
         }
     }
+    // v1.20.99: la oportunidad puede saber cosas que el presupuesto nunca
+    // sabrá (contrato enviado/firmado) — si su etapa mapea a un estado MÁS
+    // avanzado que el que ya tenemos, se adopta; nunca al revés (ver
+    // crm_holded_lead_etapa_a_estado_avanzado(), que deliberadamente no
+    // mapea etapas anteriores a "aceptado" porque pueden ir por detrás del
+    // presupuesto real).
+    if ($oportunidad) {
+        $estado_sugerido = crm_holded_lead_etapa_a_estado_avanzado($oportunidad['etapa_nombre']);
+        if ($estado_sugerido !== null) {
+            $orden        = crm_get_orden_estados();
+            $pos_actual   = array_search((string) ($estado_por_sector['renovables'] ?? ''), $orden, true);
+            $pos_sugerido = array_search($estado_sugerido, $orden, true);
+            if ($pos_sugerido !== false && ($pos_actual === false || $pos_sugerido > $pos_actual)) {
+                $estado_por_sector['renovables'] = $estado_sugerido;
+            }
+        }
+    }
 
     $update = [
         'intereses'                 => maybe_serialize(array_values($intereses)),
@@ -138,7 +188,22 @@ function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
         'holded_estimate_total'     => $presupuesto['total'] ?? null,
         'holded_estimate_moneda'    => $presupuesto['currency'] ?? null,
         'holded_estimate_aprobado'  => $presupuesto ? ( $presupuesto['aprobado'] ? 1 : 0 ) : null,
+        'holded_lead_id'            => $oportunidad['id'] ?? null,
+        'holded_lead_valor'         => $oportunidad['valor'] ?? null,
+        'holded_lead_probabilidad'  => $oportunidad['probabilidad'] ?? null,
+        'holded_lead_etapa'         => $oportunidad['etapa_nombre'] ?? null,
+        'holded_lead_status'        => $oportunidad['status'] ?? null,
+        'holded_lead_user_id'       => $oportunidad['user_id'] ?? null,
     ];
+
+    // v1.20.99: tipo (empresa/persona) y web, solo si estaban vacíos — nunca
+    // se corrige un dato real que ya hubiera puesto un comercial a mano.
+    if (empty($client['tipo']) && array_key_exists('is_person', $contacto)) {
+        $update['tipo'] = !empty($contacto['is_person']) ? 'Residencial' : 'Empresa';
+    }
+    if (empty($client['holded_web']) && !empty($contacto['website'])) {
+        $update['holded_web'] = esc_url_raw((string) $contacto['website']);
+    }
 
     // v1.20.98: adjuntar el PDF del presupuesto al campo "Presupuestos" del
     // cliente (antes la sincro solo guardaba el número/importe en las
@@ -185,6 +250,12 @@ function crm_holded_sync_clientes_run() {
     foreach ((array) $contactos as $contacto) {
         $holded_contact_id = (string) ($contacto['id'] ?? '');
         if ($holded_contact_id === '') {
+            continue;
+        }
+        // v1.20.99: solo contactos marcados como cliente en Holded — antes se
+        // procesaban TODOS los `type` (proveedores, leads sin convertir...),
+        // creando fichas de cliente que no correspondían.
+        if (($contacto['type'] ?? '') !== 'client') {
             continue;
         }
 

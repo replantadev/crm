@@ -115,6 +115,14 @@ function crm_register_admin_settings() {
         'default'           => false,
         'sanitize_callback' => function ($v) { return !empty($v); },
     ]);
+    // v1.20.99 — la API de Holded no expone ningún endpoint para resolver el
+    // ID de un comercial a su nombre (verificado: no hay /users ni /team),
+    // así que se mantiene aquí a mano: una línea "id=Nombre" por comercial.
+    register_setting('crm_settings', 'crm_holded_usuarios_mapa', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => function ($v) { return sanitize_textarea_field((string) $v); },
+    ]);
     // v1.20.41 — Fase 4: branding del panel del instalador (hoy Ecovolt, pensado
     // para poder cambiar de marca el día que haya más de un cliente del CRM).
     register_setting('crm_settings', 'crm_instalador_panel_brand', [
@@ -803,6 +811,13 @@ function crm_admin_render_settings() {
                         <button type="button" class="button" id="crm-holded-sync-clientes-ahora-btn">Sincronizar ahora</button>
                         <span id="crm-holded-sync-clientes-msg"></span>
                     </p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_holded_usuarios_mapa">Comerciales de Holded</label></th>
+                <td>
+                    <textarea id="crm_holded_usuarios_mapa" name="crm_holded_usuarios_mapa" class="large-text" rows="4" placeholder="6a3575970e631f452b05dac8=María&#10;otro_id_de_holded=Nombre"><?php echo esc_textarea((string) get_option('crm_holded_usuarios_mapa', '')); ?></textarea>
+                    <p class="description">La API de Holded no permite consultar el nombre de un comercial a partir de su ID — una línea <code>id=Nombre</code> por comercial (el ID aparece sin traducir en la ficha de cliente si falta aquí). Se rellena a mano, cambia poco.</p>
                 </td>
             </tr>
             <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Panel del instalador (v1.20.41)</h3></th></tr>

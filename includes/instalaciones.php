@@ -871,6 +871,44 @@ function crm_inst_save_holded_pdf_to_uploads( $estimate_id ) {
 }
 
 /**
+ * Descarga (si hace falta) y adjunta el PDF de un presupuesto de Holded al
+ * campo "Presupuestos" del cliente (`presupuesto['renovables']`, el mismo
+ * array de URLs que rellena el formulario de subida a mano) — sin duplicar
+ * si ese presupuesto concreto ya estaba adjunto.
+ *
+ * Extraído de `crm_inst_enrich_client_for_renovables()` (v1.20.62) para que
+ * la sincronización periódica (v1.20.95, `holded-clientes-sync.php`) pueda
+ * reutilizarlo — antes solo se adjuntaba al dar de alta una instalación
+ * desde el presupuesto, nunca durante la sincro de clientes.
+ *
+ * @param array  $client      Fila de wp_crm_clients (necesita al menos 'id' y 'presupuesto').
+ * @param string $estimate_id
+ * @return string|null Valor serializado para la columna `presupuesto`, o null si no cambia nada.
+ */
+function crm_inst_adjuntar_presupuesto_holded_si_falta( array $client, $estimate_id ) {
+	$estimate_id = (string) $estimate_id;
+	if ( $estimate_id === '' ) {
+		return null;
+	}
+
+	$presupuesto = crm_safe_unserialize_array( $client['presupuesto'] ?? '' );
+	foreach ( (array) ( $presupuesto['renovables'] ?? [] ) as $url ) {
+		if ( is_string( $url ) && strpos( $url, sanitize_file_name( $estimate_id ) ) !== false ) {
+			return null; // Este presupuesto ya estaba adjunto.
+		}
+	}
+
+	$pdf_url = crm_inst_save_holded_pdf_to_uploads( $estimate_id );
+	if ( is_wp_error( $pdf_url ) ) {
+		crm_inst_log_action( 0, 'cliente', 'adjuntar_presupuesto_error', 'No se pudo adjuntar el PDF a la ficha del cliente #' . ( (int) ( $client['id'] ?? 0 ) ) . ': ' . $pdf_url->get_error_message() );
+		return null;
+	}
+
+	$presupuesto['renovables'] = array_merge( (array) ( $presupuesto['renovables'] ?? [] ), [ $pdf_url ] );
+	return maybe_serialize( $presupuesto );
+}
+
+/**
  * Completa en `wp_crm_clients` lo que el flujo de comercial rellena siempre
  * a mano al dar de alta un interés en renovables: marca el interés, inicia
  * el estado del sector (solo si no tenía ya uno), rellena el tipo de cliente
@@ -921,22 +959,9 @@ function crm_inst_enrich_client_for_renovables( $client_id, $estimate_id, $tipo_
 	}
 
 	// 4) Presupuesto adjunto: solo si este presupuesto en concreto no estaba ya.
-	$presupuesto = crm_safe_unserialize_array( $client['presupuesto'] ?? '' );
-	$ya_adjunto  = false;
-	foreach ( (array) ( $presupuesto['renovables'] ?? [] ) as $url ) {
-		if ( is_string( $url ) && strpos( $url, sanitize_file_name( $estimate_id ) ) !== false ) {
-			$ya_adjunto = true;
-			break;
-		}
-	}
-	if ( ! $ya_adjunto ) {
-		$pdf_url = crm_inst_save_holded_pdf_to_uploads( $estimate_id );
-		if ( ! is_wp_error( $pdf_url ) ) {
-			$presupuesto['renovables']  = array_merge( (array) ( $presupuesto['renovables'] ?? [] ), [ $pdf_url ] );
-			$update['presupuesto']      = maybe_serialize( $presupuesto );
-		} else {
-			crm_inst_log_action( 0, 'cliente', 'adjuntar_presupuesto_error', 'No se pudo adjuntar el PDF a la ficha del cliente #' . $client_id . ': ' . $pdf_url->get_error_message() );
-		}
+	$presupuesto_actualizado = crm_inst_adjuntar_presupuesto_holded_si_falta( $client, $estimate_id );
+	if ( $presupuesto_actualizado !== null ) {
+		$update['presupuesto'] = $presupuesto_actualizado;
 	}
 
 	if ( ! empty( $update ) ) {

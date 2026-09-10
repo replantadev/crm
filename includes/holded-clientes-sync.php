@@ -96,12 +96,13 @@ function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
     global $wpdb;
     $table  = $wpdb->prefix . 'crm_clients';
     $client = $wpdb->get_row($wpdb->prepare(
-        "SELECT intereses, estado_por_sector, holded_contact_updated_at, holded_last_synced_at FROM {$table} WHERE id = %d",
+        "SELECT intereses, estado_por_sector, presupuesto, holded_contact_updated_at, holded_last_synced_at FROM {$table} WHERE id = %d",
         $client_id
     ), ARRAY_A);
     if (!$client) {
         return;
     }
+    $client['id'] = $client_id;
 
     $ya_procesado_antes = !empty($client['holded_last_synced_at']);
     $sin_cambios        = $updated_at !== '' && $updated_at === $client['holded_contact_updated_at'];
@@ -138,6 +139,19 @@ function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
         'holded_estimate_moneda'    => $presupuesto['currency'] ?? null,
         'holded_estimate_aprobado'  => $presupuesto ? ( $presupuesto['aprobado'] ? 1 : 0 ) : null,
     ];
+
+    // v1.20.98: adjuntar el PDF del presupuesto al campo "Presupuestos" del
+    // cliente (antes la sincro solo guardaba el número/importe en las
+    // columnas holded_estimate_*, mostrados en la card de la ficha, pero
+    // nunca el propio documento — quedaba sin marcar en la columna
+    // "Documentos" del listado de clientes). Reutiliza el mismo mecanismo
+    // que ya usaba el alta de instalación desde presupuesto.
+    if ($presupuesto && !empty($presupuesto['id']) && function_exists('crm_inst_adjuntar_presupuesto_holded_si_falta')) {
+        $presupuesto_actualizado = crm_inst_adjuntar_presupuesto_holded_si_falta($client, $presupuesto['id']);
+        if ($presupuesto_actualizado !== null) {
+            $update['presupuesto'] = $presupuesto_actualizado;
+        }
+    }
 
     $wpdb->update($table, $update, ['id' => $client_id]);
 }

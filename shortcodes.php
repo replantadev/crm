@@ -523,7 +523,14 @@ function crm_admin_panel_widget() {
                 </p>
             </form>
         </div>
-        
+
+        <!-- v1.20.103: canales de email de proveedor/instalador (remitente + SMTP propio) -->
+        <div class="crm-panel-section">
+            <h3>Notificaciones por email — proveedores e instaladores</h3>
+            <p style="color:#666;margin-top:-8px;">Si "Notificar proveedor" o los avisos a instaladores no están llegando, es porque el envío por defecto del servidor no es fiable — configura aquí un remitente propio y, si hace falta, un SMTP propio para cada uno.</p>
+            <?php if (function_exists('crm_mail_settings_render_todo')) { crm_mail_settings_render_todo(); } ?>
+        </div>
+
         <!-- Log de Actividades -->
         <div class="crm-panel-section">
             <h3>Registro de actividades</h3>

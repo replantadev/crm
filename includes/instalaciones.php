@@ -1829,6 +1829,34 @@ function crm_inst_aviso_materiales_pendientes_run() {
 }
 
 /**
+ * Envía un email a un instalador por el canal "instalador" (v1.20.103,
+ * `includes/mail-settings.php`) — hermano por email de `crm_notificar()`
+ * (que solo avisa in-app) para los 2 momentos más relevantes: se le asigna
+ * una instalación, o se le programa/reprograma una visita. Best-effort: si
+ * falla, no bloquea nada (el aviso in-app ya se hizo aparte).
+ *
+ * @param int    $user_id
+ * @param string $asunto
+ * @param string $mensaje
+ * @param string $url
+ */
+function crm_inst_email_instalador( $user_id, $asunto, $mensaje, $url = '' ) {
+	if ( ! function_exists( 'crm_mail_enviar' ) ) {
+		return;
+	}
+	$user = get_userdata( (int) $user_id );
+	if ( ! $user || empty( $user->user_email ) ) {
+		return;
+	}
+	$body = '<p>' . esc_html( $mensaje ) . '</p>';
+	if ( $url !== '' ) {
+		$body .= '<p><a href="' . esc_url( $url ) . '">Ver en el CRM</a></p>';
+	}
+	$body .= '<p style="color:#666;font-size:12px">Aviso automático del CRM.</p>';
+	crm_mail_enviar( 'instalador', $user->user_email, '[CRM] ' . $asunto, $body );
+}
+
+/**
  * Envía un email a todos los jefe_instalaciones/crm_admin — mismo público que
  * `crm_notificar_jefes_instalaciones()`, pero por email en vez de in-app.
  */
@@ -3027,11 +3055,15 @@ function crm_inst_ajax_notificar_proveedor() {
 	$body .= '<p><a href="' . esc_url( $confirmar_url ) . '">Confirmar disponibilidad de este pedido</a></p>';
 	$body .= '<p style="color:#666;font-size:12px">Mensaje automático del CRM. No responder a este correo — usa el enlace de arriba para confirmar.</p>';
 
-	$headers = [ 'Content-Type: text/html; charset=UTF-8' ];
-	$sent    = wp_mail( $proveedor_email, $subject, $body, $headers );
+	// v1.20.103: usa el canal "proveedor" (remitente + SMTP propio si está
+	// configurado en Ajustes) en vez de wp_mail() directo — antes dependía
+	// enteramente del envío por defecto del servidor, sin ningún control.
+	$sent = function_exists( 'crm_mail_enviar' )
+		? crm_mail_enviar( 'proveedor', $proveedor_email, $subject, $body )
+		: wp_mail( $proveedor_email, $subject, $body, [ 'Content-Type: text/html; charset=UTF-8' ] );
 
 	if ( ! $sent ) {
-		wp_send_json_error( [ 'message' => 'No se pudo enviar el email (revisa la configuración de envío del servidor).' ] );
+		wp_send_json_error( [ 'message' => 'No se pudo enviar el email — revisa la configuración de envío en CRM → Notificaciones (o el log de actividad para el detalle del error).' ] );
 	}
 
 	global $wpdb;
@@ -3344,6 +3376,12 @@ function crm_inst_ajax_asignar_instalador() {
 			home_url( '/panel-instalador/' )
 		);
 	}
+	crm_inst_email_instalador(
+		$user_id,
+		'Nueva instalación asignada',
+		'Te han asignado la instalación de ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.',
+		home_url( '/panel-instalador/' )
+	);
 
 	// v1.20.102: si la instalación ya tenía visita programada para otro
 	// instalador, este nuevo la hereda automáticamente — antes solo se
@@ -3359,14 +3397,11 @@ function crm_inst_ajax_asignar_instalador() {
 			[ 'instalacion_id' => $instalacion_id, 'fecha_cita' => $fecha_existente, 'instalador_id' => $user_id, 'estado' => 'pendiente' ],
 			[ '%d', '%s', '%d', '%s' ]
 		);
+		$mensaje_visita = 'Visita programada para ' . date_i18n( 'd/m/Y H:i', strtotime( $fecha_existente ) ) . ' — ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.';
 		if ( function_exists( 'crm_notificar' ) ) {
-			crm_notificar(
-				$user_id,
-				'visita_programada',
-				'Visita programada para ' . date_i18n( 'd/m/Y H:i', strtotime( $fecha_existente ) ) . ' — ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.',
-				home_url( '/calendario-instalador/' )
-			);
+			crm_notificar( $user_id, 'visita_programada', $mensaje_visita, home_url( '/calendario-instalador/' ) );
 		}
+		crm_inst_email_instalador( $user_id, 'Visita programada', $mensaje_visita, home_url( '/calendario-instalador/' ) );
 	}
 
 	wp_send_json_success( [ 'user_id' => $user_id, 'display_name' => $user->display_name ] );
@@ -3469,14 +3504,11 @@ function crm_inst_ajax_guardar_agenda() {
 			);
 		}
 
+		$mensaje_visita = ( $existing_id > 0 ? 'Visita reprogramada' : 'Visita programada' ) . ' para ' . date_i18n( 'd/m/Y H:i', $timestamp ) . ' — ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.';
 		if ( function_exists( 'crm_notificar' ) ) {
-			crm_notificar(
-				$instalador_id,
-				$existing_id > 0 ? 'visita_reprogramada' : 'visita_programada',
-				( $existing_id > 0 ? 'Visita reprogramada' : 'Visita programada' ) . ' para ' . date_i18n( 'd/m/Y H:i', $timestamp ) . ' — ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.',
-				home_url( '/calendario-instalador/' )
-			);
+			crm_notificar( $instalador_id, $existing_id > 0 ? 'visita_reprogramada' : 'visita_programada', $mensaje_visita, home_url( '/calendario-instalador/' ) );
 		}
+		crm_inst_email_instalador( $instalador_id, $existing_id > 0 ? 'Visita reprogramada' : 'Visita programada', $mensaje_visita, home_url( '/calendario-instalador/' ) );
 	}
 
 	crm_inst_log_action( $instalacion_id, 'agenda', 'programar_visita', 'Visita programada para ' . date_i18n( 'd/m/Y H:i', $timestamp ) . ' (' . count( $instaladores_asignados ) . ' instalador(es)).' );

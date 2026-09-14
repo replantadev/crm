@@ -43,6 +43,60 @@ function crm_mail_canales() {
 }
 
 /**
+ * v1.20.106 — qué evento concreto del CRM dispara cada canal hoy. No hay
+ * ningún interruptor por evento (activar/desactivar uno suelto) — esto es
+ * solo para que quede visible de un vistazo qué está conectado, sin tener
+ * que ir a buscarlo en el código. Si se conecta un evento nuevo a un canal,
+ * añadirlo aquí en el mismo commit.
+ *
+ * @return array<string,string[]> slug de canal => lista de eventos
+ */
+function crm_mail_eventos_por_canal() {
+    return [
+        'proveedor'  => [
+            '"Notificar proveedor" al pedir material pendiente (ficha de instalación)',
+        ],
+        'instalador' => [
+            'Instalador asignado a una instalación',
+            'Visita programada o reprogramada en la agenda',
+        ],
+    ];
+}
+
+/**
+ * Últimos envíos por estos canales (`crm_log_action('email_<canal>', ...)`,
+ * ver `crm_mail_enviar()`), leídos del mismo log de actividad general del
+ * CRM — sin tabla ni vista aparte.
+ *
+ * @param int $limite
+ * @return array<int,array{created_at:string,details:string,level:string}>
+ */
+function crm_mail_log_reciente($limite = 30) {
+    global $wpdb;
+    if (!function_exists('crm_get_available_log_months')) {
+        return [];
+    }
+    $canales_validos = array_map(function ($c) { return 'email_' . $c; }, array_keys(crm_mail_canales()));
+    $filas = [];
+    foreach (crm_get_available_log_months() as $mes) {
+        $tabla = $wpdb->prefix . 'crm_activity_log_' . $mes['value'];
+        $placeholders = implode(',', array_fill(0, count($canales_validos), '%s'));
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT created_at, details, level FROM {$tabla} WHERE action_type IN ({$placeholders}) ORDER BY created_at DESC LIMIT %d",
+            array_merge($canales_validos, [$limite])
+        ), ARRAY_A);
+        if ($rows) {
+            $filas = array_merge($filas, $rows);
+        }
+        if (count($filas) >= $limite) {
+            break; // Los meses ya vienen del más reciente al más antiguo.
+        }
+    }
+    usort($filas, function ($a, $b) { return strcmp($b['created_at'], $a['created_at']); });
+    return array_slice($filas, 0, $limite);
+}
+
+/**
  * Configuración de un canal, con valores por defecto.
  *
  * @param string $canal
@@ -197,21 +251,41 @@ function crm_mail_settings_render_canal($canal) {
         echo '<div style="padding:8px 12px;background:#d1fae5;color:#065f46;border-radius:6px;margin-bottom:10px;font-size:13px;">Configuración de «' . esc_html($canales[$canal]) . '» guardada.</div>';
     }
 
-    $cfg = crm_mail_get_config($canal);
+    $cfg    = crm_mail_get_config($canal);
+    $eventos = crm_mail_eventos_por_canal()[$canal] ?? [];
     ?>
     <div class="crm-mail-canal" style="margin-bottom:22px;padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
         <h4 style="margin:0 0 10px;"><?php echo esc_html($canales[$canal]); ?></h4>
+        <?php if (!empty($eventos)) : ?>
+            <p style="font-size:12.5px;color:#6b7280;margin:0 0 12px;">
+                Envía email cuando:
+                <?php foreach ($eventos as $i => $ev) : ?>
+                    <?php echo $i > 0 ? ' · ' : ' '; ?><?php echo esc_html($ev); ?>
+                <?php endforeach; ?>
+            </p>
+        <?php endif; ?>
+        <p style="font-size:12.5px;margin:0 0 12px;">
+            Estado actual:
+            <?php if (!empty($cfg['smtp_enabled']) && $cfg['smtp_host'] !== '') : ?>
+                <span style="color:#065f46;font-weight:600;">SMTP propio activo</span> (<?php echo esc_html($cfg['smtp_host']); ?>:<?php echo esc_html($cfg['smtp_port']); ?>)
+            <?php else : ?>
+                <span style="color:#92400e;font-weight:600;">Envío por defecto del servidor</span> (activa "Usar SMTP propio" abajo si no está llegando)
+            <?php endif; ?>
+            <?php if ($cfg['from_email'] !== '') : ?>
+                — remitente: <?php echo esc_html($cfg['from_name'] !== '' ? $cfg['from_name'] . ' <' . $cfg['from_email'] . '>' : $cfg['from_email']); ?>
+            <?php endif; ?>
+        </p>
         <form method="post">
             <?php wp_nonce_field($nonce_action, 'crm_mail_nonce'); ?>
             <input type="hidden" name="crm_mail_guardar_canal" value="<?php echo esc_attr($canal); ?>">
             <table style="width:100%;border-collapse:collapse;">
                 <tr>
                     <td style="padding:4px 8px 4px 0;width:170px;">Remitente (nombre)</td>
-                    <td style="padding:4px 0;"><input type="text" name="from_name" value="<?php echo esc_attr($cfg['from_name']); ?>" class="regular-text" placeholder="<?php echo esc_attr(get_option('blogname')); ?>"></td>
+                    <td style="padding:4px 0;"><input type="text" name="from_name" value="<?php echo esc_attr($cfg['from_name']); ?>" class="regular-text" style="width:100%;max-width:320px;box-sizing:border-box;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;" placeholder="<?php echo esc_attr(get_option('blogname')); ?>"></td>
                 </tr>
                 <tr>
                     <td style="padding:4px 8px 4px 0;">Remitente (email)</td>
-                    <td style="padding:4px 0;"><input type="email" name="from_email" value="<?php echo esc_attr($cfg['from_email']); ?>" class="regular-text" placeholder="<?php echo esc_attr(get_option('admin_email')); ?>"></td>
+                    <td style="padding:4px 0;"><input type="email" name="from_email" value="<?php echo esc_attr($cfg['from_email']); ?>" class="regular-text" style="width:100%;max-width:320px;box-sizing:border-box;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;" placeholder="<?php echo esc_attr(get_option('admin_email')); ?>"></td>
                 </tr>
                 <tr>
                     <td style="padding:4px 8px 4px 0;">Usar SMTP propio</td>
@@ -219,7 +293,7 @@ function crm_mail_settings_render_canal($canal) {
                 </tr>
                 <tr>
                     <td style="padding:4px 8px 4px 0;">Servidor SMTP</td>
-                    <td style="padding:4px 0;"><input type="text" name="smtp_host" value="<?php echo esc_attr($cfg['smtp_host']); ?>" class="regular-text" placeholder="smtp.tuproveedor.com"></td>
+                    <td style="padding:4px 0;"><input type="text" name="smtp_host" value="<?php echo esc_attr($cfg['smtp_host']); ?>" class="regular-text" style="width:100%;max-width:320px;box-sizing:border-box;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;" placeholder="smtp.tuproveedor.com"></td>
                 </tr>
                 <tr>
                     <td style="padding:4px 8px 4px 0;">Puerto</td>
@@ -227,11 +301,11 @@ function crm_mail_settings_render_canal($canal) {
                 </tr>
                 <tr>
                     <td style="padding:4px 8px 4px 0;">Usuario SMTP</td>
-                    <td style="padding:4px 0;"><input type="text" name="smtp_user" value="<?php echo esc_attr($cfg['smtp_user']); ?>" class="regular-text" autocomplete="off"></td>
+                    <td style="padding:4px 0;"><input type="text" name="smtp_user" value="<?php echo esc_attr($cfg['smtp_user']); ?>" class="regular-text" style="width:100%;max-width:320px;box-sizing:border-box;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;" autocomplete="off"></td>
                 </tr>
                 <tr>
                     <td style="padding:4px 8px 4px 0;">Contraseña SMTP</td>
-                    <td style="padding:4px 0;"><input type="password" name="smtp_pass" value="" class="regular-text" placeholder="<?php echo $cfg['smtp_pass'] !== '' ? '••••••• (sin cambios si lo dejas en blanco)' : ''; ?>" autocomplete="new-password"></td>
+                    <td style="padding:4px 0;"><input type="password" name="smtp_pass" value="" class="regular-text" style="width:100%;max-width:320px;box-sizing:border-box;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;" placeholder="<?php echo $cfg['smtp_pass'] !== '' ? '••••••• (sin cambios si lo dejas en blanco)' : ''; ?>" autocomplete="new-password"></td>
                 </tr>
                 <tr>
                     <td style="padding:4px 8px 4px 0;">Cifrado</td>
@@ -256,13 +330,59 @@ function crm_mail_settings_render_canal($canal) {
 }
 
 /**
- * Los 2 formularios + el JS del botón "Enviar prueba" — usado tal cual tanto
- * en wp-admin como en el panel frontend.
+ * Tabla de los últimos envíos por estos canales — mismo log de actividad de
+ * siempre, solo filtrado. v1.20.106, pedido explícitamente para no tener que
+ * ir a buscarlo a los Logs generales de wp-admin (que un crm_admin frontend
+ * no puede visitar de todos modos).
+ */
+function crm_mail_settings_render_log() {
+    $filas = crm_mail_log_reciente(30);
+    ?>
+    <div class="crm-mail-canal" style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
+        <h4 style="margin:0 0 10px;">Últimos envíos</h4>
+        <?php if (empty($filas)) : ?>
+            <p style="font-size:13px;color:#6b7280;">Todavía no se ha enviado ningún email por estos canales.</p>
+        <?php else : ?>
+            <div style="overflow-x:auto;">
+                <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+                    <thead>
+                        <tr style="text-align:left;color:#6b7280;">
+                            <th style="padding:4px 8px 4px 0;">Fecha</th>
+                            <th style="padding:4px 8px 4px 0;">Resultado</th>
+                            <th style="padding:4px 0;">Detalle</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($filas as $fila) : ?>
+                            <tr style="border-top:1px solid #f1f5f9;">
+                                <td style="padding:5px 8px 5px 0;white-space:nowrap;color:#6b7280;"><?php echo esc_html(date_i18n('d/m/Y H:i', strtotime($fila['created_at']))); ?></td>
+                                <td style="padding:5px 8px 5px 0;white-space:nowrap;">
+                                    <?php if ($fila['level'] === 'error') : ?>
+                                        <span style="color:#991b1b;font-weight:600;">Fallo</span>
+                                    <?php else : ?>
+                                        <span style="color:#065f46;font-weight:600;">Enviado</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="padding:5px 0;"><?php echo esc_html($fila['details']); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php
+}
+
+/**
+ * Los 2 formularios + la tabla de últimos envíos + el JS del botón "Enviar
+ * prueba" — usado tal cual tanto en wp-admin como en el panel frontend.
  */
 function crm_mail_settings_render_todo() {
     foreach (array_keys(crm_mail_canales()) as $canal) {
         crm_mail_settings_render_canal($canal);
     }
+    crm_mail_settings_render_log();
     ?>
     <script>
     (function () {
@@ -371,7 +491,7 @@ add_filter('crm_roadmap_fases', function ($fases) {
         'fase'    => 'Notificaciones',
         'titulo'  => 'Canales de email propios para avisos a proveedores e instaladores (remitente + SMTP)',
         'estado'  => 'en_pruebas',
-        'detalle' => 'El usuario reportó que ningún email de aviso llegaba — causa: todo el envío del plugin dependía del wp_mail() por defecto del servidor, sin ninguna configuración SMTP. Ahora hay 2 canales configurables (Ajustes o /panel-de-control/), con botón de prueba y registro en el log de cada envío. Confirmado por el usuario: el envío de prueba de cada canal SÍ llega con SMTP configurado. Pendiente de confirmar los envíos reales conectados (notificar proveedor, instalador asignado/visita programada).',
+        'detalle' => 'El usuario reportó que ningún email de aviso llegaba — causa: todo el envío del plugin dependía del wp_mail() por defecto del servidor, sin ninguna configuración SMTP. Ahora hay 2 canales configurables (wp-admin → CRM → Email, y /panel-de-control/), con botón de prueba, lista de qué evento dispara cada canal, y tabla de últimos envíos — todo en el mismo sitio. Confirmado por el usuario: el envío de prueba de cada canal SÍ llega con SMTP configurado. Bug real corregido en v1.20.106: esta sección nunca se veía en /panel-de-control/ (el archivo solo se cargaba dentro de wp-admin). Pendiente de confirmar los envíos reales conectados (notificar proveedor, instalador asignado/visita programada).',
     ];
     return $fases;
 });

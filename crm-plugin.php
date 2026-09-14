@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.105
+Version: 1.20.106
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.105');
+define('CRM_PLUGIN_VERSION', '1.20.106');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -104,15 +104,26 @@ require_once CRM_PLUGIN_PATH . 'includes/gcal-sync.php';
 // Incluir archivos del plugin
 require_once CRM_PLUGIN_PATH . 'acceso.php';
 require_once CRM_PLUGIN_PATH . 'shortcodes.php';
+// v1.20.38 — Página "Flujos": diagramas mermaid de cómo funciona el CRM,
+// registrados por cada módulo junto a su propio código. v1.20.106: se movió
+// de dentro de `if (is_admin())` a aquí — desde v1.20.100 este archivo
+// también registra el shortcode [crm_flujos] (la página /flujos/ del
+// frontend), que dentro de ese bloque nunca se cargaba fuera de wp-admin: la
+// página llevaba rota (el shortcode no se registraba) desde que se creó.
+require_once CRM_PLUGIN_PATH . 'includes/flujos-page.php';
+// v1.20.106: mismo motivo — includes/mail-settings.php define
+// crm_mail_settings_render_todo(), usado por la sección de
+// /panel-de-control/ (shortcodes.php); dentro de `if (is_admin())` no
+// existía en el frontend, así que esa sección nunca renderizaba nada más
+// que el párrafo de introducción (function_exists() lo ocultaba en
+// silencio). El envío de prueba SÍ funcionaba porque admin-ajax.php cuenta
+// como contexto admin para is_admin().
+require_once CRM_PLUGIN_PATH . 'includes/mail-settings.php';
 
 // Página de administración WP (menú "CRM"). Solo en wp-admin.
 if (is_admin()) {
     require_once CRM_PLUGIN_PATH . 'includes/admin-page.php';
     require_once CRM_PLUGIN_PATH . 'includes/agenda-page.php';
-    // v1.20.38 — Página "Flujos": diagramas mermaid de cómo funciona el CRM,
-    // registrados por cada módulo junto a su propio código.
-    require_once CRM_PLUGIN_PATH . 'includes/flujos-page.php';
-    require_once CRM_PLUGIN_PATH . 'includes/mail-settings.php';
 }
 
 // Incluir páginas de ayuda

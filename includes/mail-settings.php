@@ -289,7 +289,7 @@ function crm_mail_settings_render_canal($canal) {
                 </tr>
                 <tr>
                     <td style="padding:4px 8px 4px 0;">Usar SMTP propio</td>
-                    <td style="padding:4px 0;"><label><input type="checkbox" name="smtp_enabled" value="1" <?php checked(!empty($cfg['smtp_enabled'])); ?>> Activar (si no, se usa el envío por defecto del servidor — el que hoy no está llegando)</label></td>
+                    <td style="padding:4px 0;"><label><input type="checkbox" name="smtp_enabled" value="1" <?php checked(!empty($cfg['smtp_enabled'])); ?>> Activar (si no, se usa el envío por defecto del servidor)</label></td>
                 </tr>
                 <tr>
                     <td style="padding:4px 8px 4px 0;">Servidor SMTP</td>
@@ -477,7 +477,7 @@ function crm_mail_render_admin_page() {
     }
     crm_admin_page_header('CRM · Notificaciones por email');
     ?>
-    <p style="max-width:820px;color:#555;">Remitente y (opcionalmente) SMTP propio para los avisos a proveedores e instaladores. Si "Usar SMTP propio" está desactivado, se usa el envío por defecto del servidor — el mismo que hoy no está llegando en la mayoría de hostings compartidos sin configurar nada más.</p>
+    <p style="max-width:820px;color:#555;">Remitente y (opcionalmente) SMTP propio para los avisos a proveedores e instaladores. Si "Usar SMTP propio" está desactivado, se usa el envío por defecto del servidor.</p>
     <?php crm_mail_settings_render_todo(); ?>
     <?php
     crm_admin_page_footer();

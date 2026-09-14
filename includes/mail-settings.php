@@ -13,7 +13,7 @@
  * Se añaden 2 canales configurables — remitente propio + SMTP opcional por
  * canal, porque el usuario pidió poder usar una cuenta distinta para avisar a
  * proveedores (Santoki, etc.) que para avisar a instaladores. Gestionable
- * desde wp-admin (CRM → Notificaciones, solo `administrator`/webmaster) Y
+ * desde wp-admin (CRM → Email, solo `administrator`/webmaster) Y
  * desde el frontend (`/panel-de-control/`, `crm_admin`) — mismo formulario,
  * misma función de guardado, para no mantener dos versiones.
  *
@@ -339,10 +339,17 @@ function crm_mail_ajax_test_canal() {
 }
 
 /**
- * wp-admin → CRM → Notificaciones (solo administrator/webmaster).
+ * wp-admin → CRM → Email (solo administrator/webmaster).
+ *
+ * v1.20.105: el slug/título "Notificaciones" ya lo usaba
+ * `includes/notificaciones-inapp.php` (historial de notificaciones in-app,
+ * una cosa completamente distinta) — mismo `add_submenu_page('crm-dashboard',
+ * 'Notificaciones', ..., 'crm-notificaciones', ...)`, así que el menú salía
+ * duplicado (dos entradas "Notificaciones" en la barra lateral). Renombrado
+ * a "Email" / slug `crm-email` para no chocar.
  */
 add_action('admin_menu', function () {
-    add_submenu_page('crm-dashboard', 'Notificaciones', 'Notificaciones', 'crm_admin', 'crm-notificaciones', 'crm_mail_render_admin_page');
+    add_submenu_page('crm-dashboard', 'Email — proveedores e instaladores', 'Email', 'crm_admin', 'crm-email', 'crm_mail_render_admin_page');
 });
 function crm_mail_render_admin_page() {
     if (!current_user_can('crm_admin')) {
@@ -364,7 +371,7 @@ add_filter('crm_roadmap_fases', function ($fases) {
         'fase'    => 'Notificaciones',
         'titulo'  => 'Canales de email propios para avisos a proveedores e instaladores (remitente + SMTP)',
         'estado'  => 'en_pruebas',
-        'detalle' => 'El usuario reportó que ningún email de aviso llegaba — causa: todo el envío del plugin dependía del wp_mail() por defecto del servidor, sin ninguna configuración SMTP. Ahora hay 2 canales configurables (Ajustes o /panel-de-control/), con botón de prueba y registro en el log de cada envío. Pendiente de que el usuario configure y confirme un envío real.',
+        'detalle' => 'El usuario reportó que ningún email de aviso llegaba — causa: todo el envío del plugin dependía del wp_mail() por defecto del servidor, sin ninguna configuración SMTP. Ahora hay 2 canales configurables (Ajustes o /panel-de-control/), con botón de prueba y registro en el log de cada envío. Confirmado por el usuario: el envío de prueba de cada canal SÍ llega con SMTP configurado. Pendiente de confirmar los envíos reales conectados (notificar proveedor, instalador asignado/visita programada).',
     ];
     return $fases;
 });

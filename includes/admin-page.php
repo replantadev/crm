@@ -245,6 +245,7 @@ function crm_admin_render_nav() {
         'crm-leads-mk'  => 'Leads MK',
         'crm-flujos'    => 'Flujos',
         'crm-notificaciones' => 'Notificaciones',
+        'crm-email'     => 'Email',
         'crm-settings'  => 'Ajustes',
     ];
     echo '<h2 class="nav-tab-wrapper">';

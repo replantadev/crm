@@ -1778,15 +1778,22 @@ function crm_inst_aviso_materiales_pendientes_run() {
 	$limite = date( 'Y-m-d H:i:s', strtotime( '+' . $dias . ' days', current_time( 'timestamp' ) ) );
 
 	global $wpdb;
+	// v1.20.101: con 2+ instaladores agendados (v1.20.102), un INNER JOIN
+	// directo contra la agenda devolvería la MISMA instalación una vez por
+	// cada instalador, duplicando el aviso. Reescrito con una subconsulta
+	// correlacionada (mismo patrón EXISTS que ya usa el resto de este
+	// archivo) en vez de GROUP BY + ANY_VALUE() — ANY_VALUE() no existe en
+	// versiones de MySQL/MariaDB más antiguas que algunos hostings todavía
+	// sirven, así que se evita por completo.
+	$tabla_agenda = crm_inst_table_agenda();
 	$rows = $wpdb->get_results( $wpdb->prepare(
-		"SELECT i.id, ANY_VALUE(i.proveedor_pedido_estado) AS proveedor_pedido_estado, ANY_VALUE(i.proveedor_entrega_estimada) AS proveedor_entrega_estimada, MIN(a.fecha_cita) AS fecha_cita, ANY_VALUE(c.cliente_nombre) AS cliente_nombre
+		"SELECT i.id, i.proveedor_pedido_estado, i.proveedor_entrega_estimada, c.cliente_nombre,
+		        (SELECT MIN(a.fecha_cita) FROM {$tabla_agenda} a WHERE a.instalacion_id = i.id AND a.fecha_cita BETWEEN %s AND %s) AS fecha_cita
 		 FROM " . crm_inst_table_instalaciones() . " i
-		 INNER JOIN " . crm_inst_table_agenda() . " a ON a.instalacion_id = i.id
 		 LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id
 		 WHERE i.estado NOT IN ( 'finalizada', 'cancelada' )
-		   AND a.fecha_cita BETWEEN %s AND %s
-		 GROUP BY i.id",
-		$ahora, $limite
+		   AND EXISTS ( SELECT 1 FROM {$tabla_agenda} a2 WHERE a2.instalacion_id = i.id AND a2.fecha_cita BETWEEN %s AND %s )",
+		$ahora, $limite, $ahora, $limite
 	), ARRAY_A );
 
 	if ( empty( $rows ) ) {
@@ -3152,7 +3159,7 @@ function crm_inst_ajax_notificar_proveedor() {
 		: wp_mail( $proveedor_email, $subject, $body, [ 'Content-Type: text/html; charset=UTF-8' ] );
 
 	if ( ! $sent ) {
-		wp_send_json_error( [ 'message' => 'No se pudo enviar el email — revisa la configuración de envío en CRM → Notificaciones (o el log de actividad para el detalle del error).' ] );
+		wp_send_json_error( [ 'message' => 'No se pudo enviar el email — revisa la configuración de envío en CRM → Email (o el log de actividad para el detalle del error).' ] );
 	}
 
 	global $wpdb;

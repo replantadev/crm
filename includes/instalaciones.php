@@ -881,12 +881,16 @@ function crm_inst_save_holded_pdf_to_uploads( $estimate_id ) {
  * reutilizarlo — antes solo se adjuntaba al dar de alta una instalación
  * desde el presupuesto, nunca durante la sincro de clientes.
  *
- * @param array  $client      Fila de wp_crm_clients (necesita al menos 'id' y 'presupuesto').
- * @param string $estimate_id
+ * @param array       $client      Fila de wp_crm_clients (necesita al menos 'id' y 'presupuesto').
+ * @param string      $estimate_id
+ * @param string|null $error_message  Salida por referencia: mensaje de error si la descarga/subida falló
+ *                                    (v1.20.101 — antes solo quedaba en el log de acciones, invisible salvo
+ *                                    que alguien fuera a mirarlo a mano; ahora la sincro puede mostrarlo).
  * @return string|null Valor serializado para la columna `presupuesto`, o null si no cambia nada.
  */
-function crm_inst_adjuntar_presupuesto_holded_si_falta( array $client, $estimate_id ) {
-	$estimate_id = (string) $estimate_id;
+function crm_inst_adjuntar_presupuesto_holded_si_falta( array $client, $estimate_id, &$error_message = null ) {
+	$error_message = null;
+	$estimate_id   = (string) $estimate_id;
 	if ( $estimate_id === '' ) {
 		return null;
 	}
@@ -900,7 +904,8 @@ function crm_inst_adjuntar_presupuesto_holded_si_falta( array $client, $estimate
 
 	$pdf_url = crm_inst_save_holded_pdf_to_uploads( $estimate_id );
 	if ( is_wp_error( $pdf_url ) ) {
-		crm_inst_log_action( 0, 'cliente', 'adjuntar_presupuesto_error', 'No se pudo adjuntar el PDF a la ficha del cliente #' . ( (int) ( $client['id'] ?? 0 ) ) . ': ' . $pdf_url->get_error_message() );
+		$error_message = $pdf_url->get_error_message();
+		crm_inst_log_action( 0, 'cliente', 'adjuntar_presupuesto_error', 'No se pudo adjuntar el PDF a la ficha del cliente #' . ( (int) ( $client['id'] ?? 0 ) ) . ': ' . $error_message );
 		return null;
 	}
 

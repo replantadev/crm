@@ -105,11 +105,14 @@ function crm_holded_get_ultimo_presupuesto_contacto($holded_contact_id) {
  *
  * @param int    $client_id
  * @param array  $contacto Objeto de contacto de Holded (id, updated_at, is_person, website...).
+ * @return array{adjuntado:bool,error:?string} Resultado de intentar adjuntar el PDF del presupuesto
+ *         (v1.20.101 — antes un fallo quedaba solo en el log de acciones, sin que nadie lo viera al
+ *         pulsar "Sincronizar ahora").
  */
 function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
     $client_id = (int) $client_id;
     if ($client_id <= 0) {
-        return;
+        return ['adjuntado' => false, 'error' => null];
     }
     $holded_contact_id = (string) ($contacto['id'] ?? '');
     $updated_at        = (string) ($contacto['updated_at'] ?? '');
@@ -125,7 +128,7 @@ function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
         $client_id
     ), ARRAY_A);
     if (!$client) {
-        return;
+        return ['adjuntado' => false, 'error' => null];
     }
     $client['id'] = $client_id;
 
@@ -211,14 +214,19 @@ function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
     // nunca el propio documento — quedaba sin marcar en la columna
     // "Documentos" del listado de clientes). Reutiliza el mismo mecanismo
     // que ya usaba el alta de instalación desde presupuesto.
+    $pdf_error     = null;
+    $pdf_adjuntado = false;
     if ($presupuesto && !empty($presupuesto['id']) && function_exists('crm_inst_adjuntar_presupuesto_holded_si_falta')) {
-        $presupuesto_actualizado = crm_inst_adjuntar_presupuesto_holded_si_falta($client, $presupuesto['id']);
+        $presupuesto_actualizado = crm_inst_adjuntar_presupuesto_holded_si_falta($client, $presupuesto['id'], $pdf_error);
         if ($presupuesto_actualizado !== null) {
             $update['presupuesto'] = $presupuesto_actualizado;
+            $pdf_adjuntado         = true;
         }
     }
 
     $wpdb->update($table, $update, ['id' => $client_id]);
+
+    return ['adjuntado' => $pdf_adjuntado, 'error' => $pdf_error];
 }
 
 /**
@@ -226,11 +234,11 @@ function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
  * correspondiente en el CRM. Best-effort por contacto: un fallo puntual no
  * interrumpe el resto de la pasada.
  *
- * @return array{procesados:int, creados:int, errores:int}
+ * @return array{procesados:int, creados:int, errores:int, pdf_adjuntados:int, pdf_errores:array<int,string>}
  */
 function crm_holded_sync_clientes_run() {
     if (!function_exists('crm_holded_get_contacts_cached') || !function_exists('crm_inst_match_or_create_client_from_holded_contact')) {
-        return ['procesados' => 0, 'creados' => 0, 'errores' => 0];
+        return ['procesados' => 0, 'creados' => 0, 'errores' => 0, 'pdf_adjuntados' => 0, 'pdf_errores' => []];
     }
 
     $contactos = crm_holded_get_contacts_cached();
@@ -238,14 +246,20 @@ function crm_holded_sync_clientes_run() {
         if (function_exists('crm_log_action')) {
             crm_log_action('holded_sync_clientes_error', 'No se pudo obtener el listado de contactos de Holded: ' . $contactos->get_error_message(), null, null, 'error');
         }
-        return ['procesados' => 0, 'creados' => 0, 'errores' => 1];
+        return ['procesados' => 0, 'creados' => 0, 'errores' => 1, 'pdf_adjuntados' => 0, 'pdf_errores' => []];
     }
 
     global $wpdb;
-    $table      = $wpdb->prefix . 'crm_clients';
-    $procesados = 0;
-    $creados    = 0;
-    $errores    = 0;
+    $table       = $wpdb->prefix . 'crm_clients';
+    $procesados  = 0;
+    $creados     = 0;
+    $errores     = 0;
+    // v1.20.101: el usuario reportó clientes con presupuesto Aprobado pero sin
+    // el PDF adjunto en la ficha — el fallo (si lo hay) quedaba solo en el log
+    // de acciones, invisible. Se cuenta y se muestra directamente en el
+    // resultado de "Sincronizar ahora".
+    $pdf_ok      = 0;
+    $pdf_errores = [];
 
     foreach ((array) $contactos as $contacto) {
         $holded_contact_id = (string) ($contacto['id'] ?? '');
@@ -273,7 +287,13 @@ function crm_holded_sync_clientes_run() {
             $creados++;
         }
 
-        crm_holded_sync_actualizar_cliente($client_id, $contacto);
+        $resultado_pdf = crm_holded_sync_actualizar_cliente($client_id, $contacto);
+        if (!empty($resultado_pdf['adjuntado'])) {
+            $pdf_ok++;
+        }
+        if (!empty($resultado_pdf['error'])) {
+            $pdf_errores[$client_id] = $resultado_pdf['error'];
+        }
         $procesados++;
     }
 
@@ -281,14 +301,27 @@ function crm_holded_sync_clientes_run() {
     if (function_exists('crm_log_action')) {
         crm_log_action(
             'holded_sync_clientes',
-            sprintf('Sincronización de clientes desde Holded: %d procesados, %d creados, %d errores.', $procesados, $creados, $errores),
+            sprintf(
+                'Sincronización de clientes desde Holded: %d procesados, %d creados, %d errores, %d PDF adjuntados, %d PDF fallidos.',
+                $procesados,
+                $creados,
+                $errores,
+                $pdf_ok,
+                count($pdf_errores)
+            ),
             null,
             null,
             'info'
         );
     }
 
-    return ['procesados' => $procesados, 'creados' => $creados, 'errores' => $errores];
+    return [
+        'procesados'     => $procesados,
+        'creados'        => $creados,
+        'errores'        => $errores,
+        'pdf_adjuntados' => $pdf_ok,
+        'pdf_errores'    => $pdf_errores,
+    ];
 }
 
 /**

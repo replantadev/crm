@@ -994,7 +994,17 @@ function crm_admin_render_settings() {
                     msg.css('color', '#991b1b').text((resp.data && resp.data.message) ? resp.data.message : 'Error.');
                     return;
                 }
-                msg.css('color', '#065f46').text(resp.data.procesados + ' procesados, ' + resp.data.creados + ' creados, ' + resp.data.errores + ' errores.');
+                var texto = resp.data.procesados + ' procesados, ' + resp.data.creados + ' creados, ' + resp.data.errores + ' errores, ' + resp.data.pdf_adjuntados + ' PDF adjuntados.';
+                var pdfErrores = resp.data.pdf_errores || {};
+                var numPdfErrores = Object.keys(pdfErrores).length;
+                if (numPdfErrores > 0) {
+                    var detalle = Object.keys(pdfErrores).map(function (clientId) {
+                        return '#' + clientId + ': ' + pdfErrores[clientId];
+                    }).join(' · ');
+                    msg.css('color', '#991b1b').text(texto + ' ' + numPdfErrores + ' PDF fallidos — ' + detalle);
+                } else {
+                    msg.css('color', '#065f46').text(texto);
+                }
             }).fail(function () {
                 btn.prop('disabled', false).text('Sincronizar ahora');
                 msg.css('color', '#991b1b').text('Error de conexión.');

@@ -138,6 +138,10 @@ function crm_instalaciones_install_tables() {
 	// materiales importadas de un presupuesto de Holded (Fase 2), diferenciadas
 	// por `origen`. Ver PLAN_instalaciones.md Fase 2 para la decisión de reusar
 	// esta tabla en vez de crear una tabla de materiales aparte.
+	// v1.20.104: `montado_en`/`montado_por` — el instalador puede marcar línea
+	// a línea qué ha montado ese día (instalaciones de varios días, repartidas
+	// entre varios instaladores) — distinto de `estado` (que sigue siendo el
+	// flujo de stock recibido/pendiente del proveedor, no se toca).
 	$t3   = crm_inst_table_trabajos();
 	$sql3 = "CREATE TABLE $t3 (
   id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -160,6 +164,8 @@ function crm_instalaciones_install_tables() {
   declarado_por BIGINT(20) UNSIGNED NOT NULL,
   validado_por BIGINT(20) UNSIGNED DEFAULT NULL,
   validado_en DATETIME DEFAULT NULL,
+  montado_en DATETIME DEFAULT NULL,
+  montado_por BIGINT(20) UNSIGNED DEFAULT NULL,
   PRIMARY KEY  (id),
   KEY instalacion_id (instalacion_id),
   KEY declarado_por (declarado_por),
@@ -1512,7 +1518,7 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 		"SELECT id, descripcion, unidades, precio_unitario, coste_unitario, origen, estado,
 		        horas, materiales_usados, observaciones, holded_product_id,
 		        justificacion_ruta, cliente_notificado_en,
-		        declarado_por, validado_por, validado_en
+		        declarado_por, validado_por, validado_en, montado_en, montado_por
 		 FROM " . crm_inst_table_trabajos() . " WHERE instalacion_id = %d ORDER BY id ASC",
 		$instalacion_id
 	), ARRAY_A );
@@ -1536,6 +1542,7 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 		}
 		$declarado_por_user = $m['declarado_por'] ? get_userdata( (int) $m['declarado_por'] ) : null;
 		$validado_por_user  = $m['validado_por'] ? get_userdata( (int) $m['validado_por'] ) : null;
+		$montado_por_user   = ! empty( $m['montado_por'] ) ? get_userdata( (int) $m['montado_por'] ) : null;
 		return [
 			'id'                   => (int) $m['id'],
 			'descripcion'          => $m['descripcion'],
@@ -1556,6 +1563,8 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 			'declarado_por_nombre' => $declarado_por_user ? $declarado_por_user->display_name : '',
 			'validado_por_nombre'  => $validado_por_user ? $validado_por_user->display_name : '',
 			'validado_en'          => $m['validado_en'],
+			'montado_en'           => $m['montado_en'],
+			'montado_por_nombre'   => $montado_por_user ? $montado_por_user->display_name : '',
 		];
 	}, (array) $materiales_raw );
 
@@ -2008,6 +2017,86 @@ function crm_inst_ajax_marcar_material() {
 		'instalacion_estado_label' => isset( $instalacion['estado'] ) ? ( $estados[ $instalacion['estado'] ] ?? $instalacion['estado'] ) : null,
 		'holded_stock_sync'  => $holded_stock_sync,
 	] );
+}
+
+/**
+ * Marca/desmarca una línea de material como montada por el instalador
+ * (v1.20.104) — distinto de "Recibido" (`crm_inst_ajax_marcar_material()`,
+ * flujo de stock del proveedor). Pensado para instalaciones de varios días:
+ * el instalador va marcando cada día lo que ha montado, sin esperar a
+ * declarar el cierre general.
+ *
+ * Al marcar la PRIMERA línea de una instalación, si el estado todavía está
+ * en 'pendiente'/'planificada' (todavía no hay ningún indicio de que el
+ * trabajo haya arrancado de verdad), pasa a 'en_ejecucion' — estado que ya
+ * existía en el esquema pero no lo ponía nadie. No se toca si ya está en un
+ * estado más avanzado (lista/finalizada) o en una rama de excepción
+ * (bloqueada/reagendada/cancelada). Deliberadamente NO dispara nada contra
+ * Holded (stock/albarán) — eso sigue disparando solo al confirmar el
+ * checklist / declarar el cierre, como hasta ahora.
+ */
+add_action( 'wp_ajax_crm_inst_marcar_material_montado', 'crm_inst_ajax_marcar_material_montado' );
+function crm_inst_ajax_marcar_material_montado() {
+	if ( ! is_user_logged_in() || ! current_user_can( 'crm_inst_edit_own' ) || ! check_ajax_referer( 'crm_inst_holded', 'nonce', false ) ) {
+		wp_send_json_error( [ 'message' => 'Sin permisos.' ], 403 );
+	}
+
+	global $wpdb;
+	$user_id    = get_current_user_id();
+	$trabajo_id = (int) ( $_POST['trabajo_id'] ?? 0 );
+	$montado    = ! empty( $_POST['montado'] ) && $_POST['montado'] !== 'false' && $_POST['montado'] !== '0';
+
+	$trabajo = $wpdb->get_row( $wpdb->prepare(
+		"SELECT id, instalacion_id, descripcion, origen FROM " . crm_inst_table_trabajos() . " WHERE id = %d",
+		$trabajo_id
+	), ARRAY_A );
+	if ( ! $trabajo || $trabajo['origen'] !== 'holded' ) {
+		wp_send_json_error( [ 'message' => 'Línea no encontrada.' ] );
+	}
+	$instalacion_id = (int) $trabajo['instalacion_id'];
+
+	if ( ! crm_inst_current_user_can_manage() ) {
+		$asignado = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM " . crm_inst_table_instaladores() . " WHERE instalacion_id = %d AND user_id = %d",
+			$instalacion_id, $user_id
+		) );
+		if ( $asignado === 0 ) {
+			wp_send_json_error( [ 'message' => 'No estás asignado a esta instalación.' ], 403 );
+		}
+	}
+
+	if ( $montado ) {
+		$wpdb->update(
+			crm_inst_table_trabajos(),
+			[ 'montado_en' => current_time( 'mysql' ), 'montado_por' => $user_id ],
+			[ 'id' => $trabajo_id ]
+		);
+	} else {
+		$wpdb->update(
+			crm_inst_table_trabajos(),
+			[ 'montado_en' => null, 'montado_por' => null ],
+			[ 'id' => $trabajo_id ]
+		);
+	}
+
+	crm_inst_log_action( $instalacion_id, 'material', $montado ? 'marcar_montado' : 'desmarcar_montado', $trabajo['descripcion'] . ( $montado ? ' → montada' : ' → desmarcada' ) );
+
+	if ( $montado ) {
+		$estado_actual = $wpdb->get_var( $wpdb->prepare(
+			"SELECT estado FROM " . crm_inst_table_instalaciones() . " WHERE id = %d",
+			$instalacion_id
+		) );
+		if ( in_array( $estado_actual, [ 'pendiente', 'planificada' ], true ) ) {
+			$wpdb->update( crm_inst_table_instalaciones(), [ 'estado' => 'en_ejecucion' ], [ 'id' => $instalacion_id ] );
+			crm_inst_log_action( $instalacion_id, 'instalacion', 'auto_en_ejecucion', 'Primera línea montada — pasa a "En ejecución" automáticamente.' );
+		}
+	}
+
+	$texto = $montado
+		? ( 'Montada ' . date_i18n( 'd/m H:i' ) . ' — ' . wp_get_current_user()->display_name )
+		: 'Marcar como montada';
+
+	wp_send_json_success( [ 'montado' => $montado, 'texto' => $texto ] );
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -4498,7 +4587,7 @@ function crm_inst_shortcode_ficha() {
 					<?php else : ?>
 						<div class="table-responsive-compact">
 							<table class="crm-table-compact">
-								<thead><tr><th>Descripción</th><th>Uds.</th><th>Precio</th><th>Coste</th><th>Importe</th><th>Margen</th><th>Origen</th><th>Stock</th><th>Recibido</th></tr></thead>
+								<thead><tr><th>Descripción</th><th>Uds.</th><th>Precio</th><th>Coste</th><th>Importe</th><th>Margen</th><th>Origen</th><th>Stock</th><th>Recibido</th><th>Montado</th></tr></thead>
 								<tbody id="crm-inst-materiales-tbody">
 									<?php foreach ( $data['materiales'] as $m ) : ?>
 										<tr data-material-id="<?php echo esc_attr( $m['id'] ); ?>">
@@ -4565,6 +4654,13 @@ function crm_inst_shortcode_ficha() {
 											<td>
 												<?php if ( $m['origen'] === 'holded' ) : ?>
 													<input type="checkbox" class="crm-inst-material-recibido" data-material-id="<?php echo esc_attr( $m['id'] ); ?>" <?php checked( $m['estado'], 'recibido' ); ?>>
+												<?php else : ?>
+													—
+												<?php endif; ?>
+											</td>
+											<td>
+												<?php if ( $m['origen'] === 'holded' && ! empty( $m['montado_en'] ) ) : ?>
+													<span class="status-badge status-inst-lista" style="font-size:11px;"><?php echo esc_html( date_i18n( 'd/m H:i', strtotime( $m['montado_en'] ) ) ); ?><?php echo $m['montado_por_nombre'] ? ' — ' . esc_html( $m['montado_por_nombre'] ) : ''; ?></span>
 												<?php else : ?>
 													—
 												<?php endif; ?>
@@ -5774,6 +5870,13 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		'titulo'  => 'Panel del instalador (calendario, agenda, buscador)',
 		'estado'  => 'hecho',
 		'detalle' => 'Usado de verdad por un instalador real en varias rondas de prueba de esta sesión (partidas extra, fotos de cierre, buscador).',
+	];
+
+	$fases[] = [
+		'fase'    => 'Fase 4 · Montaje por línea',
+		'titulo'  => 'Completado parcial/por línea, para instalaciones de varios días',
+		'estado'  => 'en_pruebas',
+		'detalle' => 'El instalador puede marcar línea a línea qué ha montado cada día (fecha + quién, no solo un cierre general de golpe) — útil cuando la instalación se reparte entre varios días o varios instaladores. Al marcar la primera línea, la instalación pasa sola a "En ejecución" (estado que ya existía pero no lo ponía nadie). No toca stock/Holded — eso sigue disparando solo al confirmar el checklist/declarar el cierre, como hasta ahora. Construido, sin prueba real todavía.',
 	];
 
 	$fases[] = [

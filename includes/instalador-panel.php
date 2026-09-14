@@ -111,9 +111,17 @@ function crm_inst_panel_format_visita_row(array $row) {
     // "en almacén para esta obra" hasta que se marca recibido, aunque exista
     // stock general del producto (ver crm_inst_panel_render_card()).
     $materiales = $wpdb->get_results($wpdb->prepare(
-        "SELECT descripcion, unidades, estado, holded_product_id FROM " . crm_inst_table_trabajos() . " WHERE instalacion_id = %d AND origen = 'holded' ORDER BY id ASC",
+        "SELECT id, descripcion, unidades, estado, holded_product_id, montado_en, montado_por FROM " . crm_inst_table_trabajos() . " WHERE instalacion_id = %d AND origen = 'holded' ORDER BY id ASC",
         (int) $row['instalacion_id']
     ), ARRAY_A);
+    foreach ($materiales as &$m) {
+        $m['montado_por_nombre'] = '';
+        if (!empty($m['montado_por'])) {
+            $u = get_userdata((int) $m['montado_por']);
+            $m['montado_por_nombre'] = $u ? $u->display_name : '';
+        }
+    }
+    unset($m);
 
     $extras = $wpdb->get_results($wpdb->prepare(
         "SELECT id, descripcion, precio_unitario, estado, cliente_notificado_en,
@@ -479,10 +487,21 @@ function crm_inst_panel_render_card(array $v, $con_fecha, $permitir_cierre = tru
                             $badge_class = 'sin';
                             $badge_text  = 'Pendiente de pedir';
                         }
+                        $montado = !empty($m['montado_en']);
                     ?>
-                        <li>
+                        <li class="crm-panel-inst-material-linea" data-trabajo-id="<?php echo esc_attr($m['id']); ?>">
                             <?php echo esc_html($m['unidades']); ?> × <span class="crm-panel-search-target" data-original="<?php echo esc_attr($m['descripcion']); ?>"><?php echo esc_html($m['descripcion']); ?></span>
                             <span class="crm-panel-inst-extra-badge crm-panel-inst-extra-badge-<?php echo esc_attr($badge_class === 'ok' ? 'aprobado' : ($badge_class === 'bajo' ? 'pendiente' : 'rechazado')); ?>"><?php echo esc_html($badge_text); ?></span>
+                            <label class="crm-panel-inst-material-montado-label">
+                                <input type="checkbox" class="crm-panel-inst-material-montado" data-trabajo-id="<?php echo esc_attr($m['id']); ?>" <?php checked($montado); ?> <?php disabled(!$permitir_cierre); ?>>
+                                <span class="crm-panel-inst-material-montado-texto">
+                                    <?php if ($montado) : ?>
+                                        Montada <?php echo esc_html(date_i18n('d/m H:i', strtotime($m['montado_en']))); ?><?php echo $m['montado_por_nombre'] ? ' — ' . esc_html($m['montado_por_nombre']) : ''; ?>
+                                    <?php else : ?>
+                                        Marcar como montada
+                                    <?php endif; ?>
+                                </span>
+                            </label>
                         </li>
                     <?php endforeach; ?>
                 </ul>
@@ -705,6 +724,10 @@ function crm_inst_panel_shared_css(array $settings) {
     .crm-panel-inst-meta a { color:var(--crm-panel-accent); text-decoration:none; }
     .crm-panel-inst-materiales { font-size:12px; color:#6b7280; margin-top:8px; }
     .crm-panel-inst-materiales ul { margin:4px 0 0; padding-left:18px; }
+    .crm-panel-inst-material-linea { margin-bottom:4px; }
+    .crm-panel-inst-material-montado-label { display:flex; align-items:center; gap:5px; margin:2px 0 0 0; cursor:pointer; }
+    .crm-panel-inst-material-montado-texto { font-size:11px; }
+    .crm-panel-inst-material-montado:checked ~ .crm-panel-inst-material-montado-texto { color:#065f46; font-weight:600; }
     .crm-panel-inst-extras { font-size:12px; color:#6b7280; margin-top:8px; }
     .crm-panel-inst-extras ul { margin:4px 0 0; padding-left:18px; }
     .crm-panel-inst-extra-badge { display:inline-block; padding:1px 7px; border-radius:9px; font-size:10px; font-weight:700; text-transform:uppercase; margin-left:4px; }
@@ -1467,6 +1490,46 @@ function crm_inst_panel_extras_js($nonce) {
                     guardar.disabled = false;
                     msg.style.color = '#991b1b';
                     msg.textContent = 'Error de conexión.';
+                });
+        });
+
+        // v1.20.104: marcar/desmarcar una línea de material como montada —
+        // instalaciones de varios días, repartidas entre varios instaladores.
+        document.addEventListener('change', function (e) {
+            var check = e.target.closest && e.target.closest('.crm-panel-inst-material-montado');
+            if (!check) {
+                return;
+            }
+            var trabajoId = check.getAttribute('data-trabajo-id');
+            var montado   = check.checked;
+            var texto     = check.closest('label').querySelector('.crm-panel-inst-material-montado-texto');
+            check.disabled = true;
+            var textoAnterior = texto.textContent;
+            texto.textContent = 'Guardando…';
+
+            var body = new URLSearchParams();
+            body.set('action', 'crm_inst_marcar_material_montado');
+            body.set('nonce', nonce);
+            body.set('trabajo_id', trabajoId);
+            body.set('montado', montado ? '1' : '0');
+
+            fetch(ajaxurl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (resp) {
+                    check.disabled = false;
+                    if (!resp.success) {
+                        check.checked = !montado;
+                        texto.textContent = textoAnterior;
+                        alert((resp.data && resp.data.message) ? resp.data.message : 'Error.');
+                        return;
+                    }
+                    texto.textContent = resp.data.texto;
+                })
+                .catch(function () {
+                    check.disabled = false;
+                    check.checked = !montado;
+                    texto.textContent = textoAnterior;
+                    alert('Error de conexión.');
                 });
         });
     })();

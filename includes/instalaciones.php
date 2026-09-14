@@ -1577,10 +1577,20 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 		$instalacion_id
 	), ARRAY_A );
 
-	$agenda = $wpdb->get_row( $wpdb->prepare(
-		"SELECT fecha_cita, estado, instalador_id FROM " . crm_inst_table_agenda() . " WHERE instalacion_id = %d LIMIT 1",
+	// v1.20.102: una fila por instalador asignado, no una sola para toda la
+	// instalación — ver crm_inst_ajax_guardar_agenda().
+	$agenda_filas = $wpdb->get_results( $wpdb->prepare(
+		"SELECT fecha_cita, estado, instalador_id FROM " . crm_inst_table_agenda() . " WHERE instalacion_id = %d ORDER BY fecha_cita ASC",
 		$instalacion_id
 	), ARRAY_A );
+	$agenda_por_instalador = [];
+	foreach ( (array) $agenda_filas as $fila ) {
+		$agenda_por_instalador[ (int) $fila['instalador_id'] ] = $fila;
+	}
+	// La fecha "de referencia" a mostrar/editar arriba de la ficha: la más
+	// próxima de cualquiera de los instaladores asignados (normalmente todas
+	// coinciden, salvo que alguien reprograme a uno solo más adelante).
+	$agenda = $agenda_filas[0] ?? null;
 
 	$fotos_cierre = $wpdb->get_results( $wpdb->prepare(
 		"SELECT id, ruta, categoria, subido_por, subido_en FROM " . crm_inst_table_documentos() . " WHERE instalacion_id = %d AND tipo = 'foto' ORDER BY id ASC",
@@ -1626,6 +1636,7 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 		],
 		'instaladores'        => $instaladores,
 		'agenda'              => $agenda ?: null,
+		'agenda_por_instalador' => $agenda_por_instalador,
 		'log'                 => $log,
 		'cierre'              => [
 			'estado'               => $inst['cierre_estado'],
@@ -1759,12 +1770,13 @@ function crm_inst_aviso_materiales_pendientes_run() {
 
 	global $wpdb;
 	$rows = $wpdb->get_results( $wpdb->prepare(
-		"SELECT i.id, i.proveedor_pedido_estado, i.proveedor_entrega_estimada, a.fecha_cita, c.cliente_nombre
+		"SELECT i.id, ANY_VALUE(i.proveedor_pedido_estado) AS proveedor_pedido_estado, ANY_VALUE(i.proveedor_entrega_estimada) AS proveedor_entrega_estimada, MIN(a.fecha_cita) AS fecha_cita, ANY_VALUE(c.cliente_nombre) AS cliente_nombre
 		 FROM " . crm_inst_table_instalaciones() . " i
 		 INNER JOIN " . crm_inst_table_agenda() . " a ON a.instalacion_id = i.id
 		 LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id
 		 WHERE i.estado NOT IN ( 'finalizada', 'cancelada' )
-		   AND a.fecha_cita BETWEEN %s AND %s",
+		   AND a.fecha_cita BETWEEN %s AND %s
+		 GROUP BY i.id",
 		$ahora, $limite
 	), ARRAY_A );
 
@@ -3319,17 +3331,42 @@ function crm_inst_ajax_asignar_instalador() {
 
 	crm_inst_log_action( $instalacion_id, 'instalador', 'asignar', 'Instalador asignado: ' . $user->display_name );
 
+	$cliente_nombre = $wpdb->get_var( $wpdb->prepare(
+		"SELECT c.cliente_nombre FROM " . crm_inst_table_instalaciones() . " i LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id WHERE i.id = %d",
+		$instalacion_id
+	) );
+
 	if ( function_exists( 'crm_notificar' ) ) {
-		$cliente_nombre = $wpdb->get_var( $wpdb->prepare(
-			"SELECT c.cliente_nombre FROM " . crm_inst_table_instalaciones() . " i LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id WHERE i.id = %d",
-			$instalacion_id
-		) );
 		crm_notificar(
 			$user_id,
 			'instalacion_asignada',
 			'Te han asignado la instalación de ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.',
 			home_url( '/panel-instalador/' )
 		);
+	}
+
+	// v1.20.102: si la instalación ya tenía visita programada para otro
+	// instalador, este nuevo la hereda automáticamente — antes solo se
+	// agendaba a mano a UN instalador, así que sumar uno nuevo nunca se
+	// planteaba este caso.
+	$fecha_existente = $wpdb->get_var( $wpdb->prepare(
+		"SELECT fecha_cita FROM " . crm_inst_table_agenda() . " WHERE instalacion_id = %d ORDER BY fecha_cita ASC LIMIT 1",
+		$instalacion_id
+	) );
+	if ( $fecha_existente ) {
+		$wpdb->insert(
+			crm_inst_table_agenda(),
+			[ 'instalacion_id' => $instalacion_id, 'fecha_cita' => $fecha_existente, 'instalador_id' => $user_id, 'estado' => 'pendiente' ],
+			[ '%d', '%s', '%d', '%s' ]
+		);
+		if ( function_exists( 'crm_notificar' ) ) {
+			crm_notificar(
+				$user_id,
+				'visita_programada',
+				'Visita programada para ' . date_i18n( 'd/m/Y H:i', strtotime( $fecha_existente ) ) . ' — ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.',
+				home_url( '/calendario-instalador/' )
+			);
+		}
 	}
 
 	wp_send_json_success( [ 'user_id' => $user_id, 'display_name' => $user->display_name ] );
@@ -3352,6 +3389,10 @@ function crm_inst_ajax_quitar_instalador() {
 	}
 
 	$wpdb->delete( crm_inst_table_instaladores(), [ 'instalacion_id' => $instalacion_id, 'user_id' => $user_id ], [ '%d', '%d' ] );
+	// v1.20.102: si tenía una visita agendada, se quita también — si no, se
+	// quedaría viendo en su calendario una visita de una instalación de la
+	// que ya no es responsable.
+	$wpdb->delete( crm_inst_table_agenda(), [ 'instalacion_id' => $instalacion_id, 'instalador_id' => $user_id ], [ '%d', '%d' ] );
 	crm_inst_log_action( $instalacion_id, 'instalador', 'quitar', 'Instalador #' . $user_id . ' desasignado.' );
 
 	wp_send_json_success( [] );
@@ -3359,9 +3400,18 @@ function crm_inst_ajax_quitar_instalador() {
 
 /**
  * Programa (o reprograma) la visita de una instalación en
- * `crm_instalacion_agenda` (Fase 1, sin usar hasta ahora). Un único registro
- * "activo" por instalación — reprogramar actualiza el mismo, no acumula
- * historial todavía (eso llegará con el flujo de reagendado de la Fase 8).
+ * `crm_instalacion_agenda`.
+ *
+ * v1.20.102 — antes solo dejaba elegir UN instalador de entre los asignados
+ * (un único registro "activo" por instalación) — si había 2+ instaladores,
+ * el que no se elegía se quedaba sin visita en su calendario. El usuario
+ * reportó exactamente esto probando una instalación con 2 instaladores. El
+ * esquema de `crm_instalacion_agenda` ya soportaba varias filas por
+ * instalación (una por `instalador_id`, sin UNIQUE sobre `instalacion_id`
+ * solo) — el límite era solo de la lógica de esta función, no de la tabla.
+ * Ahora la misma fecha se aplica a TODOS los instaladores asignados en ese
+ * momento, cada uno con su propia fila (para poder reprogramar a uno solo
+ * más adelante sin tocar a los demás, si algún día hace falta).
  */
 add_action( 'wp_ajax_crm_inst_guardar_agenda', 'crm_inst_ajax_guardar_agenda' );
 function crm_inst_ajax_guardar_agenda() {
@@ -3371,11 +3421,10 @@ function crm_inst_ajax_guardar_agenda() {
 
 	global $wpdb;
 	$instalacion_id = (int) ( $_POST['instalacion_id'] ?? 0 );
-	$instalador_id  = (int) ( $_POST['instalador_id'] ?? 0 );
 	$fecha_raw      = sanitize_text_field( wp_unslash( $_POST['fecha_cita'] ?? '' ) );
 
-	if ( $instalacion_id <= 0 || $instalador_id <= 0 || $fecha_raw === '' ) {
-		wp_send_json_error( [ 'message' => 'Rellena instalador y fecha.' ] );
+	if ( $instalacion_id <= 0 || $fecha_raw === '' ) {
+		wp_send_json_error( [ 'message' => 'Elige una fecha.' ] );
 	}
 
 	// El <input type="datetime-local"> manda "YYYY-MM-DDTHH:MM".
@@ -3384,49 +3433,53 @@ function crm_inst_ajax_guardar_agenda() {
 		wp_send_json_error( [ 'message' => 'Fecha no válida.' ] );
 	}
 
-	$ya_asignado = (int) $wpdb->get_var( $wpdb->prepare(
-		"SELECT COUNT(*) FROM " . crm_inst_table_instaladores() . " WHERE instalacion_id = %d AND user_id = %d",
-		$instalacion_id,
-		$instalador_id
+	$instaladores_asignados = $wpdb->get_col( $wpdb->prepare(
+		"SELECT user_id FROM " . crm_inst_table_instaladores() . " WHERE instalacion_id = %d",
+		$instalacion_id
 	) );
-	if ( $ya_asignado === 0 ) {
-		wp_send_json_error( [ 'message' => 'Ese instalador no está asignado a esta instalación todavía.' ] );
+	if ( empty( $instaladores_asignados ) ) {
+		wp_send_json_error( [ 'message' => 'Asigna primero al menos un instalador a esta instalación.' ] );
 	}
 
-	$fecha_mysql = date( 'Y-m-d H:i:s', $timestamp );
-	$existing_id = (int) $wpdb->get_var( $wpdb->prepare(
-		"SELECT id FROM " . crm_inst_table_agenda() . " WHERE instalacion_id = %d LIMIT 1",
+	$fecha_mysql    = date( 'Y-m-d H:i:s', $timestamp );
+	$cliente_nombre = $wpdb->get_var( $wpdb->prepare(
+		"SELECT c.cliente_nombre FROM " . crm_inst_table_instalaciones() . " i LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id WHERE i.id = %d",
 		$instalacion_id
 	) );
 
-	if ( $existing_id > 0 ) {
-		$wpdb->update(
-			crm_inst_table_agenda(),
-			[ 'fecha_cita' => $fecha_mysql, 'instalador_id' => $instalador_id, 'estado' => 'pendiente' ],
-			[ 'id' => $existing_id ]
-		);
-	} else {
-		$wpdb->insert(
-			crm_inst_table_agenda(),
-			[ 'instalacion_id' => $instalacion_id, 'fecha_cita' => $fecha_mysql, 'instalador_id' => $instalador_id, 'estado' => 'pendiente' ],
-			[ '%d', '%s', '%d', '%s' ]
-		);
-	}
-
-	crm_inst_log_action( $instalacion_id, 'agenda', 'programar_visita', 'Visita programada para ' . date_i18n( 'd/m/Y H:i', $timestamp ) . '.' );
-
-	if ( function_exists( 'crm_notificar' ) ) {
-		$cliente_nombre = $wpdb->get_var( $wpdb->prepare(
-			"SELECT c.cliente_nombre FROM " . crm_inst_table_instalaciones() . " i LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id WHERE i.id = %d",
-			$instalacion_id
+	foreach ( $instaladores_asignados as $instalador_id ) {
+		$instalador_id = (int) $instalador_id;
+		$existing_id    = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM " . crm_inst_table_agenda() . " WHERE instalacion_id = %d AND instalador_id = %d LIMIT 1",
+			$instalacion_id,
+			$instalador_id
 		) );
-		crm_notificar(
-			$instalador_id,
-			$existing_id > 0 ? 'visita_reprogramada' : 'visita_programada',
-			( $existing_id > 0 ? 'Visita reprogramada' : 'Visita programada' ) . ' para ' . date_i18n( 'd/m/Y H:i', $timestamp ) . ' — ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.',
-			home_url( '/calendario-instalador/' )
-		);
+
+		if ( $existing_id > 0 ) {
+			$wpdb->update(
+				crm_inst_table_agenda(),
+				[ 'fecha_cita' => $fecha_mysql, 'estado' => 'pendiente' ],
+				[ 'id' => $existing_id ]
+			);
+		} else {
+			$wpdb->insert(
+				crm_inst_table_agenda(),
+				[ 'instalacion_id' => $instalacion_id, 'fecha_cita' => $fecha_mysql, 'instalador_id' => $instalador_id, 'estado' => 'pendiente' ],
+				[ '%d', '%s', '%d', '%s' ]
+			);
+		}
+
+		if ( function_exists( 'crm_notificar' ) ) {
+			crm_notificar(
+				$instalador_id,
+				$existing_id > 0 ? 'visita_reprogramada' : 'visita_programada',
+				( $existing_id > 0 ? 'Visita reprogramada' : 'Visita programada' ) . ' para ' . date_i18n( 'd/m/Y H:i', $timestamp ) . ' — ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.',
+				home_url( '/calendario-instalador/' )
+			);
+		}
 	}
+
+	crm_inst_log_action( $instalacion_id, 'agenda', 'programar_visita', 'Visita programada para ' . date_i18n( 'd/m/Y H:i', $timestamp ) . ' (' . count( $instaladores_asignados ) . ' instalador(es)).' );
 
 	wp_send_json_success( [ 'fecha_cita_label' => date_i18n( 'd/m/Y H:i', $timestamp ) ] );
 }
@@ -4673,17 +4726,24 @@ function crm_inst_shortcode_ficha() {
 				<?php if ( ! empty( $data['instaladores'] ) ) : ?>
 					<div class="crm-inst-ficha-section">
 						<h4>Agenda de la visita</h4>
-						<?php if ( ! empty( $data['agenda'] ) ) : ?>
-							<p class="crm-inst-field-info" style="display:inline;">Programada para <strong id="crm-inst-agenda-fecha-actual"><?php echo esc_html( date_i18n( 'd/m/Y H:i', strtotime( $data['agenda']['fecha_cita'] ) ) ); ?></strong> (<?php echo esc_html( crm_instalaciones_estados_agenda()[ $data['agenda']['estado'] ] ?? $data['agenda']['estado'] ); ?>).</p>
-						<?php else : ?>
-							<p class="crm-inst-field-info" style="display:inline;">Todavía sin fecha de visita asignada.</p>
+						<?php if ( count( $data['instaladores'] ) > 1 ) : ?>
+							<p class="crm-inst-field-info">Con varios instaladores asignados, la fecha se agenda a la vez para todos — cada uno la verá en su propio calendario.</p>
 						<?php endif; ?>
+						<ul style="margin:0 0 8px;padding-left:18px;">
+							<?php foreach ( $data['instaladores'] as $inst_asig ) :
+								$fila_agenda = $data['agenda_por_instalador'][ (int) $inst_asig['user_id'] ] ?? null;
+							?>
+								<li>
+									<strong><?php echo esc_html( $inst_asig['display_name'] ); ?>:</strong>
+									<?php if ( $fila_agenda ) : ?>
+										<?php echo esc_html( date_i18n( 'd/m/Y H:i', strtotime( $fila_agenda['fecha_cita'] ) ) ); ?> (<?php echo esc_html( crm_instalaciones_estados_agenda()[ $fila_agenda['estado'] ] ?? $fila_agenda['estado'] ); ?>)
+									<?php else : ?>
+										<span class="crm-inst-field-info">sin fecha todavía</span>
+									<?php endif; ?>
+								</li>
+							<?php endforeach; ?>
+						</ul>
 						<p>
-							<select id="crm-inst-agenda-instalador">
-								<?php foreach ( $data['instaladores'] as $inst_asig ) : ?>
-									<option value="<?php echo esc_attr( $inst_asig['user_id'] ); ?>" <?php selected( ! empty( $data['agenda'] ) && (int) $data['agenda']['instalador_id'] === (int) $inst_asig['user_id'] ); ?>><?php echo esc_html( $inst_asig['display_name'] ); ?></option>
-								<?php endforeach; ?>
-							</select>
 							<input type="datetime-local" id="crm-inst-agenda-fecha" value="<?php echo esc_attr( ! empty( $data['agenda'] ) ? str_replace( ' ', 'T', substr( $data['agenda']['fecha_cita'], 0, 16 ) ) : '' ); ?>">
 							<button type="button" class="crm-btn" id="crm-inst-guardar-agenda-btn"><?php echo empty( $data['agenda'] ) ? 'Programar visita' : 'Reprogramar'; ?></button>
 							<span id="crm-inst-agenda-msg"></span>
@@ -5002,20 +5062,19 @@ function crm_inst_shortcode_ficha() {
 
 		$('#crm-inst-guardar-agenda-btn').on('click', function () {
 			var btn = $(this).prop('disabled', true);
-			var instaladorId = $('#crm-inst-agenda-instalador').val();
 			var fecha = $('#crm-inst-agenda-fecha').val();
 			$('#crm-inst-agenda-msg').text('');
 			$.post(ajaxurl, {
 				action: 'crm_inst_guardar_agenda', nonce: nonce, instalacion_id: instalacionId,
-				instalador_id: instaladorId, fecha_cita: fecha
+				fecha_cita: fecha
 			}, function (resp) {
 				btn.prop('disabled', false);
 				if (!resp.success) {
 					$('#crm-inst-agenda-msg').css('color', '#991b1b').text(resp.data.message);
 					return;
 				}
-				$('#crm-inst-agenda-msg').css('color', '#065f46').text('Guardado: ' + resp.data.fecha_cita_label);
-				btn.text('Reprogramar');
+				$('#crm-inst-agenda-msg').css('color', '#065f46').text('Guardado para todos los instaladores asignados: ' + resp.data.fecha_cita_label);
+				setTimeout(function () { location.reload(); }, 700);
 			});
 		});
 
@@ -5683,6 +5742,13 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		'titulo'  => 'Panel del instalador (calendario, agenda, buscador)',
 		'estado'  => 'hecho',
 		'detalle' => 'Usado de verdad por un instalador real en varias rondas de prueba de esta sesión (partidas extra, fotos de cierre, buscador).',
+	];
+
+	$fases[] = [
+		'fase'    => 'Fase 4 · Agenda multi-instalador',
+		'titulo'  => 'Visita agendada a TODOS los instaladores asignados + suscripción a Google Calendar',
+		'estado'  => 'en_pruebas',
+		'detalle' => 'Antes solo se podía agendar la visita a UN instalador aunque hubiera varios asignados — corregido: la misma fecha se aplica a todos, cada uno con su propia fila (y su propio aviso). Nuevo también: cada instalador tiene un enlace .ics estable en su calendario para suscribirlo desde Google Calendar (Añadir calendario → Desde URL), se actualiza solo. Construido, sin prueba real todavía con 2+ instaladores en la misma instalación.',
 	];
 
 	$fases[] = [

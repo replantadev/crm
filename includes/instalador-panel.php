@@ -182,6 +182,144 @@ function crm_inst_panel_get_visitas_con_fecha($user_id) {
     return array_map('crm_inst_panel_format_visita_row', $rows);
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Suscripción a Google Calendar / Apple Calendar (v1.20.102)
+//
+// El usuario pidió instrucciones para que un instalador sincronice fácil su
+// calendario del CRM con Google Calendar. En vez de un export manual (habría
+// que repetirlo cada vez que cambia algo), se publica un feed .ics estable
+// por instalador — Google/Apple/Outlook lo vuelven a pedir solos cada pocas
+// horas, así que una vez suscrito no hay que tocar nada más.
+//
+// Autenticación: un token opaco de un solo instalador (usermeta, no expira),
+// igual de espíritu que el token de un solo uso de confirmar-pedido, pero
+// pensado para reutilizarse en cada refresco automático del calendario en
+// vez de un solo clic — por eso vive en usermeta en vez de caducar.
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Token estable del feed .ics de un instalador — se genera la primera vez
+ * que hace falta y se reutiliza siempre después (para que la URL suscrita
+ * en Google Calendar no deje de funcionar).
+ *
+ * @param int $user_id
+ * @return string
+ */
+function crm_inst_ics_token_para_usuario($user_id) {
+    $user_id = (int) $user_id;
+    $token   = get_user_meta($user_id, 'crm_inst_ics_token', true);
+    if (!is_string($token) || $token === '') {
+        $token = wp_generate_password(40, false, false);
+        update_user_meta($user_id, 'crm_inst_ics_token', $token);
+    }
+    return $token;
+}
+
+/**
+ * URL pública (sin login) del feed .ics de un instalador, para pegar en
+ * "Añadir calendario → Desde URL" de Google Calendar.
+ *
+ * @param int $user_id
+ * @return string
+ */
+function crm_inst_ics_url_para_usuario($user_id) {
+    return add_query_arg('crm_inst_ics', crm_inst_ics_token_para_usuario($user_id), home_url('/'));
+}
+
+/**
+ * Escapa texto para una propiedad TEXT de iCalendar (RFC 5545 §3.3.11).
+ */
+function crm_inst_ics_escapar_texto($texto) {
+    $texto = (string) $texto;
+    return str_replace(['\\', ';', ',', "\n", "\r"], ['\\\\', '\\;', '\\,', '\\n', ''], $texto);
+}
+
+/**
+ * Genera el contenido .ics a partir de las visitas de un instalador (mismo
+ * shape que devuelve crm_inst_panel_get_visitas_con_fecha() — se reutiliza,
+ * no se repite la consulta).
+ *
+ * @param array $visitas
+ * @return string
+ */
+function crm_inst_ics_generar(array $visitas) {
+    $host   = (string) wp_parse_url(home_url(), PHP_URL_HOST);
+    $lineas = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//CRM Energitel//Calendario Instalador//ES',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        'X-WR-CALNAME:Visitas CRM',
+        'REFRESH-INTERVAL;VALUE=DURATION:PT1H',
+        'X-PUBLISHED-TTL:PT1H',
+    ];
+
+    foreach ($visitas as $v) {
+        if (empty($v['fecha_cita']) || empty($v['instalacion_id'])) {
+            continue;
+        }
+        try {
+            $inicio = new DateTime($v['fecha_cita'], wp_timezone());
+        } catch (Exception $e) {
+            continue;
+        }
+        $fin = clone $inicio;
+        $fin->modify('+90 minutes');
+        $inicio_utc = (clone $inicio)->setTimezone(new DateTimeZone('UTC'));
+        $fin_utc    = (clone $fin)->setTimezone(new DateTimeZone('UTC'));
+
+        $resumen = 'Visita: ' . ($v['cliente_nombre'] ?: ('Instalación #' . $v['instalacion_id']));
+
+        $lineas[] = 'BEGIN:VEVENT';
+        $lineas[] = 'UID:crm-inst-' . (int) $v['instalacion_id'] . '@' . $host;
+        $lineas[] = 'DTSTAMP:' . gmdate('Ymd\THis\Z');
+        $lineas[] = 'DTSTART:' . $inicio_utc->format('Ymd\THis\Z');
+        $lineas[] = 'DTEND:' . $fin_utc->format('Ymd\THis\Z');
+        $lineas[] = 'SUMMARY:' . crm_inst_ics_escapar_texto($resumen);
+        if (!empty($v['direccion_instalacion'])) {
+            $lineas[] = 'LOCATION:' . crm_inst_ics_escapar_texto($v['direccion_instalacion']);
+        }
+        $lineas[] = 'END:VEVENT';
+    }
+
+    $lineas[] = 'END:VCALENDAR';
+    return implode("\r\n", $lineas) . "\r\n";
+}
+
+/**
+ * Sirve el feed .ics si la petición trae `?crm_inst_ics=<token>` — deliberadamente
+ * en `init` (no una página/shortcode), para que la URL sea corta y no dependa
+ * de ninguna página existir. Termina la petición (exit) igual que cualquier
+ * endpoint de descarga.
+ */
+add_action('init', 'crm_inst_ics_maybe_serve', 5);
+function crm_inst_ics_maybe_serve() {
+    if (empty($_GET['crm_inst_ics'])) {
+        return;
+    }
+    $token = sanitize_text_field(wp_unslash($_GET['crm_inst_ics']));
+    if ($token === '') {
+        return;
+    }
+
+    global $wpdb;
+    $user_id = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'crm_inst_ics_token' AND meta_value = %s LIMIT 1",
+        $token
+    ));
+    if ($user_id <= 0) {
+        status_header(404);
+        exit;
+    }
+
+    $visitas = crm_inst_panel_get_visitas_con_fecha($user_id);
+    header('Content-Type: text/calendar; charset=utf-8');
+    header('Content-Disposition: inline; filename="calendario-crm.ics"');
+    echo crm_inst_ics_generar($visitas); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+    exit;
+}
+
 /**
  * Instalaciones de este instalador ya marcadas como `finalizada` — historial
  * de lo que ha hecho, no solo lo que tiene pendiente/programado.
@@ -1477,6 +1615,23 @@ function crm_inst_shortcode_panel_calendario() {
 
         <div id="crm-panel-inst-calendar"></div>
 
+        <?php if (function_exists('crm_inst_ics_url_para_usuario')) : ?>
+            <div class="crm-panel-inst-card" style="margin-top:16px;">
+                <strong style="display:block;margin-bottom:6px;">Sincronizar con Google Calendar</strong>
+                <p class="crm-inst-field-info" style="margin:0 0 10px;">Añade tus visitas a tu Google Calendar (u otra app de calendario) para verlas junto al resto — se actualiza solo, no hay que volver a copiarlo cuando cambie una fecha.</p>
+                <ol style="margin:0 0 10px;padding-left:18px;font-size:13px;color:#4b5563;">
+                    <li>Copia este enlace.</li>
+                    <li>En Google Calendar (web): "Otros calendarios" → "+" → "Desde URL" → pega el enlace → "Añadir calendario".</li>
+                    <li>Solo se puede añadir desde la web — luego se ve igual en el móvil, la app de Google Calendar no permite añadir por URL directamente. Puede tardar unas horas en sincronizar la primera vez.</li>
+                </ol>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                    <input type="text" readonly id="crm-panel-inst-ics-url" value="<?php echo esc_url(crm_inst_ics_url_para_usuario($user_id)); ?>" style="flex:1;min-width:220px;padding:8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12.5px;color:#4b5563;">
+                    <button type="button" class="crm-btn" id="crm-panel-inst-ics-copiar-btn">Copiar enlace</button>
+                </div>
+                <span id="crm-panel-inst-ics-msg" style="font-size:12.5px;color:#065f46;"></span>
+            </div>
+        <?php endif; ?>
+
         <?php
         $estados_leyenda = ['pendiente', 'planificada', 'en_ejecucion', 'lista', 'bloqueada', 'reagendada'];
         $estados_labels  = crm_instalaciones_estados();
@@ -1559,6 +1714,24 @@ function crm_inst_shortcode_panel_calendario() {
             }
         });
         calendar.render();
+
+        var icsInput = document.getElementById('crm-panel-inst-ics-url');
+        var icsBtn   = document.getElementById('crm-panel-inst-ics-copiar-btn');
+        var icsMsg   = document.getElementById('crm-panel-inst-ics-msg');
+        if (icsInput && icsBtn) {
+            icsBtn.addEventListener('click', function () {
+                icsInput.select();
+                icsInput.setSelectionRange(0, 99999);
+                var copiado = false;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(icsInput.value).then(function () { copiado = true; }).catch(function () {});
+                }
+                try {
+                    if (!navigator.clipboard) { document.execCommand('copy'); }
+                } catch (e) {}
+                if (icsMsg) { icsMsg.textContent = 'Enlace copiado.'; }
+            });
+        }
     })();
     </script>
     <?php echo crm_inst_panel_extras_js($nonce); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>

@@ -48,6 +48,17 @@ function crm_app_shell_get_settings() {
             'calendario-instalador',
             'notificaciones',
             'mi-perfil-instalador',
+            // v1.20.108: 'flujos' (v1.20.100) y las dos de 'ventas' (v1.20.96)
+            // se quedaron fuera de esta lista al crearlas — mostraban el
+            // header de Astra en vez de la topbar del CRM. Este array de
+            // defaults solo se usa si el sitio NUNCA guardó su propia lista
+            // en Ajustes (el merge con la opción guardada es de clave
+            // completa, no profundo) — el fix real que cubre también los
+            // sitios que ya tienen `slugs` guardado está en
+            // crm_app_shell_trigger_shortcodes() más abajo.
+            'flujos',
+            'ventas-presupuestos',
+            'ventas-resumen',
         ],
         'brand_label' => 'CRM',
     ];
@@ -95,6 +106,15 @@ function crm_app_shell_trigger_shortcodes() {
         'crm_inst_panel_calendario',
         'crm_inst_panel_perfil',
         'crm_notificaciones_lista',
+        // v1.20.108: 'flujos' (v1.20.100) y las dos páginas de 'ventas'
+        // (v1.20.96) mostraban el header de Astra en vez de la topbar del
+        // CRM — sus shortcodes nunca se añadieron aquí. Esta lista, a
+        // diferencia de los slugs por defecto de arriba, funciona siempre
+        // (no depende de si el sitio ya tiene una configuración guardada en
+        // Ajustes), así que es el fix real para un sitio en producción.
+        'crm_flujos',
+        'crm_ventas_presupuestos',
+        'crm_ventas_resumen',
     ]);
 }
 
@@ -409,10 +429,13 @@ function crm_app_shell_menu_items() {
             'roles' => ['comercial', 'visitador'],
         ],
         [
-            // v1.20.96: administrator/crm_admin ven estas 4 páginas agrupadas
-            // bajo un único menú desplegable "Clientes" en vez de 4 enlaces
+            // v1.20.96: administrator/crm_admin ven estas páginas agrupadas
+            // bajo un único menú desplegable "Clientes" en vez de enlaces
             // sueltos — comercial/visitador conservan los enlaces planos de
             // arriba (Alta/Mis altas), sin dropdown, tal y como estaban.
+            // v1.20.108: "Equipo" (antes "Resumen", mismo slug 'resumen') se
+            // mueve aquí dentro — el usuario pidió agruparlo con el resto en
+            // vez de dejarlo como enlace suelto al lado del desplegable.
             'label' => 'Clientes',
             'icon'  => 'users',
             'roles' => ['administrator', 'crm_admin'],
@@ -421,18 +444,8 @@ function crm_app_shell_menu_items() {
                 ['label' => 'Mis clientes', 'slug' => 'mis-altas-de-cliente', 'icon' => 'list-bullets'],
                 ['label' => 'Todos los clientes', 'slug' => 'todas-las-altas-de-cliente', 'icon' => 'users'],
                 ['label' => 'Leads de marketing', 'slug' => 'asignar-leads', 'icon' => 'target'],
+                ['label' => 'Equipo', 'slug' => 'resumen', 'icon' => 'chart-bar'],
             ],
-        ],
-        [
-            // v1.20.96: "Resumen" pasa a llamarse "Equipo" — la página no
-            // cambia (mismo slug 'resumen'), solo la etiqueta del menú; el
-            // contenido de la página se amplía con un listado de
-            // instaladores (crm_instaladores_estadisticas) además del ya
-            // existente de comerciales.
-            'label' => 'Equipo',
-            'slug'  => 'resumen',
-            'icon'  => 'chart-bar',
-            'roles' => ['administrator', 'crm_admin'],
         ],
         [
             // v1.20.96 — nuevo menú "Ventas": presupuestos de Holded (todos,

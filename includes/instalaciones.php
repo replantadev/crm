@@ -5882,8 +5882,8 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 	$fases[] = [
 		'fase'    => 'Fase 4 · Montaje por línea',
 		'titulo'  => 'Completado parcial/por línea, para instalaciones de varios días',
-		'estado'  => 'en_pruebas',
-		'detalle' => 'El instalador puede marcar línea a línea qué ha montado cada día (fecha + quién, no solo un cierre general de golpe) — útil cuando la instalación se reparte entre varios días o varios instaladores. Al marcar la primera línea, la instalación pasa sola a "En ejecución" (estado que ya existía pero no lo ponía nadie). No toca stock/Holded — eso sigue disparando solo al confirmar el checklist/declarar el cierre, como hasta ahora. Construido, sin prueba real todavía.',
+		'estado'  => 'hecho',
+		'detalle' => 'El instalador puede marcar línea a línea qué ha montado cada día (fecha + quién, no solo un cierre general de golpe) — útil cuando la instalación se reparte entre varios días o varios instaladores. Al marcar la primera línea, la instalación pasa sola a "En ejecución" (estado que ya existía pero no lo ponía nadie). No toca stock/Holded — eso sigue disparando solo al confirmar el checklist/declarar el cierre, como hasta ahora. Probado por el usuario 2026-09-16: pasa a "En ejecución" y queda la fecha de cada línea entregada.',
 	];
 
 	$fases[] = [
@@ -5897,7 +5897,7 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		'fase'    => 'Fase 4 · Entrega 2',
 		'titulo'  => 'Checklist previo, albarán de salida en Holded y cierre con fotos',
 		'estado'  => 'pendiente',
-		'detalle' => 'El checklist y las fotos de cierre por categoría SÍ están probados. Lo que falta es la parte más delicada: ninguna escritura real contra Holded (crear y aprobar el albarán de salida) se ha probado todavía — aparcado a propósito por el usuario para el final de esta ronda.',
+		'detalle' => 'El checklist y las fotos de cierre por categoría SÍ están probados — reconfirmado por el usuario 2026-09-16. Lo que falta es la parte más delicada: ninguna escritura real contra Holded (crear y aprobar el albarán de salida) se ha probado todavía — aparcado a propósito por el usuario para el final de esta ronda.',
 	];
 
 	$fases[] = [

@@ -820,6 +820,171 @@ function crm_inst_panel_extras_js($nonce) {
     (function () {
         var ajaxurl = <?php echo wp_json_encode(admin_url('admin-ajax.php')); ?>;
         var nonce   = <?php echo wp_json_encode($nonce); ?>;
+
+        // ─────────────────────────────────────────────────────────────────
+        // v1.20.111 — Fase 4 offline. El instalador pierde cobertura un buen
+        // rato en obra (confirmado con el usuario) — estas 4 acciones
+        // (checklist, marcar línea montada, cierre, partida extra) se
+        // guardan en IndexedDB del propio móvil si el envío falla por falta
+        // de conexión, y se reintentan solas en cuanto detecta señal —
+        // sobrevive a cerrar la pestaña/el navegador entre medias.
+        //
+        // Alcance deliberado: NO cachea la página en sí (no hay Service
+        // Worker) — si cierra la app estando YA sin cobertura y la reabre,
+        // sigue haciendo falta conexión para cargar la página de nuevo; solo
+        // lo que ya había enviado (en cola) queda a salvo. Tampoco restaura
+        // el estado visual "pendiente" de cada botón tras un recarga en
+        // frío — el aviso de "N acciones pendientes" de arriba es la fuente
+        // fiable de que sigue habiendo algo por enviar.
+        // ─────────────────────────────────────────────────────────────────
+        var crmOfflineDB = null;
+        function crmOfflineAbrirDB() {
+            if (crmOfflineDB) { return crmOfflineDB; }
+            crmOfflineDB = new Promise(function (resolve, reject) {
+                if (!window.indexedDB) { reject(new Error('IndexedDB no disponible')); return; }
+                var req = indexedDB.open('crm_offline_queue', 1);
+                req.onupgradeneeded = function () {
+                    if (!req.result.objectStoreNames.contains('pendientes')) {
+                        req.result.createObjectStore('pendientes', { keyPath: 'id', autoIncrement: true });
+                    }
+                };
+                req.onsuccess = function () { resolve(req.result); };
+                req.onerror = function () { reject(req.error); };
+            });
+            return crmOfflineDB;
+        }
+        function crmOfflineGuardar(registro) {
+            return crmOfflineAbrirDB().then(function (db) {
+                return new Promise(function (resolve, reject) {
+                    registro.created_at = Date.now();
+                    var req = db.transaction('pendientes', 'readwrite').objectStore('pendientes').add(registro);
+                    req.onsuccess = function () { resolve(req.result); };
+                    req.onerror = function () { reject(req.error); };
+                });
+            });
+        }
+        function crmOfflineListar() {
+            return crmOfflineAbrirDB().then(function (db) {
+                return new Promise(function (resolve, reject) {
+                    var req = db.transaction('pendientes', 'readonly').objectStore('pendientes').getAll();
+                    req.onsuccess = function () { resolve(req.result || []); };
+                    req.onerror = function () { reject(req.error); };
+                });
+            });
+        }
+        function crmOfflineBorrar(id) {
+            return crmOfflineAbrirDB().then(function (db) {
+                return new Promise(function (resolve, reject) {
+                    var req = db.transaction('pendientes', 'readwrite').objectStore('pendientes').delete(id);
+                    req.onsuccess = function () { resolve(); };
+                    req.onerror = function () { reject(req.error); };
+                });
+            });
+        }
+        function crmOfflineFormData(entries) {
+            var fd = new FormData();
+            entries.forEach(function (par) { fd.append(par[0], par[1]); });
+            return fd;
+        }
+
+        var crmOfflineBanner = null;
+        function crmOfflineActualizarBanner() {
+            crmOfflineListar().then(function (registros) {
+                if (!crmOfflineBanner) {
+                    crmOfflineBanner = document.createElement('div');
+                    crmOfflineBanner.id = 'crm-offline-banner';
+                    crmOfflineBanner.style.cssText = 'display:none;position:sticky;top:0;z-index:500;background:#92400e;color:#fff;padding:8px 14px;font-size:13px;text-align:center;border-radius:0 0 8px 8px;margin-bottom:10px;';
+                    var wrap = document.querySelector('.crm-panel-inst-wrap');
+                    if (wrap) { wrap.insertBefore(crmOfflineBanner, wrap.firstChild); }
+                }
+                if (registros.length > 0) {
+                    crmOfflineBanner.style.display = 'block';
+                    crmOfflineBanner.textContent = '📡 ' + registros.length + (registros.length === 1 ? ' acción guardada sin conexión, pendiente de enviar…' : ' acciones guardadas sin conexión, pendientes de enviar…');
+                } else if (crmOfflineBanner) {
+                    crmOfflineBanner.style.display = 'none';
+                }
+            }).catch(function () {});
+        }
+
+        var crmOfflineEnviando = false;
+        function crmOfflineIntentarEnviarTodo() {
+            if (crmOfflineEnviando) { return; }
+            crmOfflineEnviando = true;
+            crmOfflineListar().then(function (registros) {
+                registros.sort(function (a, b) { return a.created_at - b.created_at; });
+                return registros.reduce(function (cadena, registro) {
+                    return cadena.then(function () {
+                        return fetch(ajaxurl, { method: 'POST', body: crmOfflineFormData(registro.entries) })
+                            .then(function (r) { return r.json(); })
+                            .then(function (resp) {
+                                if (resp && resp.success) {
+                                    return crmOfflineBorrar(registro.id).then(function () {
+                                        window.dispatchEvent(new CustomEvent('crm-offline-sync', { detail: registro }));
+                                    });
+                                }
+                                // Fallo real del servidor (no de conexión) — no tiene sentido
+                                // reintentar algo que ya se rechazó; se descarta y se avisa.
+                                return crmOfflineBorrar(registro.id).then(function () {
+                                    window.dispatchEvent(new CustomEvent('crm-offline-sync-error', {
+                                        detail: { registro: registro, message: (resp && resp.data && resp.data.message) ? resp.data.message : 'Error' }
+                                    }));
+                                });
+                            })
+                            .catch(function () {
+                                throw new Error('sigue sin conexión'); // corta la cadena, deja el resto en cola para el próximo intento
+                            });
+                    });
+                }, Promise.resolve());
+            }).catch(function () {}).then(function () {
+                crmOfflineEnviando = false;
+                crmOfflineActualizarBanner();
+            });
+        }
+
+        window.addEventListener('online', crmOfflineIntentarEnviarTodo);
+        setInterval(crmOfflineIntentarEnviarTodo, 30000);
+        crmOfflineActualizarBanner();
+        crmOfflineIntentarEnviarTodo();
+
+        window.addEventListener('crm-offline-sync-error', function (e) {
+            alert('Una acción guardada sin conexión no se pudo aplicar al final: ' + e.detail.message);
+        });
+        // Checklist/cierre/extra cambian bastante el estado de la tarjeta —
+        // igual que ya hacían al enviarse con conexión, se recarga al
+        // sincronizar en segundo plano (montado no recarga, ver más abajo).
+        window.addEventListener('crm-offline-sync', function (e) {
+            if (['checklist', 'cierre', 'extra'].indexOf(e.detail.tipo) !== -1) {
+                location.reload();
+            }
+        });
+
+        /**
+         * Punto único que deben usar los 4 formularios de abajo en vez de
+         * fetch() directo. Devuelve una promesa que resuelve con:
+         *  - { offline: true }                si no había conexión (ya en cola)
+         *  - { offline: false, resp: {...} }   si SÍ hubo conexión (éxito o error real del servidor)
+         *
+         * @param {Array<[string, string|Blob]>} entries Pares clave/valor (incluye 'action' y 'nonce').
+         * @param {{tipo:string, instalacion_id:*, trabajo_id?:*, label:string}} meta
+         */
+        window.crmOfflineEnviar = function (entries, meta) {
+            return fetch(ajaxurl, { method: 'POST', body: crmOfflineFormData(entries) })
+                .then(function (r) { return r.json(); })
+                .then(function (resp) { return { offline: false, resp: resp }; })
+                .catch(function () {
+                    return crmOfflineGuardar({
+                        tipo: meta.tipo,
+                        instalacion_id: meta.instalacion_id,
+                        trabajo_id: meta.trabajo_id || null,
+                        label: meta.label,
+                        entries: entries
+                    }).then(function () {
+                        crmOfflineActualizarBanner();
+                        return { offline: true };
+                    });
+                });
+        };
+
         // v1.20.87: si hay credenciales de WhatsApp Business configuradas Y
         // una plantilla para este aviso, el modal deja enviar por ese canal
         // de verdad; si no, sigue bloqueado con el aviso de siempre.
@@ -1306,13 +1471,17 @@ function crm_inst_panel_extras_js($nonce) {
                 cklBody.set('seguridad_ok', '1');
                 cklBody.set('warehouse_id', cklAlmacenId);
 
-                fetch(ajaxurl, { method: 'POST', body: cklBody })
-                    .then(function (r) { return r.json(); })
-                    .then(function (resp) {
-                        if (!resp.success) {
+                window.crmOfflineEnviar(Array.from(cklBody.entries()), { tipo: 'checklist', instalacion_id: cklInstalacionId, label: 'Checklist de la instalación #' + cklInstalacionId })
+                    .then(function (resultado) {
+                        if (resultado.offline) {
+                            cklMsg.style.color = '#92400e';
+                            cklMsg.textContent = 'Sin conexión — guardado, se enviará solo en cuanto vuelva la señal.';
+                            return;
+                        }
+                        if (!resultado.resp.success) {
                             checklistGuardar.disabled = false;
                             cklMsg.style.color = '#991b1b';
-                            cklMsg.textContent = (resp.data && resp.data.message) ? resp.data.message : 'Error.';
+                            cklMsg.textContent = (resultado.resp.data && resultado.resp.data.message) ? resultado.resp.data.message : 'Error.';
                             return;
                         }
                         location.reload();
@@ -1320,7 +1489,7 @@ function crm_inst_panel_extras_js($nonce) {
                     .catch(function () {
                         checklistGuardar.disabled = false;
                         cklMsg.style.color = '#991b1b';
-                        cklMsg.textContent = 'Error de conexión.';
+                        cklMsg.textContent = 'Error inesperado.';
                     });
                 return;
             }
@@ -1397,14 +1566,18 @@ function crm_inst_panel_extras_js($nonce) {
 
                 preparar.then(function () {
                     cMsg.textContent = 'Enviando...';
-                    return fetch(ajaxurl, { method: 'POST', body: cBody });
+                    return window.crmOfflineEnviar(Array.from(cBody.entries()), { tipo: 'cierre', instalacion_id: cInstalacionId, label: 'Cierre de la instalación #' + cInstalacionId });
                 })
-                    .then(function (r) { return r.json(); })
-                    .then(function (resp) {
-                        if (!resp.success) {
+                    .then(function (resultado) {
+                        if (resultado.offline) {
+                            cMsg.style.color = '#92400e';
+                            cMsg.textContent = 'Sin conexión — guardado con las fotos, se enviará solo en cuanto vuelva la señal.';
+                            return;
+                        }
+                        if (!resultado.resp.success) {
                             cierreGuardar.disabled = false;
                             cMsg.style.color = '#991b1b';
-                            cMsg.textContent = (resp.data && resp.data.message) ? resp.data.message : 'Error.';
+                            cMsg.textContent = (resultado.resp.data && resultado.resp.data.message) ? resultado.resp.data.message : 'Error.';
                             return;
                         }
                         location.reload();
@@ -1412,7 +1585,7 @@ function crm_inst_panel_extras_js($nonce) {
                     .catch(function () {
                         cierreGuardar.disabled = false;
                         cMsg.style.color = '#991b1b';
-                        cMsg.textContent = 'Error de conexión.';
+                        cMsg.textContent = 'Error inesperado.';
                     });
                 return;
             }
@@ -1474,14 +1647,18 @@ function crm_inst_panel_extras_js($nonce) {
                 body.append('importe', importe);
                 body.append('observaciones', observaciones);
                 body.append('justificacion', fotoBlob, nombreSubida(fotoOriginal, fotoBlob));
-                return fetch(ajaxurl, { method: 'POST', body: body });
+                return window.crmOfflineEnviar(Array.from(body.entries()), { tipo: 'extra', instalacion_id: instalacionId, label: 'Partida extra de la instalación #' + instalacionId });
             })
-                .then(function (r) { return r.json(); })
-                .then(function (resp) {
-                    if (!resp.success) {
+                .then(function (resultado) {
+                    if (resultado.offline) {
+                        msg.style.color = '#92400e';
+                        msg.textContent = 'Sin conexión — guardado con la foto, se enviará solo en cuanto vuelva la señal.';
+                        return;
+                    }
+                    if (!resultado.resp.success) {
                         guardar.disabled = false;
                         msg.style.color = '#991b1b';
-                        msg.textContent = (resp.data && resp.data.message) ? resp.data.message : 'Error.';
+                        msg.textContent = (resultado.resp.data && resultado.resp.data.message) ? resultado.resp.data.message : 'Error.';
                         return;
                     }
                     location.reload();
@@ -1489,7 +1666,7 @@ function crm_inst_panel_extras_js($nonce) {
                 .catch(function () {
                     guardar.disabled = false;
                     msg.style.color = '#991b1b';
-                    msg.textContent = 'Error de conexión.';
+                    msg.textContent = 'Error inesperado.';
                 });
         });
 
@@ -1513,24 +1690,48 @@ function crm_inst_panel_extras_js($nonce) {
             body.set('trabajo_id', trabajoId);
             body.set('montado', montado ? '1' : '0');
 
-            fetch(ajaxurl, { method: 'POST', body: body })
-                .then(function (r) { return r.json(); })
-                .then(function (resp) {
-                    check.disabled = false;
-                    if (!resp.success) {
-                        check.checked = !montado;
-                        texto.textContent = textoAnterior;
-                        alert((resp.data && resp.data.message) ? resp.data.message : 'Error.');
+            window.crmOfflineEnviar(Array.from(body.entries()), { tipo: 'montado', instalacion_id: check.closest('[data-instalacion-id]') ? check.closest('[data-instalacion-id]').getAttribute('data-instalacion-id') : null, trabajo_id: trabajoId, label: 'Línea montada (trabajo #' + trabajoId + ')' })
+                .then(function (resultado) {
+                    if (resultado.offline) {
+                        // Se deja marcado (optimista) y deshabilitado hasta que
+                        // sincronice — evita reintentos duplicados por tocarlo
+                        // otra vez mientras sigue sin conexión.
+                        texto.textContent = montado ? 'Montada (pendiente de sincronizar)' : 'Pendiente de sincronizar';
                         return;
                     }
-                    texto.textContent = resp.data.texto;
+                    check.disabled = false;
+                    if (!resultado.resp.success) {
+                        check.checked = !montado;
+                        texto.textContent = textoAnterior;
+                        alert((resultado.resp.data && resultado.resp.data.message) ? resultado.resp.data.message : 'Error.');
+                        return;
+                    }
+                    texto.textContent = resultado.resp.data.texto;
                 })
                 .catch(function () {
                     check.disabled = false;
                     check.checked = !montado;
                     texto.textContent = textoAnterior;
-                    alert('Error de conexión.');
+                    alert('Error inesperado.');
                 });
+        });
+
+        // Cuando una línea "montada" guardada sin conexión termina de
+        // sincronizar (en segundo plano, quizás en otra pestaña/momento),
+        // se refleja aquí si el checkbox sigue en la página.
+        window.addEventListener('crm-offline-sync', function (e) {
+            if (e.detail.tipo !== 'montado') {
+                return;
+            }
+            var check = document.querySelector('.crm-panel-inst-material-montado[data-trabajo-id="' + e.detail.trabajo_id + '"]');
+            if (!check) {
+                return;
+            }
+            check.disabled = false;
+            var texto = check.closest('label').querySelector('.crm-panel-inst-material-montado-texto');
+            if (texto) {
+                texto.textContent = check.checked ? 'Montada (sincronizado)' : 'Marcar como montada';
+            }
         });
     })();
     </script>

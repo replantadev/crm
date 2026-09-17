@@ -5902,9 +5902,9 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 
 	$fases[] = [
 		'fase'    => 'Fase 4 · Offline',
-		'titulo'  => 'Soporte offline del checklist y el cierre',
-		'estado'  => 'pendiente',
-		'detalle' => 'No se ha empezado a construir — hoy el instalador necesita conexión para confirmar el checklist y declarar el cierre.',
+		'titulo'  => 'Soporte offline del checklist, montaje por línea, cierre y partidas extra',
+		'estado'  => 'en_pruebas',
+		'detalle' => 'Confirmado con el usuario: el instalador pierde cobertura un buen rato en obra (no solo señal débil), así que hacía falta guardar de verdad en el móvil, no solo reintentar. Las 4 acciones (confirmar checklist, marcar línea montada, declarar cierre con fotos, declarar partida extra con foto) se guardan en IndexedDB si el envío falla por conexión, y se reintentan solas (evento "online" + cada 30s) sin perder nada aunque se cierre la pestaña/el navegador entre medias — un aviso arriba de la tarjeta muestra cuántas quedan pendientes. Alcance deliberado: NO cachea la página en sí (sin Service Worker) — si cierra la app estando YA sin cobertura, sigue haciendo falta conexión para volver a abrirla, solo lo ya enviado queda a salvo. Límite conocido: si pasan más de ~24h offline, el nonce de seguridad caduca y ese envío en concreto se descarta con aviso (no se reintenta indefinidamente) — no se ha resuelto un refresco de nonce automático. Construido, sin ninguna prueba real todavía (incluida una prueba real de "modo avión" en el móvil).',
 	];
 
 	$fases[] = [

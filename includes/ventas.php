@@ -272,7 +272,7 @@ add_filter('crm_roadmap_fases', function ($fases) {
         'fase'    => 'Ventas',
         'titulo'  => 'Menú "Ventas": presupuestos de Holded y resumen mensual',
         'estado'  => 'en_pruebas',
-        'detalle' => 'Presupuestos (todos los de Holded, con estado y cliente enlazado) y Resumen (generados/aprobados/importe por mes). Construido, sin confirmación del usuario todavía — incluida la carga de la primera visita, que puede tardar con muchos presupuestos en Holded.',
+        'detalle' => 'Presupuestos (todos los de Holded, con estado y cliente enlazado) y Resumen (generados/aprobados/importe por mes). Confirmado 2026-09-17: la topbar del CRM ya se ve bien en las 2 páginas (antes mostraban el header de Astra, v1.20.108). Sigue sin confirmar el contenido en sí — los datos de presupuestos/resumen con carga real de Holded (puede tardar la primera vez con muchos presupuestos).',
     ];
     return $fases;
 });

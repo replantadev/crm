@@ -900,8 +900,8 @@ add_filter('crm_roadmap_fases', function ($fases) {
     $fases[] = [
         'fase'    => 'Menú',
         'titulo'  => 'Menú de administrator/crm_admin agrupado en "Clientes"/"Ventas" + menú hamburguesa en móvil',
-        'estado'  => 'en_pruebas',
-        'detalle' => 'Confirmado por el usuario funcionando en móvil (hamburguesa + acordeón). El desplegable de escritorio tuvo un bug real (recorte por overflow del nav, corregido en v1.20.97) — pendiente de que el usuario confirme visualmente que ya se ve bien tras el arreglo.',
+        'estado'  => 'hecho',
+        'detalle' => 'Confirmado por el usuario funcionando en móvil (hamburguesa + acordeón) y en escritorio tras el fix del recorte por overflow del nav (v1.20.97). "Equipo" se movió dentro del desplegable "Clientes" (v1.20.108) y también confirmado. /flujos/, /ventas-presupuestos/ y /ventas-resumen/ mostraban el header de Astra en vez de la topbar (v1.20.108) — confirmado corregido 2026-09-17.',
     ];
     return $fases;
 });

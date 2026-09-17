@@ -38,7 +38,12 @@ if (!defined('ABSPATH')) {
 function crm_mail_canales() {
     return [
         'proveedor'  => 'Aviso a proveedores (pedidos de material a Santoki y otros)',
-        'instalador' => 'Aviso a instaladores (asignación, visita programada/reprogramada)',
+        'instalador' => 'Aviso a instaladores (asignación, visita programada/reprogramada, alta de cuenta)',
+        // v1.20.110 — canal propio para comerciales: de momento solo el alta
+        // de cuenta, pero el usuario ya anticipó que el flujo comercial irá
+        // generando avisos propios más adelante (mismo slug que el rol
+        // 'comercial', para poder reusarlo directamente al conectar cada uno).
+        'comercial'  => 'Aviso a comerciales (alta de cuenta, y lo que se conecte del flujo comercial más adelante)',
     ];
 }
 
@@ -59,6 +64,10 @@ function crm_mail_eventos_por_canal() {
         'instalador' => [
             'Instalador asignado a una instalación',
             'Visita programada o reprogramada en la agenda',
+            'Alta de cuenta nueva (email para establecer contraseña) — página "Equipo"',
+        ],
+        'comercial'  => [
+            'Alta de cuenta nueva (email para establecer contraseña) — página "Equipo"',
         ],
     ];
 }
@@ -489,9 +498,9 @@ function crm_mail_render_admin_page() {
 add_filter('crm_roadmap_fases', function ($fases) {
     $fases[] = [
         'fase'    => 'Notificaciones',
-        'titulo'  => 'Canales de email propios para avisos a proveedores e instaladores (remitente + SMTP)',
+        'titulo'  => 'Canales de email propios para avisos a proveedores, instaladores y comerciales (remitente + SMTP)',
         'estado'  => 'en_pruebas',
-        'detalle' => 'El usuario reportó que ningún email de aviso llegaba — causa: todo el envío del plugin dependía del wp_mail() por defecto del servidor, sin ninguna configuración SMTP. Ahora hay 2 canales configurables (wp-admin → CRM → Email, y /panel-de-control/), con botón de prueba, lista de qué evento dispara cada canal, y tabla de últimos envíos — todo en el mismo sitio. Confirmado por el usuario: el envío de prueba de cada canal SÍ llega con SMTP configurado. Bug real corregido en v1.20.106: esta sección nunca se veía en /panel-de-control/ (el archivo solo se cargaba dentro de wp-admin). Pendiente de confirmar los envíos reales conectados (notificar proveedor, instalador asignado/visita programada).',
+        'detalle' => 'El usuario reportó que ningún email de aviso llegaba — causa: todo el envío del plugin dependía del wp_mail() por defecto del servidor, sin ninguna configuración SMTP. Ahora hay 3 canales configurables (wp-admin → CRM → Email, y /panel-de-control/), con botón de prueba, lista de qué evento dispara cada canal, y tabla de últimos envíos — todo en el mismo sitio. Confirmado por el usuario: el envío de prueba de cada canal SÍ llega con SMTP configurado. Bug real corregido en v1.20.106: esta sección nunca se veía en /panel-de-control/ (el archivo solo se cargaba dentro de wp-admin). v1.20.110: se añadió el canal "comercial" (de momento solo el alta de cuenta; el usuario ya avisó de que el flujo comercial generará más avisos propios). Pendiente de confirmar los envíos reales conectados (notificar proveedor, instalador asignado/visita programada, alta de cuenta comercial/instalador).',
     ];
     return $fases;
 });

@@ -20,6 +20,11 @@
  * [crm_equipo_gestion] al contenido de esa página (page-bootstrap.php nunca
  * reescribe una página que ya existe).
  *
+ * v1.20.110: el email de alta ("pon tu contraseña") ya NO usa el
+ * `wp_new_user_notification()` genérico de WordPress — se envía por el canal
+ * del propio rol (`comercial`/`instalador`, `includes/mail-settings.php`),
+ * mismo slug que el rol, para respetar el remitente/SMTP configurado ahí.
+ *
  * @package CRM_Energitel
  */
 
@@ -187,9 +192,14 @@ function crm_equipo_gestion_widget() {
                             msg.textContent = (resp.data && resp.data.message) ? resp.data.message : 'Error.';
                             return;
                         }
-                        msg.style.color = '#065f46';
-                        msg.textContent = 'Creado — se le ha enviado un email para poner su contraseña.';
-                        setTimeout(function () { location.reload(); }, 1200);
+                        if (resp.data && resp.data.email_enviado) {
+                            msg.style.color = '#065f46';
+                            msg.textContent = 'Creado — se le ha enviado un email para poner su contraseña.';
+                        } else {
+                            msg.style.color = '#92400e';
+                            msg.textContent = 'Creado, pero el email para poner la contraseña no se pudo enviar — revisa la configuración de este canal en Ajustes → Email.';
+                        }
+                        setTimeout(function () { location.reload(); }, 1800);
                     })
                     .catch(function () {
                         btn.disabled = false;
@@ -330,13 +340,50 @@ function crm_equipo_ajax_crear_usuario() {
         update_user_meta($user_id, 'crm_whatsapp', $whatsapp);
     }
 
-    wp_new_user_notification($user_id, null, 'user');
+    // v1.20.110: por el canal del propio rol (mismo slug 'comercial'/'instalador'
+    // en crm_mail_canales()), no por el wp_mail() genérico de WordPress — así
+    // respeta el remitente/SMTP que se haya configurado para ese canal.
+    $email_enviado = crm_equipo_enviar_alta_cuenta($user_id, $rol);
 
     if (function_exists('crm_log_action')) {
         crm_log_action('equipo_alta', 'Alta de ' . $roles[$rol] . ': ' . $nombre . ' (' . $email . ')', null, null, 'info');
     }
 
-    wp_send_json_success(['user_id' => $user_id]);
+    wp_send_json_success(['user_id' => $user_id, 'email_enviado' => $email_enviado]);
+}
+
+/**
+ * Email de alta de cuenta ("pon tu contraseña"), enviado por el canal del
+ * propio rol en vez del `wp_new_user_notification()` genérico de
+ * WordPress — mismo mecanismo de enlace que usa el núcleo
+ * (`get_password_reset_key()` + `action=rp` en wp-login.php), pero pasando
+ * por `crm_mail_enviar()` para respetar el remitente/SMTP del canal.
+ *
+ * @param int    $user_id
+ * @param string $canal 'comercial'|'instalador' (mismo slug que el rol).
+ * @return bool
+ */
+function crm_equipo_enviar_alta_cuenta($user_id, $canal) {
+    $user = get_userdata($user_id);
+    if (!$user || !function_exists('crm_mail_enviar')) {
+        return false;
+    }
+
+    $key = get_password_reset_key($user);
+    if (is_wp_error($key)) {
+        return false;
+    }
+
+    $reset_url = network_site_url('wp-login.php?action=rp&key=' . $key . '&login=' . rawurlencode($user->user_login), 'login');
+    $site_name = get_option('blogname');
+
+    $body  = '<p>Hola ' . esc_html($user->display_name) . ',</p>';
+    $body .= '<p>Se ha creado tu acceso a ' . esc_html($site_name) . '.</p>';
+    $body .= '<p>Usuario: <strong>' . esc_html($user->user_login) . '</strong></p>';
+    $body .= '<p><a href="' . esc_url($reset_url) . '">Pulsa aquí para establecer tu contraseña</a></p>';
+    $body .= '<p style="color:#666;font-size:12px">Si no esperabas este email, puedes ignorarlo — no se ha creado ningún acceso adicional.</p>';
+
+    return crm_mail_enviar($canal, $user->user_email, 'Tu acceso a ' . $site_name, $body);
 }
 
 /**
@@ -397,7 +444,7 @@ add_filter('crm_roadmap_fases', function ($fases) {
         'fase'    => 'Equipo',
         'titulo'  => 'Alta y edición de comerciales/instaladores desde el frontend',
         'estado'  => 'en_pruebas',
-        'detalle' => 'Antes, dar de alta un comercial o instalador exigía entrar a wp-admin → Usuarios, bloqueado para crm_admin. Ahora se puede crear (nombre, email, WhatsApp) y editar la ficha de cada uno directamente desde la página "Equipo" — pendiente el paso manual de añadir el shortcode [crm_equipo_gestion] a esa página, y de probar el alta real (incluido que llegue el email de "pon tu contraseña").',
+        'detalle' => 'Antes, dar de alta un comercial o instalador exigía entrar a wp-admin → Usuarios, bloqueado para crm_admin. Ahora se puede crear (nombre, email, WhatsApp) y editar la ficha de cada uno directamente desde la página "Equipo". El email de alta ("pon tu contraseña") se envía por el canal de email del propio rol (v1.20.110, ver Notificaciones), no por el wp_mail() genérico. Pendiente el paso manual de añadir el shortcode [crm_equipo_gestion] a esa página, y de probar el alta real.',
     ];
     return $fases;
 });

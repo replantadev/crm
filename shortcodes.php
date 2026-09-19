@@ -531,6 +531,12 @@ function crm_admin_panel_widget() {
             <?php if (function_exists('crm_mail_settings_render_todo')) { crm_mail_settings_render_todo(); } ?>
         </div>
 
+        <!-- v1.20.113: ajustes de WhatsApp Business — mismo hueco que el email, solo existían en wp-admin -->
+        <div class="crm-panel-section">
+            <h3>Notificaciones por WhatsApp</h3>
+            <?php if (function_exists('crm_whatsapp_settings_render')) { crm_whatsapp_settings_render(); } ?>
+        </div>
+
         <!-- Log de Actividades -->
         <div class="crm-panel-section">
             <h3>Registro de actividades</h3>

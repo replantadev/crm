@@ -129,6 +129,68 @@ function crm_whatsapp_enviar_plantilla($telefono, $template_name, array $paramet
 }
 
 /**
+ * v1.20.113 — formulario de Ajustes de WhatsApp para el FRONTEND
+ * (`/panel-de-control/`). Hasta ahora estos campos solo existían en wp-admin
+ * (Settings API, `includes/admin-page.php`) — mismo hueco que ya se encontró
+ * y corrigió para los canales de email (v1.20.103): crm_admin opera desde el
+ * frontend y no puede entrar a wp-admin. Se deja intacto el formulario de
+ * wp-admin (sigue funcionando para administrator/webmaster) y se añade este,
+ * independiente, que escribe en las MISMAS opciones — un solo dato, editable
+ * desde los dos sitios.
+ */
+function crm_whatsapp_settings_render() {
+    if (!current_user_can('crm_admin')) {
+        return;
+    }
+
+    $nonce_action = 'crm_whatsapp_settings_guardar';
+    if (isset($_POST['crm_whatsapp_settings_guardar']) && wp_verify_nonce($_POST['crm_whatsapp_nonce'] ?? '', $nonce_action)) {
+        update_option('crm_whatsapp_phone_number_id', sanitize_text_field((string) wp_unslash($_POST['crm_whatsapp_phone_number_id'] ?? '')), false);
+        $token_nuevo = trim((string) wp_unslash($_POST['crm_whatsapp_api_token'] ?? ''));
+        if ($token_nuevo !== '') {
+            update_option('crm_whatsapp_api_token', $token_nuevo, false);
+        }
+        update_option('crm_whatsapp_template_aviso_materiales', sanitize_text_field((string) wp_unslash($_POST['crm_whatsapp_template_aviso_materiales'] ?? '')), false);
+        update_option('crm_whatsapp_template_validar_extra', sanitize_text_field((string) wp_unslash($_POST['crm_whatsapp_template_validar_extra'] ?? '')), false);
+        echo '<div style="padding:8px 12px;background:#d1fae5;color:#065f46;border-radius:6px;margin-bottom:10px;font-size:13px;">Configuración de WhatsApp guardada.</div>';
+    }
+
+    $campo_style = 'width:100%;max-width:360px;box-sizing:border-box;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;';
+    ?>
+    <div class="crm-mail-canal" style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
+        <h4 style="margin:0 0 4px;">WhatsApp Business — Meta Cloud API</h4>
+        <p style="font-size:12.5px;color:#6b7280;margin:0 0 12px;">
+            Estado: <?php echo crm_whatsapp_configurado() ? '<span style="color:#065f46;font-weight:600;">Configurado</span>' : '<span style="color:#92400e;font-weight:600;">Sin configurar</span>'; ?>
+            — requiere una plantilla de mensaje aprobada por Meta por cada aviso. Sin esto, el CRM sigue funcionando igual que hoy, nunca bloquea nada.
+        </p>
+        <form method="post">
+            <?php wp_nonce_field($nonce_action, 'crm_whatsapp_nonce'); ?>
+            <input type="hidden" name="crm_whatsapp_settings_guardar" value="1">
+            <table style="width:100%;border-collapse:collapse;">
+                <tr>
+                    <td style="padding:4px 8px 4px 0;width:220px;">Phone Number ID</td>
+                    <td style="padding:4px 0;"><input type="text" name="crm_whatsapp_phone_number_id" value="<?php echo esc_attr((string) get_option('crm_whatsapp_phone_number_id', '')); ?>" style="<?php echo esc_attr($campo_style); ?>" placeholder="Del panel de Meta for Developers"></td>
+                </tr>
+                <tr>
+                    <td style="padding:4px 8px 4px 0;">Token de acceso</td>
+                    <td style="padding:4px 0;"><input type="password" name="crm_whatsapp_api_token" value="" autocomplete="off" style="<?php echo esc_attr($campo_style); ?>" placeholder="<?php echo crm_whatsapp_configurado() ? '••••••••• (sin cambios si lo dejas en blanco)' : 'Token permanente del usuario del sistema'; ?>"></td>
+                </tr>
+                <tr>
+                    <td style="padding:4px 8px 4px 0;">Plantilla — aviso de materiales</td>
+                    <td style="padding:4px 0;"><input type="text" name="crm_whatsapp_template_aviso_materiales" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_aviso_materiales', '')); ?>" style="<?php echo esc_attr($campo_style); ?>" placeholder="nombre_exacto_de_la_plantilla"></td>
+                </tr>
+                <tr>
+                    <td style="padding:4px 8px 4px 0;">Plantilla — validar partida extra</td>
+                    <td style="padding:4px 0;"><input type="text" name="crm_whatsapp_template_validar_extra" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_validar_extra', '')); ?>" style="<?php echo esc_attr($campo_style); ?>" placeholder="nombre_exacto_de_la_plantilla"></td>
+                </tr>
+            </table>
+            <p><button type="submit" class="crm-btn">Guardar</button></p>
+        </form>
+    </div>
+    <?php
+}
+
+/**
  * Registra un fallo de envío en el log general del plugin — mismo patrón
  * que crm_holded_log_error(), para que quede visible en Panel → Registro de
  * actividades sin tener que abrir los logs de PHP del servidor.

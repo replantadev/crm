@@ -5931,8 +5931,8 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 	$fases[] = [
 		'fase'    => 'Fase 7 · WhatsApp',
 		'titulo'  => 'Envíos por WhatsApp Business (avisos internos y al cliente)',
-		'estado'  => 'bloqueado',
-		'detalle' => 'Andamiaje completo y listo (plantillas, ajustes, perfil) — bloqueado por algo fuera del CRM: todavía no hay cuenta de proveedor Meta Cloud API ni plantillas aprobadas. El día que existan, es solo rellenar Ajustes.',
+		'estado'  => 'en_pruebas',
+		'detalle' => 'Ya no está bloqueado: cuenta de Meta Business real dada de alta 2026-09-19, número dedicado +34 601 30 04 15 (WABA "Ecovolt"), token permanente de usuario del sistema verificado en vivo contra la API real. v1.20.113: los ajustes de WhatsApp (antes solo en wp-admin) también se pueden rellenar desde /panel-de-control/, mismo hueco que ya se corrigió para el email. Pendiente: crear y que Meta apruebe las 2 plantillas que ya tiene el código (aviso de materiales a jefes, validar partida extra al cliente), rellenar Ajustes con el token/Phone Number ID reales, y probar un envío real de cada una.',
 	];
 
 	$fases[] = [

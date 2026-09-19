@@ -1787,7 +1787,7 @@ function crm_inst_aviso_materiales_pendientes_run() {
 	// sirven, así que se evita por completo.
 	$tabla_agenda = crm_inst_table_agenda();
 	$rows = $wpdb->get_results( $wpdb->prepare(
-		"SELECT i.id, i.proveedor_pedido_estado, i.proveedor_entrega_estimada, c.cliente_nombre,
+		"SELECT i.id, i.proveedor_pedido_estado, i.proveedor_entrega_estimada, i.direccion_instalacion, c.cliente_nombre,
 		        (SELECT MIN(a.fecha_cita) FROM {$tabla_agenda} a WHERE a.instalacion_id = i.id AND a.fecha_cita BETWEEN %s AND %s) AS fecha_cita
 		 FROM " . crm_inst_table_instalaciones() . " i
 		 LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id
@@ -1815,17 +1815,23 @@ function crm_inst_aviso_materiales_pendientes_run() {
 		// v1.20.63: el mensaje se ajusta según lo que sepamos del pedido —
 		// sin esto, un pedido ya confirmado con fecha de entrega holgada
 		// suena tan urgente como uno que nadie ha pedido todavía.
+		// v1.20.115: además de la frase larga (in-app/email), se guarda una
+		// versión corta del mismo dato para la plantilla de WhatsApp.
+		$estado_pedido_corto = 'Todavía no se ha pedido al proveedor';
 		if ( ! empty( $r['proveedor_entrega_estimada'] ) ) {
 			$entrega_ts = strtotime( $r['proveedor_entrega_estimada'] );
 			$visita_ts  = strtotime( $r['fecha_cita'] );
 			$entrega_label = date_i18n( 'd/m/Y', $entrega_ts );
 			if ( $entrega_ts >= strtotime( date( 'Y-m-d', $visita_ts ) ) ) {
 				$mensaje .= ' AVISO: el proveedor estima entrega el ' . $entrega_label . ', en o después de la visita — puede no llegar a tiempo.';
+				$estado_pedido_corto = '⚠ Entrega el ' . $entrega_label . ', puede no llegar a tiempo';
 			} else {
 				$mensaje .= ' El proveedor estima entrega el ' . $entrega_label . ', antes de la visita.';
+				$estado_pedido_corto = 'Entrega el ' . $entrega_label . ', antes de la visita';
 			}
 		} elseif ( $r['proveedor_pedido_estado'] === 'enviado' ) {
 			$mensaje .= ' Pedido enviado al proveedor, todavía sin confirmar.';
+			$estado_pedido_corto = 'Pedido enviado, sin confirmar todavía';
 		} elseif ( empty( $r['proveedor_pedido_estado'] ) ) {
 			$mensaje .= ' Todavía no se ha pedido al proveedor.';
 		}
@@ -1838,7 +1844,14 @@ function crm_inst_aviso_materiales_pendientes_run() {
 			crm_inst_aviso_enviar_email_jefes( 'Materiales pendientes antes de una visita', $mensaje, $url );
 		}
 		if ( $canal_whatsapp ) {
-			crm_inst_aviso_enviar_whatsapp_jefes( $r['cliente_nombre'] ?: ( 'instalación #' . $r['id'] ), $fecha_label, (string) $pendientes, $url );
+			crm_inst_aviso_enviar_whatsapp_jefes(
+				$r['cliente_nombre'] ?: ( 'instalación #' . $r['id'] ),
+				$r['direccion_instalacion'],
+				$fecha_label,
+				$pendientes,
+				$estado_pedido_corto,
+				$url
+			);
 		}
 		crm_inst_log_action( (int) $r['id'], 'instalacion', 'aviso_materiales_pendientes', $mensaje );
 	}
@@ -1904,7 +1917,7 @@ function crm_inst_aviso_enviar_email_jefes( $asunto, $mensaje, $url = '' ) {
  * en el log y no interrumpe el resto del aviso — el email sigue siendo el
  * canal que de verdad funciona hoy.
  */
-function crm_inst_aviso_enviar_whatsapp_jefes( $cliente_nombre, $fecha_label, $pendientes, $url = '' ) {
+function crm_inst_aviso_enviar_whatsapp_jefes( $cliente_nombre, $direccion, $fecha_label, $pendientes, $estado_pedido, $url ) {
 	if ( ! function_exists( 'crm_whatsapp_configurado' ) || ! crm_whatsapp_configurado() ) {
 		return;
 	}
@@ -1918,9 +1931,41 @@ function crm_inst_aviso_enviar_whatsapp_jefes( $cliente_nombre, $fecha_label, $p
 		if ( empty( $telefono ) ) {
 			continue;
 		}
-		$resultado = crm_whatsapp_enviar_plantilla( $telefono, $template, [ $cliente_nombre, $fecha_label, $pendientes ] );
+		// v1.20.115: antes solo mandaba cliente/fecha/nº pendientes — el
+		// usuario señaló, con razón, que era demasiado pobre para saber de
+		// qué instalación se trata sin entrar al CRM. Se añaden dirección,
+		// estado del pedido al proveedor, y el enlace directo a la ficha
+		// (¡que ya se recibía como parámetro pero nunca se llegaba a enviar!).
+		$resultado = crm_whatsapp_enviar_plantilla( $telefono, $template, [ $cliente_nombre, $direccion ?: '—', $fecha_label, (string) $pendientes, $estado_pedido, $url ] );
 		if ( is_wp_error( $resultado ) ) {
 			crm_whatsapp_log_error( $template, 'Aviso materiales a jefe #' . $u->ID . ': ' . $resultado->get_error_message() );
+		}
+	}
+}
+
+/**
+ * Hermano por WhatsApp del aviso in-app/email de "cierre parcial" (v1.20.114)
+ * — la instalación acaba de pasar a `en_ejecucion` porque el instalador
+ * marcó la primera línea como montada. Mismo criterio best-effort que el
+ * resto de avisos de esta sección: un fallo se registra y no bloquea nada.
+ */
+function crm_inst_aviso_enviar_whatsapp_en_ejecucion( $cliente_nombre, $instalador_nombre, $url ) {
+	if ( ! function_exists( 'crm_whatsapp_configurado' ) || ! crm_whatsapp_configurado() ) {
+		return;
+	}
+	$template = trim( (string) get_option( 'crm_whatsapp_template_en_ejecucion', '' ) );
+	if ( $template === '' ) {
+		return;
+	}
+	$users = get_users( [ 'role__in' => [ 'jefe_instalaciones', 'crm_admin' ], 'fields' => [ 'ID' ] ] );
+	foreach ( $users as $u ) {
+		$telefono = get_user_meta( (int) $u->ID, 'crm_whatsapp', true );
+		if ( empty( $telefono ) ) {
+			continue;
+		}
+		$resultado = crm_whatsapp_enviar_plantilla( $telefono, $template, [ $cliente_nombre, $instalador_nombre, $url ] );
+		if ( is_wp_error( $resultado ) ) {
+			crm_whatsapp_log_error( $template, 'Aviso "en ejecución" a jefe #' . $u->ID . ': ' . $resultado->get_error_message() );
 		}
 	}
 }
@@ -2097,20 +2142,28 @@ function crm_inst_ajax_marcar_material_montado() {
 			$wpdb->update( crm_inst_table_instalaciones(), [ 'estado' => 'en_ejecucion' ], [ 'id' => $instalacion_id ] );
 			crm_inst_log_action( $instalacion_id, 'instalacion', 'auto_en_ejecucion', 'Primera línea montada — pasa a "En ejecución" automáticamente.' );
 
-			// v1.20.114: aviso de "cierre parcial" a jefes/crm_admin — con el
-			// montaje por línea (v1.20.104) una instalación puede arrancar de
-			// verdad sin que nadie en oficina se entere (era puramente "pull").
-			// Se avisa UNA vez, justo en esta transición — no en cada línea
-			// marcada, para no saturar con un aviso por cada material.
+			// v1.20.114/115: aviso de "cierre parcial" a jefes/crm_admin — con
+			// el montaje por línea (v1.20.104) una instalación puede arrancar
+			// de verdad sin que nadie en oficina se entere (era puramente
+			// "pull"). Se avisa UNA vez, justo en esta transición — no en cada
+			// línea marcada, para no saturar con un aviso por cada material.
+			$cliente_nombre = $wpdb->get_var( $wpdb->prepare(
+				"SELECT c.cliente_nombre FROM " . crm_inst_table_instalaciones() . " i LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id WHERE i.id = %d",
+				$instalacion_id
+			) );
+			$url_ficha = add_query_arg( 'id', $instalacion_id, home_url( '/instalacion/' ) );
 			if ( function_exists( 'crm_notificar_jefes_instalaciones' ) ) {
-				$cliente_nombre = $wpdb->get_var( $wpdb->prepare(
-					"SELECT c.cliente_nombre FROM " . crm_inst_table_instalaciones() . " i LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id WHERE i.id = %d",
-					$instalacion_id
-				) );
 				crm_notificar_jefes_instalaciones(
 					'instalacion_en_ejecucion',
 					'El instalador ha empezado a montar — instalación de ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.',
-					add_query_arg( 'id', $instalacion_id, home_url( '/instalacion/' ) )
+					$url_ficha
+				);
+			}
+			if ( (bool) get_option( 'crm_inst_aviso_canal_whatsapp', false ) ) {
+				crm_inst_aviso_enviar_whatsapp_en_ejecucion(
+					$cliente_nombre ?: ( 'instalación #' . $instalacion_id ),
+					wp_get_current_user()->display_name,
+					$url_ficha
 				);
 			}
 		}

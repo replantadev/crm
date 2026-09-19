@@ -152,6 +152,7 @@ function crm_whatsapp_settings_render() {
         }
         update_option('crm_whatsapp_template_aviso_materiales', sanitize_text_field((string) wp_unslash($_POST['crm_whatsapp_template_aviso_materiales'] ?? '')), false);
         update_option('crm_whatsapp_template_validar_extra', sanitize_text_field((string) wp_unslash($_POST['crm_whatsapp_template_validar_extra'] ?? '')), false);
+        update_option('crm_whatsapp_template_en_ejecucion', sanitize_text_field((string) wp_unslash($_POST['crm_whatsapp_template_en_ejecucion'] ?? '')), false);
         echo '<div style="padding:8px 12px;background:#d1fae5;color:#065f46;border-radius:6px;margin-bottom:10px;font-size:13px;">Configuración de WhatsApp guardada.</div>';
     }
 
@@ -182,6 +183,10 @@ function crm_whatsapp_settings_render() {
                 <tr>
                     <td style="padding:4px 8px 4px 0;">Plantilla — validar partida extra</td>
                     <td style="padding:4px 0;"><input type="text" name="crm_whatsapp_template_validar_extra" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_validar_extra', '')); ?>" style="<?php echo esc_attr($campo_style); ?>" placeholder="nombre_exacto_de_la_plantilla"></td>
+                </tr>
+                <tr>
+                    <td style="padding:4px 8px 4px 0;">Plantilla — instalación en marcha</td>
+                    <td style="padding:4px 0;"><input type="text" name="crm_whatsapp_template_en_ejecucion" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_en_ejecucion', '')); ?>" style="<?php echo esc_attr($campo_style); ?>" placeholder="nombre_exacto_de_la_plantilla"></td>
                 </tr>
             </table>
             <p><button type="submit" class="crm-btn">Guardar</button></p>

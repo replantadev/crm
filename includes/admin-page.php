@@ -210,6 +210,12 @@ function crm_register_admin_settings() {
         'default'           => '',
         'sanitize_callback' => 'sanitize_text_field',
     ]);
+    // v1.20.115 — aviso de "cierre parcial" (instalación en_ejecucion) a jefes.
+    register_setting('crm_settings', 'crm_whatsapp_template_en_ejecucion', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
     register_setting('crm_settings', 'crm_inst_aviso_canal_whatsapp', [
         'type'              => 'boolean',
         'default'           => false,
@@ -925,6 +931,13 @@ function crm_admin_render_settings() {
                 <td>
                     <input type="text" id="crm_whatsapp_template_validar_extra" name="crm_whatsapp_template_validar_extra" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_validar_extra', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
                     <p class="description">Nombre exacto de la plantilla que recibe el cliente para aprobar/rechazar una partida extra.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_whatsapp_template_en_ejecucion">Plantilla — instalación en marcha</label></th>
+                <td>
+                    <input type="text" id="crm_whatsapp_template_en_ejecucion" name="crm_whatsapp_template_en_ejecucion" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_en_ejecucion', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
+                    <p class="description">Nombre exacto de la plantilla para avisar a jefes/crm_admin cuando el instalador marca la primera línea como montada ("cierre parcial").</p>
                 </td>
             </tr>
         </table>

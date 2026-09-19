@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.116
+Version: 1.20.117
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.116');
+define('CRM_PLUGIN_VERSION', '1.20.117');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -4342,6 +4342,21 @@ add_action('plugins_loaded', function() {
         }
         if (function_exists('crm_notificaciones_install_table')) {
             crm_notificaciones_install_table();
+        }
+        // v1.20.117: crm_install_roles() (capacidades de cada rol + réplica de
+        // "crm_admin" en administrator) solo se ejecutaba en la ACTIVACIÓN del
+        // plugin, register_activation_hook más abajo — nunca en una
+        // actualización normal (así funciona WordPress: activar y actualizar
+        // son hooks distintos). Un sitio activado una sola vez hace tiempo y
+        // solo actualizado desde entonces se queda con las capacidades de
+        // aquella versión para siempre, aunque el código añada capacidades
+        // nuevas después — causó que un administrator real de wp-admin no
+        // pudiera entrar a ninguna página del menú CRM (todas piden la
+        // capacidad 'crm_admin'), sin ningún error visible más que "no tienes
+        // permisos". Repetirlo en cada actualización lo mantiene sincronizado
+        // sin depender de que alguien reactive el plugin a mano.
+        if (function_exists('crm_install_roles')) {
+            crm_install_roles();
         }
         update_option('crm_plugin_version', CRM_PLUGIN_VERSION);
     }

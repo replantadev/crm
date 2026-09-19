@@ -2096,6 +2096,23 @@ function crm_inst_ajax_marcar_material_montado() {
 		if ( in_array( $estado_actual, [ 'pendiente', 'planificada' ], true ) ) {
 			$wpdb->update( crm_inst_table_instalaciones(), [ 'estado' => 'en_ejecucion' ], [ 'id' => $instalacion_id ] );
 			crm_inst_log_action( $instalacion_id, 'instalacion', 'auto_en_ejecucion', 'Primera línea montada — pasa a "En ejecución" automáticamente.' );
+
+			// v1.20.114: aviso de "cierre parcial" a jefes/crm_admin — con el
+			// montaje por línea (v1.20.104) una instalación puede arrancar de
+			// verdad sin que nadie en oficina se entere (era puramente "pull").
+			// Se avisa UNA vez, justo en esta transición — no en cada línea
+			// marcada, para no saturar con un aviso por cada material.
+			if ( function_exists( 'crm_notificar_jefes_instalaciones' ) ) {
+				$cliente_nombre = $wpdb->get_var( $wpdb->prepare(
+					"SELECT c.cliente_nombre FROM " . crm_inst_table_instalaciones() . " i LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id WHERE i.id = %d",
+					$instalacion_id
+				) );
+				crm_notificar_jefes_instalaciones(
+					'instalacion_en_ejecucion',
+					'El instalador ha empezado a montar — instalación de ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.',
+					add_query_arg( 'id', $instalacion_id, home_url( '/instalacion/' ) )
+				);
+			}
 		}
 	}
 
@@ -5883,7 +5900,7 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		'fase'    => 'Fase 4 · Montaje por línea',
 		'titulo'  => 'Completado parcial/por línea, para instalaciones de varios días',
 		'estado'  => 'hecho',
-		'detalle' => 'El instalador puede marcar línea a línea qué ha montado cada día (fecha + quién, no solo un cierre general de golpe) — útil cuando la instalación se reparte entre varios días o varios instaladores. Al marcar la primera línea, la instalación pasa sola a "En ejecución" (estado que ya existía pero no lo ponía nadie). No toca stock/Holded — eso sigue disparando solo al confirmar el checklist/declarar el cierre, como hasta ahora. Probado por el usuario 2026-09-16: pasa a "En ejecución" y queda la fecha de cada línea entregada.',
+		'detalle' => 'El instalador puede marcar línea a línea qué ha montado cada día (fecha + quién, no solo un cierre general de golpe) — útil cuando la instalación se reparte entre varios días o varios instaladores. Al marcar la primera línea, la instalación pasa sola a "En ejecución" (estado que ya existía pero no lo ponía nadie) — v1.20.114: y avisa a jefes/crm_admin una sola vez en ese momento (antes era puramente "pull", nadie en oficina se enteraba de que había arrancado). No toca stock/Holded — eso sigue disparando solo al confirmar el checklist/declarar el cierre, como hasta ahora. Probado por el usuario 2026-09-16: pasa a "En ejecución" y queda la fecha de cada línea entregada.',
 	];
 
 	$fases[] = [

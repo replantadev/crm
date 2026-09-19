@@ -585,6 +585,14 @@ function crm_admin_panel_widget() {
                 echo '</div>';
             } else {
             ?>
+            <?php
+            // v1.20.116: la tabla mostraba hasta 50 filas siempre desplegadas
+            // — el usuario pidió algo más manejable: solo las 5 más
+            // recientes a la vista, con un botón para desplegar el resto sin
+            // recargar nada (JS mínimo, mismo criterio de siempre).
+            $logs_visibles = array_slice($logs, 0, 5);
+            $logs_resto    = array_slice($logs, 5);
+            ?>
             <div style="background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);">
                 <table class="crm-log-table">
                     <thead>
@@ -597,8 +605,8 @@ function crm_admin_panel_widget() {
                         </tr>
                     </thead>
                     <tbody>
-                    <?php foreach ($logs as $log): ?>
-                    <tr>
+                    <?php foreach (array_merge($logs_visibles, $logs_resto) as $i => $log): ?>
+                    <tr<?php echo $i >= 5 ? ' class="crm-log-extra-row" style="display:none;"' : ''; ?>>
                         <td><?php echo esc_html($log['user_name']); ?></td>
                         <td>
                             <span class="crm-action-type action-<?php echo esc_attr($log['action_type']); ?>">
@@ -608,7 +616,7 @@ function crm_admin_panel_widget() {
                         <td><?php echo esc_html($log['details']); ?></td>
                         <td>
                             <small>
-                                <?php 
+                                <?php
                                 $fecha = new DateTime($log['created_at']);
                                 echo $fecha->format('d/m/Y H:i');
                                 ?>
@@ -622,6 +630,24 @@ function crm_admin_panel_widget() {
                     <?php endforeach; ?>
                 </tbody>
             </table>
+            <?php if (!empty($logs_resto)) : ?>
+                <p style="text-align:center;padding:10px;margin:0;">
+                    <button type="button" class="crm-btn" id="crm-log-ver-mas-btn">Ver <?php echo count($logs_resto); ?> más</button>
+                </p>
+                <script>
+                (function () {
+                    var btn = document.getElementById('crm-log-ver-mas-btn');
+                    if (!btn) { return; }
+                    btn.addEventListener('click', function () {
+                        var abrir = btn.textContent.indexOf('Ver') === 0;
+                        document.querySelectorAll('.crm-log-extra-row').forEach(function (fila) {
+                            fila.style.display = abrir ? 'table-row' : 'none';
+                        });
+                        btn.textContent = abrir ? 'Ocultar' : 'Ver <?php echo count($logs_resto); ?> más';
+                    });
+                })();
+                </script>
+            <?php endif; ?>
             <?php } ?>
             </div> <!-- Cierre del activity-logs-container -->
         </div>
@@ -739,17 +765,15 @@ function crm_admin_panel_widget() {
         </div>
 
         <?php if (function_exists('crm_roadmap_get_fases')) : ?>
-        <!-- Roadmap y Flujos — v1.20.89, misma fuente que wp-admin → CRM → Flujos -->
+        <!-- v1.20.116: el roadmap + diagramas completos vivían aquí duplicados
+             (v1.20.89) desde antes de que existiera la página "Flujos" propia
+             (v1.20.100, menú principal) — ahora es solo un enlace, evita
+             cargar mermaid.js dos veces y repetir el mismo bloque largo al
+             final de un panel que ya iba sobrecargado. -->
         <div class="crm-panel-section">
-            <style><?php echo crm_flujos_roadmap_shared_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></style>
-            <h3>Roadmap del módulo de instalaciones</h3>
-            <?php echo crm_roadmap_render_html(crm_roadmap_get_fases()); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
-        </div>
-
-        <div class="crm-panel-section">
-            <h3>Flujos — cómo funciona cada pieza</h3>
-            <p style="color:rgb(107,114,128);">Diagramas del módulo de instalaciones, siempre junto al código que describen.</p>
-            <?php echo crm_flujos_render_diagramas_html(crm_flujos_get_diagramas()); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+            <h3>Roadmap y flujos del CRM</h3>
+            <p style="color:rgb(107,114,128);margin-bottom:10px;">Qué está hecho, en pruebas o pendiente, y los diagramas de cada flujo — junto al código que describen, para que nunca se desincronicen.</p>
+            <a href="<?php echo esc_url(home_url('/flujos/')); ?>" class="crm-btn">Ver Flujos →</a>
         </div>
         <?php endif; ?>
     </div>

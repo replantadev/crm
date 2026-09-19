@@ -129,70 +129,166 @@ function crm_whatsapp_enviar_plantilla($telefono, $template_name, array $paramet
 }
 
 /**
- * v1.20.113 — formulario de Ajustes de WhatsApp para el FRONTEND
- * (`/panel-de-control/`). Hasta ahora estos campos solo existían en wp-admin
- * (Settings API, `includes/admin-page.php`) — mismo hueco que ya se encontró
- * y corrigió para los canales de email (v1.20.103): crm_admin opera desde el
- * frontend y no puede entrar a wp-admin. Se deja intacto el formulario de
- * wp-admin (sigue funcionando para administrator/webmaster) y se añade este,
- * independiente, que escribe en las MISMAS opciones — un solo dato, editable
- * desde los dos sitios.
+ * v1.20.113 — vista de WhatsApp para el FRONTEND (`/panel-de-control/`).
+ * Nació como un formulario editable completo (Phone Number ID + token +
+ * plantillas), para tapar el mismo hueco ya corregido para email
+ * (v1.20.103): crm_admin no puede entrar a wp-admin, así que no tenía dónde
+ * ver esto. v1.20.116: el usuario pidió simplificarla — el Phone Number ID y
+ * el token son datos técnicos de una sola vez (los puso el administrador al
+ * dar de alta la cuenta de Meta) y no algo que crm_admin necesite tocar el
+ * día a día ("es mucha tela para el solo que salga conectado y las
+ * plantillas"). Ahora es de solo lectura: estado + nombres de plantilla +
+ * botón de prueba. Para cambiar Phone Number ID/token/nombres de plantilla
+ * sigue estando el formulario completo en wp-admin → CRM → WhatsApp
+ * (administrator/webmaster), que no se ha tocado.
  */
 function crm_whatsapp_settings_render() {
     if (!current_user_can('crm_admin')) {
         return;
     }
 
-    $nonce_action = 'crm_whatsapp_settings_guardar';
-    if (isset($_POST['crm_whatsapp_settings_guardar']) && wp_verify_nonce($_POST['crm_whatsapp_nonce'] ?? '', $nonce_action)) {
-        update_option('crm_whatsapp_phone_number_id', sanitize_text_field((string) wp_unslash($_POST['crm_whatsapp_phone_number_id'] ?? '')), false);
-        $token_nuevo = trim((string) wp_unslash($_POST['crm_whatsapp_api_token'] ?? ''));
-        if ($token_nuevo !== '') {
-            update_option('crm_whatsapp_api_token', $token_nuevo, false);
-        }
-        update_option('crm_whatsapp_template_aviso_materiales', sanitize_text_field((string) wp_unslash($_POST['crm_whatsapp_template_aviso_materiales'] ?? '')), false);
-        update_option('crm_whatsapp_template_validar_extra', sanitize_text_field((string) wp_unslash($_POST['crm_whatsapp_template_validar_extra'] ?? '')), false);
-        update_option('crm_whatsapp_template_en_ejecucion', sanitize_text_field((string) wp_unslash($_POST['crm_whatsapp_template_en_ejecucion'] ?? '')), false);
-        echo '<div style="padding:8px 12px;background:#d1fae5;color:#065f46;border-radius:6px;margin-bottom:10px;font-size:13px;">Configuración de WhatsApp guardada.</div>';
-    }
-
-    $campo_style = 'width:100%;max-width:360px;box-sizing:border-box;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;';
+    $credenciales    = crm_whatsapp_get_credenciales();
+    $phone_visible   = $credenciales['phone_number_id'] !== '' ? '•••' . substr($credenciales['phone_number_id'], -4) : '—';
+    $plantillas      = [
+        'crm_whatsapp_template_aviso_materiales' => 'Aviso de materiales pendientes',
+        'crm_whatsapp_template_validar_extra'    => 'Validar partida extra (al cliente)',
+        'crm_whatsapp_template_en_ejecucion'     => 'Instalación en marcha (cierre parcial)',
+    ];
     ?>
     <div class="crm-mail-canal" style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
-        <h4 style="margin:0 0 4px;">WhatsApp Business — Meta Cloud API</h4>
+        <h4 style="margin:0 0 4px;">WhatsApp Business</h4>
         <p style="font-size:12.5px;color:#6b7280;margin:0 0 12px;">
-            Estado: <?php echo crm_whatsapp_configurado() ? '<span style="color:#065f46;font-weight:600;">Configurado</span>' : '<span style="color:#92400e;font-weight:600;">Sin configurar</span>'; ?>
-            — requiere una plantilla de mensaje aprobada por Meta por cada aviso. Sin esto, el CRM sigue funcionando igual que hoy, nunca bloquea nada.
+            <?php if (crm_whatsapp_configurado()) : ?>
+                <span style="color:#065f46;font-weight:600;">● Conectado</span> (número <?php echo esc_html($phone_visible); ?>)
+            <?php else : ?>
+                <span style="color:#92400e;font-weight:600;">● Sin configurar</span>
+            <?php endif; ?>
+            — cada aviso necesita su plantilla aprobada por Meta. Sin esto el CRM sigue funcionando igual que hoy, solo que sin este canal extra.
         </p>
-        <form method="post">
-            <?php wp_nonce_field($nonce_action, 'crm_whatsapp_nonce'); ?>
-            <input type="hidden" name="crm_whatsapp_settings_guardar" value="1">
-            <table style="width:100%;border-collapse:collapse;">
-                <tr>
-                    <td style="padding:4px 8px 4px 0;width:220px;">Phone Number ID</td>
-                    <td style="padding:4px 0;"><input type="text" name="crm_whatsapp_phone_number_id" value="<?php echo esc_attr((string) get_option('crm_whatsapp_phone_number_id', '')); ?>" style="<?php echo esc_attr($campo_style); ?>" placeholder="Del panel de Meta for Developers"></td>
-                </tr>
-                <tr>
-                    <td style="padding:4px 8px 4px 0;">Token de acceso</td>
-                    <td style="padding:4px 0;"><input type="password" name="crm_whatsapp_api_token" value="" autocomplete="off" style="<?php echo esc_attr($campo_style); ?>" placeholder="<?php echo crm_whatsapp_configurado() ? '••••••••• (sin cambios si lo dejas en blanco)' : 'Token permanente del usuario del sistema'; ?>"></td>
-                </tr>
-                <tr>
-                    <td style="padding:4px 8px 4px 0;">Plantilla — aviso de materiales</td>
-                    <td style="padding:4px 0;"><input type="text" name="crm_whatsapp_template_aviso_materiales" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_aviso_materiales', '')); ?>" style="<?php echo esc_attr($campo_style); ?>" placeholder="nombre_exacto_de_la_plantilla"></td>
-                </tr>
-                <tr>
-                    <td style="padding:4px 8px 4px 0;">Plantilla — validar partida extra</td>
-                    <td style="padding:4px 0;"><input type="text" name="crm_whatsapp_template_validar_extra" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_validar_extra', '')); ?>" style="<?php echo esc_attr($campo_style); ?>" placeholder="nombre_exacto_de_la_plantilla"></td>
-                </tr>
-                <tr>
-                    <td style="padding:4px 8px 4px 0;">Plantilla — instalación en marcha</td>
-                    <td style="padding:4px 0;"><input type="text" name="crm_whatsapp_template_en_ejecucion" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_en_ejecucion', '')); ?>" style="<?php echo esc_attr($campo_style); ?>" placeholder="nombre_exacto_de_la_plantilla"></td>
-                </tr>
-            </table>
-            <p><button type="submit" class="crm-btn">Guardar</button></p>
-        </form>
+        <table style="width:100%;border-collapse:collapse;margin-bottom:12px;">
+            <?php foreach ($plantillas as $opcion => $etiqueta) :
+                $nombre = trim((string) get_option($opcion, ''));
+            ?>
+            <tr>
+                <td style="padding:4px 8px 4px 0;width:260px;color:#374151;"><?php echo esc_html($etiqueta); ?></td>
+                <td style="padding:4px 0;">
+                    <?php if ($nombre !== '') : ?>
+                        <code style="background:#f3f4f6;padding:2px 6px;border-radius:4px;"><?php echo esc_html($nombre); ?></code>
+                    <?php else : ?>
+                        <span style="color:#9ca3af;">sin plantilla asignada</span>
+                    <?php endif; ?>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+        </table>
+        <p style="font-size:12px;color:#9ca3af;margin:0 0 12px;">El Phone Number ID, el token y los nombres de plantilla se cambian desde wp-admin → CRM → WhatsApp.</p>
+        <?php if (crm_whatsapp_configurado()) : ?>
+        <p style="border-top:1px solid #f1f5f9;padding-top:10px;margin:0;">
+            <input type="tel" id="crm-whatsapp-test-to" placeholder="número de prueba, ej. 34611466327" style="padding:6px 8px;border:1px solid #e5e7eb;border-radius:6px;">
+            <select id="crm-whatsapp-test-plantilla" style="padding:6px 8px;border:1px solid #e5e7eb;border-radius:6px;">
+                <?php foreach ($plantillas as $opcion => $etiqueta) :
+                    if (trim((string) get_option($opcion, '')) === '') { continue; }
+                ?>
+                <option value="<?php echo esc_attr($opcion); ?>"><?php echo esc_html($etiqueta); ?></option>
+                <?php endforeach; ?>
+            </select>
+            <button type="button" class="crm-btn" id="crm-whatsapp-test-btn">Enviar prueba</button>
+            <span id="crm-whatsapp-test-msg" style="font-size:12.5px;margin-left:6px;"></span>
+        </p>
+        <script>
+        (function () {
+            var btn = document.getElementById('crm-whatsapp-test-btn');
+            if (!btn) { return; }
+            btn.addEventListener('click', function () {
+                var to        = document.getElementById('crm-whatsapp-test-to').value.trim();
+                var plantilla = document.getElementById('crm-whatsapp-test-plantilla').value;
+                var msg       = document.getElementById('crm-whatsapp-test-msg');
+                if (!to) {
+                    msg.style.color = '#991b1b';
+                    msg.textContent = 'Escribe un número primero.';
+                    return;
+                }
+                btn.disabled = true;
+                msg.style.color = '#6b7280';
+                msg.textContent = 'Enviando…';
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', '<?php echo esc_js(admin_url('admin-ajax.php')); ?>');
+                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+                xhr.onload = function () {
+                    btn.disabled = false;
+                    try {
+                        var resp = JSON.parse(xhr.responseText);
+                        msg.style.color = resp.success ? '#065f46' : '#991b1b';
+                        msg.textContent = (resp.data && resp.data.message) ? resp.data.message : (resp.success ? 'Enviado.' : 'Error.');
+                    } catch (e) {
+                        msg.style.color = '#991b1b';
+                        msg.textContent = 'Error de conexión.';
+                    }
+                };
+                xhr.onerror = function () {
+                    btn.disabled = false;
+                    msg.style.color = '#991b1b';
+                    msg.textContent = 'Error de conexión.';
+                };
+                xhr.send('action=crm_whatsapp_test_envio&nonce=<?php echo esc_js(wp_create_nonce('crm_admin_actions')); ?>&to=' + encodeURIComponent(to) + '&plantilla=' + encodeURIComponent(plantilla));
+            });
+        })();
+        </script>
+        <?php endif; ?>
     </div>
     <?php
+}
+
+/**
+ * v1.20.116 — parámetros de ejemplo por plantilla, solo para el botón
+ * "Enviar prueba": cada plantilla real de Meta exige el número exacto de
+ * variables con el que se aprobó, así que un envío de prueba tiene que
+ * respetar ese recuento aunque los datos sean ficticios.
+ */
+function crm_whatsapp_test_parametros($opcion_plantilla) {
+    switch ($opcion_plantilla) {
+        case 'crm_whatsapp_template_aviso_materiales':
+            return ['Cliente de prueba', 'C/ Ejemplo 1, Madrid', 'mañana', 'ventana, inversor', 'en camino', home_url('/')];
+        case 'crm_whatsapp_template_validar_extra':
+            return ['Cliente de prueba', 'Partida extra de ejemplo', '123,45', home_url('/')];
+        case 'crm_whatsapp_template_en_ejecucion':
+            return ['Cliente de prueba', 'Instalador de prueba', home_url('/')];
+        default:
+            return [];
+    }
+}
+
+/**
+ * AJAX: botón "Enviar prueba" de WhatsApp — mismo patrón que
+ * crm_mail_ajax_test_canal() en mail-settings.php.
+ */
+add_action('wp_ajax_crm_whatsapp_test_envio', 'crm_whatsapp_ajax_test_envio');
+function crm_whatsapp_ajax_test_envio() {
+    if (!current_user_can('crm_admin') || !check_ajax_referer('crm_admin_actions', 'nonce', false)) {
+        wp_send_json_error(['message' => 'Sin permisos.'], 403);
+    }
+
+    $to        = sanitize_text_field((string) ($_POST['to'] ?? ''));
+    $plantilla = sanitize_key((string) ($_POST['plantilla'] ?? ''));
+    $nombres_validos = [
+        'crm_whatsapp_template_aviso_materiales',
+        'crm_whatsapp_template_validar_extra',
+        'crm_whatsapp_template_en_ejecucion',
+    ];
+    if (!in_array($plantilla, $nombres_validos, true)) {
+        wp_send_json_error(['message' => 'Plantilla no válida.']);
+    }
+    $template_name = trim((string) get_option($plantilla, ''));
+    if ($template_name === '') {
+        wp_send_json_error(['message' => 'Esa plantilla todavía no tiene nombre asignado.']);
+    }
+
+    $resultado = crm_whatsapp_enviar_plantilla($to, $template_name, crm_whatsapp_test_parametros($plantilla));
+
+    if (is_wp_error($resultado)) {
+        wp_send_json_error(['message' => 'No se pudo enviar: ' . $resultado->get_error_message()]);
+    }
+    wp_send_json_success(['message' => 'Enviado a ' . $to . '.']);
 }
 
 /**

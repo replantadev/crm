@@ -5953,7 +5953,7 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		'fase'    => 'Fase 4 · Montaje por línea',
 		'titulo'  => 'Completado parcial/por línea, para instalaciones de varios días',
 		'estado'  => 'hecho',
-		'detalle' => 'El instalador puede marcar línea a línea qué ha montado cada día (fecha + quién, no solo un cierre general de golpe) — útil cuando la instalación se reparte entre varios días o varios instaladores. Al marcar la primera línea, la instalación pasa sola a "En ejecución" (estado que ya existía pero no lo ponía nadie) — v1.20.114: y avisa a jefes/crm_admin una sola vez en ese momento (antes era puramente "pull", nadie en oficina se enteraba de que había arrancado). No toca stock/Holded — eso sigue disparando solo al confirmar el checklist/declarar el cierre, como hasta ahora. Probado por el usuario 2026-09-16: pasa a "En ejecución" y queda la fecha de cada línea entregada.',
+		'detalle' => 'El instalador puede marcar línea a línea qué ha montado cada día (fecha + quién, no solo un cierre general de golpe) — útil cuando la instalación se reparte entre varios días o varios instaladores. Al marcar la primera línea, la instalación pasa sola a "En ejecución" (estado que ya existía pero no lo ponía nadie) — v1.20.114: y avisa a jefes/crm_admin una sola vez en ese momento (antes era puramente "pull", nadie en oficina se enteraba de que había arrancado); v1.20.115 añadió el mismo aviso por WhatsApp (plantilla "instalación en marcha", si el canal está configurado). No toca stock/Holded — eso sigue disparando solo al confirmar el checklist/declarar el cierre, como hasta ahora. Probado por el usuario 2026-09-16: pasa a "En ejecución" y queda la fecha de cada línea entregada.',
 	];
 
 	$fases[] = [
@@ -6002,7 +6002,7 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		'fase'    => 'Fase 7 · WhatsApp',
 		'titulo'  => 'Envíos por WhatsApp Business (avisos internos y al cliente)',
 		'estado'  => 'en_pruebas',
-		'detalle' => 'Ya no está bloqueado: cuenta de Meta Business real dada de alta 2026-09-19, número dedicado +34 601 30 04 15 (WABA "Ecovolt"), token permanente de usuario del sistema verificado en vivo contra la API real. v1.20.113: los ajustes de WhatsApp (antes solo en wp-admin) también se pueden rellenar desde /panel-de-control/, mismo hueco que ya se corrigió para el email. Pendiente: crear y que Meta apruebe las 2 plantillas que ya tiene el código (aviso de materiales a jefes, validar partida extra al cliente), rellenar Ajustes con el token/Phone Number ID reales, y probar un envío real de cada una.',
+		'detalle' => 'Cuenta de Meta Business real dada de alta 2026-09-19, número dedicado +34 601 30 04 15 (WABA "Ecovolt"), token permanente de usuario del sistema verificado en vivo contra la API real. 3 plantillas creadas en Meta y enviadas a revisión: aviso de materiales a jefes (6 variables: cliente, dirección, fecha, pendientes, estado del pedido, enlace), validar partida extra al cliente (4 variables) e instalación en marcha/cierre parcial a jefes (3 variables) — v1.20.115 corrigió un bug real donde la primera plantilla nunca llevaba el enlace a la ficha. v1.20.113 expuso los ajustes en /panel-de-control/ (antes solo en wp-admin, inaccesible para crm_admin); v1.20.116 los simplificó a solo lectura (estado + nombres de plantilla) más un botón "Enviar prueba", dejando la edición de Phone Number ID/token/nombres en wp-admin → CRM → WhatsApp. Pendiente: que Meta apruebe las 3 plantillas y hacer el primer envío real de cada flujo.',
 	];
 
 	$fases[] = [

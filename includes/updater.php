@@ -108,6 +108,19 @@ add_action('upgrader_process_complete', function ($upgrader, $hook_extra) {
         return;
     }
 
+    // v1.20.119: encontramos en producción (Hostinger) un caso real donde,
+    // tras actualizar, los archivos en disco ya estaban al día pero PHP
+    // seguía ejecutando bytecode compilado de una versión antigua (OPcache
+    // con validate_timestamps desactivado o un revalidate_freq muy alto) —
+    // una página nueva del plugin no existía para WordPress aunque el
+    // código sí estuviera en el servidor. Forzar opcache_reset() justo aquí,
+    // en el mismo momento en que la actualización termina, es la única
+    // forma de que esto se autocorrija sin depender de un botón manual o de
+    // subir un script por FTP la próxima vez.
+    if (function_exists('opcache_reset')) {
+        opcache_reset();
+    }
+
     if (function_exists('crm_log_action')) {
         crm_log_action(
             'plugin_actualizado',

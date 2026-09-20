@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.118
+Version: 1.20.119
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.118');
+define('CRM_PLUGIN_VERSION', '1.20.119');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -4123,6 +4123,9 @@ function crm_update_clients_table_structure() {
 }
 
 function crm_plugin_activation() {
+    if (function_exists('opcache_reset')) {
+        opcache_reset();
+    }
     crm_install_roles();
     crm_create_activity_log_table();
     crm_migrate_to_monthly_logs();
@@ -4333,6 +4336,9 @@ register_activation_hook(__FILE__, 'crm_plugin_activation');
 add_action('plugins_loaded', function() {
     $current_version = get_option('crm_plugin_version', '0.0.0');
     if (version_compare($current_version, CRM_PLUGIN_VERSION, '<')) {
+        if (function_exists('opcache_reset')) {
+            opcache_reset();
+        }
         crm_update_clients_table_structure();
         if (function_exists('crm_visitas_install_table')) {
             crm_visitas_install_table();

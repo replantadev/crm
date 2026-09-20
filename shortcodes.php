@@ -448,7 +448,10 @@ function crm_admin_panel_widget() {
     
     <div class="crm-admin-panel">
         <h2><img src="<?php echo get_site_icon_url(); ?>" alt="Logo" style="width: 24px; height: 24px; border-radius: 4px; vertical-align: middle; margin-right: 8px;"> Panel de Control Energitel CRM</h2>
-        
+
+        <!-- v1.20.129: qué requiere atención hoy, para que no se pierda -->
+        <?php if (function_exists('crm_inst_render_atencion_widget')) { crm_inst_render_atencion_widget(); } ?>
+
         <!-- Estadísticas Generales -->
         <div class="crm-panel-section">
             <h3>Estadísticas del Sistema</h3>

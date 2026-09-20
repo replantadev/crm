@@ -2011,10 +2011,11 @@ function crm_inst_shortcode_panel_calendario() {
  * El WhatsApp vive como user meta (`crm_whatsapp`) en vez de una tabla propia
  * — es un dato de perfil de USUARIO de WordPress, no de la instalación, y así
  * queda disponible igual para comercial/jefe el día que lo necesiten sin
- * rediseñar nada. Doble propósito: dato de contacto y futuro canal de
- * notificaciones (Fase 7/8, hoy bloqueada por no tener aún credenciales
- * WhatsApp/SMTP configuradas) — de momento solo se guarda, no se usa todavía
- * para enviar nada.
+ * rediseñar nada. v1.20.129: ya se usa de verdad — `crm_notif_canal_whatsapp`
+ * (misma user-meta que usan jefes/crm_admin desde su perfil de wp-admin) es
+ * el interruptor personal que `crm_inst_notif_canal_habilitado()` consulta
+ * antes de enviar cualquier aviso de instalación asignada/visita/partida
+ * extra/cierre por WhatsApp.
  */
 add_shortcode('crm_inst_panel_perfil', 'crm_inst_shortcode_panel_perfil');
 function crm_inst_shortcode_panel_perfil() {
@@ -2029,6 +2030,11 @@ function crm_inst_shortcode_panel_perfil() {
     $settings  = crm_inst_panel_get_settings();
     $nonce     = wp_create_nonce('crm_inst_holded');
     $whatsapp  = (string) get_user_meta($user->ID, 'crm_whatsapp', true);
+    // v1.20.129: mismo interruptor personal que ya usan jefes/crm_admin
+    // (crm_notif_canal_whatsapp) — crm_inst_notif_canal_habilitado() no
+    // distingue rol, solo lee esta user-meta, así que reutilizarla aquí
+    // no necesita ningún cambio en la lógica de envío.
+    $whatsapp_activo = (string) get_user_meta($user->ID, 'crm_notif_canal_whatsapp', true);
 
     ob_start();
     ?>
@@ -2038,6 +2044,7 @@ function crm_inst_shortcode_panel_perfil() {
     .crm-panel-inst-perfil-form label { display:block; font-size:12px; font-weight:600; color:#374151; margin-bottom:4px; }
     .crm-panel-inst-perfil-form input[type="text"] { width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #e5e7eb; border-radius:6px; font-size:14px; margin-bottom:10px; }
     .crm-panel-inst-perfil-form small { display:block; color:#9ca3af; font-size:11px; margin:-6px 0 12px; }
+    .crm-panel-inst-perfil-form .crm-inst-perfil-checkbox { display:flex; align-items:center; gap:6px; font-weight:400; margin-bottom:10px; }
     </style>
     <div class="crm-panel-inst-wrap">
         <h2 style="display:flex; align-items:center; gap:10px; margin-top:0; font-size:19px; color:#1f2937;">
@@ -2048,7 +2055,11 @@ function crm_inst_shortcode_panel_perfil() {
             <input type="text" id="crm-inst-perfil-nombre" value="<?php echo esc_attr($user->display_name); ?>" disabled>
             <label for="crm-inst-perfil-whatsapp">WhatsApp</label>
             <input type="text" id="crm-inst-perfil-whatsapp" placeholder="+34 600 000 000" value="<?php echo esc_attr($whatsapp); ?>">
-            <small>Se usará como dato de contacto y, más adelante, como canal de avisos.</small>
+            <label class="crm-inst-perfil-checkbox" for="crm-inst-perfil-whatsapp-activo">
+                <input type="checkbox" id="crm-inst-perfil-whatsapp-activo" <?php checked($whatsapp_activo === '1'); ?>>
+                Avisarme también por WhatsApp (instalación asignada, visita, partidas extra, cierre)
+            </label>
+            <small>Se usará como dato de contacto y como canal de avisos si activas la casilla de arriba.</small>
             <button type="button" class="crm-btn" id="crm-inst-perfil-guardar-btn">Guardar</button>
             <span id="crm-inst-perfil-msg" style="margin-left:8px; font-size:12px;"></span>
         </div>
@@ -2061,6 +2072,7 @@ function crm_inst_shortcode_panel_perfil() {
             var btn = this;
             var msg = document.getElementById('crm-inst-perfil-msg');
             var whatsapp = document.getElementById('crm-inst-perfil-whatsapp').value.trim();
+            var whatsappActivo = document.getElementById('crm-inst-perfil-whatsapp-activo').checked;
             btn.disabled = true;
             msg.style.color = '#6b7280';
             msg.textContent = 'Guardando...';
@@ -2068,6 +2080,7 @@ function crm_inst_shortcode_panel_perfil() {
             body.set('action', 'crm_inst_guardar_perfil');
             body.set('nonce', nonce);
             body.set('whatsapp', whatsapp);
+            body.set('whatsapp_activo', whatsappActivo ? '1' : '0');
             fetch(ajaxurl, { method: 'POST', body: body })
                 .then(function (r) { return r.json(); })
                 .then(function (resp) {
@@ -2105,6 +2118,7 @@ function crm_inst_ajax_guardar_perfil() {
 
     // Siempre el usuario actual: nadie edita el perfil de otro desde aquí.
     update_user_meta(get_current_user_id(), 'crm_whatsapp', $whatsapp);
+    update_user_meta(get_current_user_id(), 'crm_notif_canal_whatsapp', !empty($_POST['whatsapp_activo']) ? '1' : '0');
 
     wp_send_json_success(['whatsapp' => $whatsapp]);
 }

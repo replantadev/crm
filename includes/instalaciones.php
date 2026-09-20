@@ -2149,6 +2149,42 @@ function crm_inst_aviso_enviar_whatsapp_en_ejecucion( $cliente_nombre, $instalad
 	}
 }
 
+/**
+ * v1.20.129 — Fase 7 · WhatsApp a instalador: hermano por WhatsApp de
+ * `crm_inst_email_instalador()`, pero para UN instalador concreto (no un
+ * bucle de todos, como las 2 funciones de jefes de arriba). Respeta el
+ * mismo interruptor personal `crm_notif_canal_whatsapp` que ya usan
+ * jefes/crm_admin — reutiliza la misma user-meta, sin distinción de rol.
+ * Best-effort: sin credenciales, sin plantilla, sin número, o canal
+ * desactivado, simplemente no envía nada (no rompe el resto del aviso).
+ *
+ * @param int    $user_id
+ * @param string $template_option Nombre de la opción con el nombre real de la plantilla en Meta.
+ * @param array  $parametros      Variables de la plantilla, en orden.
+ * @param string $log_contexto    Texto corto para identificar el fallo en el log si falla.
+ */
+function crm_inst_whatsapp_instalador( $user_id, $template_option, array $parametros, $log_contexto ) {
+	if ( ! function_exists( 'crm_whatsapp_configurado' ) || ! crm_whatsapp_configurado() ) {
+		return;
+	}
+	$template = trim( (string) get_option( $template_option, '' ) );
+	if ( $template === '' ) {
+		return;
+	}
+	$user_id = (int) $user_id;
+	if ( $user_id <= 0 || ! crm_inst_notif_canal_habilitado( $user_id, 'whatsapp' ) ) {
+		return;
+	}
+	$telefono = get_user_meta( $user_id, 'crm_whatsapp', true );
+	if ( empty( $telefono ) ) {
+		return;
+	}
+	$resultado = crm_whatsapp_enviar_plantilla( $telefono, $template, $parametros );
+	if ( is_wp_error( $resultado ) ) {
+		crm_whatsapp_log_error( $template, $log_contexto . ' (instalador #' . $user_id . '): ' . $resultado->get_error_message() );
+	}
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Fase 7 · aviso de calendario (v1.20.127): recordatorio el día antes de una
 // visita agendada — a cliente, instalador asignado y jefes/crm_admin,
@@ -2230,12 +2266,22 @@ function crm_inst_aviso_calendario_run() {
 		}
 
 		// Instalador asignado — in-app + email, mismo canal que el resto de
-		// avisos al instalador (v1.20.110).
+		// avisos al instalador (v1.20.110). v1.20.129: + WhatsApp, reutiliza
+		// la misma plantilla que "visita programada/reprogramada" (el texto
+		// sirve igual para el recordatorio del día antes).
 		if ( (int) $r['instalador_id'] > 0 ) {
 			$mensaje_inst = 'Recordatorio: mañana ' . $fecha_label . ' tienes visita en ' . $cliente_nombre . '.';
 			crm_notificar( (int) $r['instalador_id'], 'recordatorio_visita', $mensaje_inst, $url );
 			if ( function_exists( 'crm_inst_email_instalador' ) ) {
 				crm_inst_email_instalador( (int) $r['instalador_id'], 'Recordatorio: visita mañana', $mensaje_inst, $url );
+			}
+			if ( function_exists( 'crm_inst_whatsapp_instalador' ) ) {
+				crm_inst_whatsapp_instalador(
+					(int) $r['instalador_id'],
+					'crm_whatsapp_template_instalador_visita',
+					[ $cliente_nombre, $fecha_label, $url ],
+					'Recordatorio de visita (instalador)'
+				);
 			}
 		}
 
@@ -2725,12 +2771,19 @@ function crm_inst_ajax_validar_extra() {
 
 	crm_inst_log_action( (int) $trabajo['instalacion_id'], 'trabajo', 'extra_' . $nuevo_estado, 'Partida extra "' . $trabajo['descripcion'] . '" ' . $nuevo_estado . ' por el jefe.' );
 
-	if ( function_exists( 'crm_notificar' ) && ! empty( $trabajo['declarado_por'] ) ) {
-		crm_notificar(
+	if ( ! empty( $trabajo['declarado_por'] ) ) {
+		$mensaje_extra = 'Tu partida extra "' . $trabajo['descripcion'] . '" ha sido ' . $nuevo_estado . '.';
+		if ( function_exists( 'crm_notificar' ) ) {
+			crm_notificar( (int) $trabajo['declarado_por'], 'extra_' . $nuevo_estado, $mensaje_extra, home_url( '/panel-instalador/' ) );
+		}
+		// v1.20.129: antes esto SOLO avisaba in-app — a diferencia de
+		// "asignar"/"programar_visita", nunca tuvo su email/WhatsApp.
+		crm_inst_email_instalador( (int) $trabajo['declarado_por'], 'Partida extra ' . $nuevo_estado, $mensaje_extra, home_url( '/panel-instalador/' ) );
+		crm_inst_whatsapp_instalador(
 			(int) $trabajo['declarado_por'],
-			'extra_' . $nuevo_estado,
-			'Tu partida extra "' . $trabajo['descripcion'] . '" ha sido ' . $nuevo_estado . '.',
-			home_url( '/panel-instalador/' )
+			'crm_whatsapp_template_instalador_extra_resuelta',
+			[ $trabajo['descripcion'], $nuevo_estado, home_url( '/panel-instalador/' ) ],
+			'Partida extra resuelta (jefe)'
 		);
 	}
 
@@ -3049,12 +3102,17 @@ function crm_inst_ajax_validar_extra_cliente() {
 			add_query_arg( 'id', $trabajo['instalacion_id'], home_url( '/instalacion/' ) )
 		);
 	}
-	if ( function_exists( 'crm_notificar' ) && ! empty( $trabajo['declarado_por'] ) ) {
-		crm_notificar(
+	if ( ! empty( $trabajo['declarado_por'] ) ) {
+		$mensaje_extra = 'El cliente ' . $nuevo_estado . ' tu partida extra "' . $trabajo['descripcion'] . '".';
+		if ( function_exists( 'crm_notificar' ) ) {
+			crm_notificar( (int) $trabajo['declarado_por'], 'extra_' . $nuevo_estado, $mensaje_extra, home_url( '/panel-instalador/' ) );
+		}
+		crm_inst_email_instalador( (int) $trabajo['declarado_por'], 'Partida extra ' . $nuevo_estado, $mensaje_extra, home_url( '/panel-instalador/' ) );
+		crm_inst_whatsapp_instalador(
 			(int) $trabajo['declarado_por'],
-			'extra_' . $nuevo_estado,
-			'El cliente ' . $nuevo_estado . ' tu partida extra "' . $trabajo['descripcion'] . '".',
-			home_url( '/panel-instalador/' )
+			'crm_whatsapp_template_instalador_extra_resuelta',
+			[ $trabajo['descripcion'], $nuevo_estado, home_url( '/panel-instalador/' ) ],
+			'Partida extra resuelta (cliente)'
 		);
 	}
 
@@ -3454,7 +3512,10 @@ function crm_inst_ajax_validar_cierre() {
 	}
 
 	$inst = $wpdb->get_row( $wpdb->prepare(
-		"SELECT id, cierre_declarado_por FROM " . crm_inst_table_instalaciones() . " WHERE id = %d AND cierre_estado = 'declarado'",
+		"SELECT i.id, i.cierre_declarado_por, c.cliente_nombre
+		 FROM " . crm_inst_table_instalaciones() . " i
+		 LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id
+		 WHERE i.id = %d AND i.cierre_estado = 'declarado'",
 		$instalacion_id
 	), ARRAY_A );
 	if ( ! $inst ) {
@@ -3475,12 +3536,18 @@ function crm_inst_ajax_validar_cierre() {
 
 	crm_inst_log_action( $instalacion_id, 'instalacion', 'cierre_' . $nuevo_estado, 'Cierre ' . $nuevo_estado . ' por el jefe.' );
 
-	if ( function_exists( 'crm_notificar' ) && ! empty( $inst['cierre_declarado_por'] ) ) {
-		crm_notificar(
+	if ( ! empty( $inst['cierre_declarado_por'] ) ) {
+		$cliente_nombre_cierre = $inst['cliente_nombre'] ?: ( 'instalación #' . $instalacion_id );
+		$mensaje_cierre = 'Tu cierre de instalación (' . $cliente_nombre_cierre . ') ha sido ' . $nuevo_estado . '.';
+		if ( function_exists( 'crm_notificar' ) ) {
+			crm_notificar( (int) $inst['cierre_declarado_por'], 'cierre_' . $nuevo_estado, $mensaje_cierre, home_url( '/panel-instalador/' ) );
+		}
+		crm_inst_email_instalador( (int) $inst['cierre_declarado_por'], 'Cierre ' . $nuevo_estado, $mensaje_cierre, home_url( '/panel-instalador/' ) );
+		crm_inst_whatsapp_instalador(
 			(int) $inst['cierre_declarado_por'],
-			'cierre_' . $nuevo_estado,
-			'Tu cierre de instalación ha sido ' . $nuevo_estado . '.',
-			home_url( '/panel-instalador/' )
+			'crm_whatsapp_template_instalador_cierre_resuelto',
+			[ $cliente_nombre_cierre, $nuevo_estado, home_url( '/panel-instalador/' ) ],
+			'Cierre resuelto'
 		);
 	}
 
@@ -3860,6 +3927,12 @@ function crm_inst_ajax_asignar_instalador() {
 		'Te han asignado la instalación de ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.',
 		home_url( '/panel-instalador/' )
 	);
+	crm_inst_whatsapp_instalador(
+		$user_id,
+		'crm_whatsapp_template_instalador_asignado',
+		[ $cliente_nombre ?: ( 'instalación #' . $instalacion_id ), home_url( '/panel-instalador/' ) ],
+		'Instalación asignada'
+	);
 
 	// v1.20.102: si la instalación ya tenía visita programada para otro
 	// instalador, este nuevo la hereda automáticamente — antes solo se
@@ -3875,11 +3948,18 @@ function crm_inst_ajax_asignar_instalador() {
 			[ 'instalacion_id' => $instalacion_id, 'fecha_cita' => $fecha_existente, 'instalador_id' => $user_id, 'estado' => 'pendiente' ],
 			[ '%d', '%s', '%d', '%s' ]
 		);
-		$mensaje_visita = 'Visita programada para ' . date_i18n( 'd/m/Y H:i', strtotime( $fecha_existente ) ) . ' — ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.';
+		$fecha_visita_label = date_i18n( 'd/m/Y H:i', strtotime( $fecha_existente ) );
+		$mensaje_visita = 'Visita programada para ' . $fecha_visita_label . ' — ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.';
 		if ( function_exists( 'crm_notificar' ) ) {
 			crm_notificar( $user_id, 'visita_programada', $mensaje_visita, home_url( '/calendario-instalador/' ) );
 		}
 		crm_inst_email_instalador( $user_id, 'Visita programada', $mensaje_visita, home_url( '/calendario-instalador/' ) );
+		crm_inst_whatsapp_instalador(
+			$user_id,
+			'crm_whatsapp_template_instalador_visita',
+			[ $cliente_nombre ?: ( 'instalación #' . $instalacion_id ), $fecha_visita_label, home_url( '/calendario-instalador/' ) ],
+			'Visita programada'
+		);
 	}
 
 	wp_send_json_success( [ 'user_id' => $user_id, 'display_name' => $user->display_name ] );
@@ -3982,11 +4062,18 @@ function crm_inst_ajax_guardar_agenda() {
 			);
 		}
 
-		$mensaje_visita = ( $existing_id > 0 ? 'Visita reprogramada' : 'Visita programada' ) . ' para ' . date_i18n( 'd/m/Y H:i', $timestamp ) . ' — ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.';
+		$fecha_visita_label = date_i18n( 'd/m/Y H:i', $timestamp );
+		$mensaje_visita = ( $existing_id > 0 ? 'Visita reprogramada' : 'Visita programada' ) . ' para ' . $fecha_visita_label . ' — ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.';
 		if ( function_exists( 'crm_notificar' ) ) {
 			crm_notificar( $instalador_id, $existing_id > 0 ? 'visita_reprogramada' : 'visita_programada', $mensaje_visita, home_url( '/calendario-instalador/' ) );
 		}
 		crm_inst_email_instalador( $instalador_id, $existing_id > 0 ? 'Visita reprogramada' : 'Visita programada', $mensaje_visita, home_url( '/calendario-instalador/' ) );
+		crm_inst_whatsapp_instalador(
+			$instalador_id,
+			'crm_whatsapp_template_instalador_visita',
+			[ $cliente_nombre ?: ( 'instalación #' . $instalacion_id ), $fecha_visita_label, home_url( '/calendario-instalador/' ) ],
+			'Visita programada/reprogramada'
+		);
 	}
 
 	crm_inst_log_action( $instalacion_id, 'agenda', 'programar_visita', 'Visita programada para ' . date_i18n( 'd/m/Y H:i', $timestamp ) . ' (' . count( $instaladores_asignados ) . ' instalador(es)).' );
@@ -4167,6 +4254,50 @@ function crm_inst_get_atencion_counts() {
 		'pedidos_sin_confirmar'    => $pedidos_sin_confirmar,
 		'riesgo_retraso_proveedor' => $riesgo_retraso_proveedor,
 	];
+}
+
+/**
+ * v1.20.129 — widget "Requiere atención" para /panel-de-control/. Los 5
+ * conteos de `crm_inst_get_atencion_counts()` ya existían desde v1.20.something
+ * pero solo se veían en `/instalaciones/` (a la que crm_admin tiene que
+ * acordarse de navegar) — el usuario pidió una indicación visual en el sitio
+ * donde de verdad aterriza cada día, "para que no se pierda". Se suma un 6º
+ * conteo (presupuesto estancado, `crm_ventas_contar_estancados()`) porque es
+ * el mismo tipo de "esto necesita que alguien actúe" aunque viva en otro
+ * módulo — mismo widget, una sola foto del día.
+ */
+function crm_inst_render_atencion_widget() {
+	if ( ! current_user_can( 'crm_admin' ) ) {
+		return;
+	}
+	$c = crm_inst_get_atencion_counts();
+	$items = [
+		[ 'label' => 'Materiales urgentes (visita próxima, sin recibir)', 'total' => $c['materiales_urgentes'], 'url' => home_url( '/instalaciones/' ) ],
+		[ 'label' => 'Partidas extra pendientes de validar',              'total' => $c['extras_pendientes'],   'url' => home_url( '/instalaciones/' ) ],
+		[ 'label' => 'Cierres pendientes de validar',                     'total' => $c['cierres_pendientes'],  'url' => home_url( '/instalaciones/' ) ],
+		[ 'label' => 'Pedidos a proveedor sin confirmar',                 'total' => $c['pedidos_sin_confirmar'], 'url' => home_url( '/instalaciones/' ) ],
+		[ 'label' => 'Riesgo de retraso del proveedor',                   'total' => $c['riesgo_retraso_proveedor'], 'url' => home_url( '/instalaciones/' ) ],
+	];
+	if ( function_exists( 'crm_ventas_contar_estancados' ) ) {
+		$items[] = [ 'label' => 'Presupuestos estancados', 'total' => crm_ventas_contar_estancados(), 'url' => home_url( '/ventas-presupuestos/' ) ];
+	}
+	$pendientes = array_filter( $items, function ( $i ) { return $i['total'] > 0; } );
+
+	echo '<div class="crm-panel-section" style="border:1px solid ' . ( empty( $pendientes ) ? '#d1fae5' : '#fde68a' ) . ';background:' . ( empty( $pendientes ) ? '#f0fdf4' : '#fffbeb' ) . ';">';
+	echo '<h3 style="margin-top:0;">' . ( empty( $pendientes ) ? '✅ Todo al día' : '⚠️ Requiere atención' ) . '</h3>';
+	if ( empty( $pendientes ) ) {
+		echo '<p style="color:#065f46;margin:0;">Nada pendiente en instalaciones ni presupuestos ahora mismo.</p>';
+	} else {
+		echo '<div style="display:flex;flex-wrap:wrap;gap:10px;">';
+		foreach ( $pendientes as $item ) {
+			echo '<a href="' . esc_url( $item['url'] ) . '" style="display:block;background:#fff;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;text-decoration:none;color:#78350f;min-width:180px;">';
+			echo '<span style="font-size:22px;font-weight:700;display:block;">' . (int) $item['total'] . '</span>';
+			echo '<span style="font-size:12.5px;">' . esc_html( $item['label'] ) . '</span>';
+			echo '</a>';
+		}
+		echo '</div>';
+	}
+	echo '</div>';
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -6309,7 +6440,7 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		'fase'    => 'Fase 4bis',
 		'titulo'  => 'Dashboard "Requiere atención", agenda unificada, guías por rol',
 		'estado'  => 'en_pruebas',
-		'detalle' => 'Construido fuera del plan original a petición del usuario. Sin confirmar todavía: que el email a Santoki llegue de verdad y que los 5 filtros del dashboard devuelvan lo esperado con datos reales.',
+		'detalle' => 'Construido fuera del plan original a petición del usuario. Sin confirmar todavía: que el email a Santoki llegue de verdad y que los 5 filtros del dashboard devuelvan lo esperado con datos reales. v1.20.129: el propio dashboard de conteos solo se veía en /instalaciones/ (crm_admin tenía que acordarse de ir ahí) — se añadió el mismo widget a /panel-de-control/ (crm_inst_render_atencion_widget()), con un 6º conteo nuevo (presupuestos estancados, de Ventas/Fase 7) para que sea un único sitio de "qué necesita acción hoy" entre los dos módulos.',
 	];
 
 	$fases[] = [
@@ -6364,8 +6495,8 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		// avisan ni con qué plantillas).
 		'fase'    => 'Fase 7 · WhatsApp a instalador',
 		'titulo'  => 'Avisos por WhatsApp también al instalador (hoy solo in-app + email)',
-		'estado'  => 'pendiente',
-		'detalle' => 'Alcance nuevo, no un hueco de algo ya construido. Hoy el instalador solo recibe avisos por in-app + email (asignación, visita programada/reprogramada, partida extra aprobada/rechazada, cierre aprobado/rechazado) — nunca por WhatsApp, a diferencia de jefes/crm_admin y del cliente. Pedido por el usuario para más adelante: nueva instalación asignada, recordatorios de fecha (visita, cierre pendiente), etc. Por decidir antes de construir: qué eventos concretos avisan por este canal (no necesariamente todos los que hoy van por email), y las plantillas nuevas que Meta tendría que aprobar para cada uno — el campo crm_whatsapp del perfil del instalador ya existe y es reutilizable.',
+		'estado'  => 'en_pruebas',
+		'detalle' => 'Construido v1.20.129: nueva crm_inst_whatsapp_instalador() (helper genérico para UN instalador, a diferencia de las de jefes que recorren a todos) enganchada en los 4 puntos donde ya se avisaba por in-app/email — instalación asignada, visita programada/reprogramada (mismo texto para ambos casos), partida extra resuelta (aprobada/rechazada, por jefe o cliente), y cierre resuelto. De paso se tapó un hueco real: partida extra y cierre resueltos SOLO avisaban in-app al instalador, nunca por email — ahora también. El instalador activa el canal WhatsApp para sí mismo desde "Mi perfil" (misma user-meta `crm_notif_canal_whatsapp` que ya usan jefes/crm_admin) — sin esa casilla marcada, no se envía nada aunque tenga número guardado. 4 plantillas nuevas de Meta, todavía sin crear/aprobar.',
 	];
 
 	$fases[] = [

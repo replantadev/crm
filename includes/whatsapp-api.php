@@ -150,10 +150,14 @@ function crm_whatsapp_settings_render() {
     $credenciales    = crm_whatsapp_get_credenciales();
     $phone_visible   = $credenciales['phone_number_id'] !== '' ? '•••' . substr($credenciales['phone_number_id'], -4) : '—';
     $plantillas      = [
-        'crm_whatsapp_template_aviso_materiales'     => 'Aviso de materiales pendientes',
-        'crm_whatsapp_template_validar_extra'        => 'Validar partida extra (al cliente)',
-        'crm_whatsapp_template_en_ejecucion'         => 'Instalación en marcha (cierre parcial)',
-        'crm_whatsapp_template_recordatorio_visita'  => 'Recordatorio de visita (v1.20.127, a jefes)',
+        'crm_whatsapp_template_aviso_materiales'            => 'Aviso de materiales pendientes',
+        'crm_whatsapp_template_validar_extra'               => 'Validar partida extra (al cliente)',
+        'crm_whatsapp_template_en_ejecucion'                => 'Instalación en marcha (cierre parcial)',
+        'crm_whatsapp_template_recordatorio_visita'         => 'Recordatorio de visita (a jefes)',
+        'crm_whatsapp_template_instalador_asignado'         => 'Instalación asignada (a instalador)',
+        'crm_whatsapp_template_instalador_visita'           => 'Visita programada/reprogramada (a instalador)',
+        'crm_whatsapp_template_instalador_extra_resuelta'   => 'Partida extra resuelta (a instalador)',
+        'crm_whatsapp_template_instalador_cierre_resuelto'  => 'Cierre resuelto (a instalador)',
     ];
     ?>
     <div class="crm-mail-canal" style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
@@ -256,6 +260,14 @@ function crm_whatsapp_test_parametros($opcion_plantilla) {
             return ['Cliente de prueba', 'Instalador de prueba', home_url('/')];
         case 'crm_whatsapp_template_recordatorio_visita':
             return ['Cliente de prueba', 'mañana 10:00', 'C/ Ejemplo 1, Madrid', home_url('/')];
+        case 'crm_whatsapp_template_instalador_asignado':
+            return ['Cliente de prueba', home_url('/')];
+        case 'crm_whatsapp_template_instalador_visita':
+            return ['Cliente de prueba', 'mañana 10:00', home_url('/')];
+        case 'crm_whatsapp_template_instalador_extra_resuelta':
+            return ['Partida extra de ejemplo', 'aprobado', home_url('/')];
+        case 'crm_whatsapp_template_instalador_cierre_resuelto':
+            return ['Cliente de prueba', 'aprobado', home_url('/')];
         default:
             return [];
     }
@@ -278,6 +290,10 @@ function crm_whatsapp_ajax_test_envio() {
         'crm_whatsapp_template_validar_extra',
         'crm_whatsapp_template_en_ejecucion',
         'crm_whatsapp_template_recordatorio_visita',
+        'crm_whatsapp_template_instalador_asignado',
+        'crm_whatsapp_template_instalador_visita',
+        'crm_whatsapp_template_instalador_extra_resuelta',
+        'crm_whatsapp_template_instalador_cierre_resuelto',
     ];
     if (!in_array($plantilla, $nombres_validos, true)) {
         wp_send_json_error(['message' => 'Plantilla no válida.']);

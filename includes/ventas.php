@@ -170,6 +170,35 @@ function crm_ventas_aviso_estancados_run() {
 }
 
 /**
+ * v1.20.129 — cuenta EN VIVO (sin marcar nada como avisado) cuántos
+ * presupuestos están estancados ahora mismo, para el widget "Requiere
+ * atención" de /panel-de-control/. Misma regla que `crm_ventas_aviso_estancados_run()`
+ * pero de solo lectura — no toca `crm_ventas_estancados_avisados`.
+ */
+function crm_ventas_contar_estancados() {
+    if (!function_exists('crm_holded_get_estimates_cached')) {
+        return 0;
+    }
+    $estimates = crm_holded_get_estimates_cached();
+    if (is_wp_error($estimates) || empty($estimates)) {
+        return 0;
+    }
+    $dias_umbral = max(1, (int) get_option('crm_ventas_aviso_estancados_dias', 7));
+    $limite_ts   = current_time('timestamp') - ($dias_umbral * DAY_IN_SECONDS);
+    $total = 0;
+    foreach ($estimates as $e) {
+        if (empty($e['draft'])) {
+            continue;
+        }
+        $fecha_ts = !empty($e['date']) ? strtotime((string) $e['date']) : false;
+        if ($fecha_ts !== false && $fecha_ts <= $limite_ts) {
+            $total++;
+        }
+    }
+    return $total;
+}
+
+/**
  * Ajustes de "Presupuesto estancado" para el FRONTEND (`/panel-de-control/`)
  * — mismo patrón ya usado para email/WhatsApp/notificaciones de
  * instalaciones: crm_admin no puede entrar a wp-admin, así que cualquier

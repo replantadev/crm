@@ -249,6 +249,19 @@ function crm_register_admin_settings() {
             return $n >= 1 ? $n : 7;
         },
     ]);
+    // v1.20.129 — Fase 7 · WhatsApp a instalador.
+    foreach ([
+        'crm_whatsapp_template_instalador_asignado',
+        'crm_whatsapp_template_instalador_visita',
+        'crm_whatsapp_template_instalador_extra_resuelta',
+        'crm_whatsapp_template_instalador_cierre_resuelto',
+    ] as $opcion_plantilla_instalador) {
+        register_setting('crm_settings', $opcion_plantilla_instalador, [
+            'type'              => 'string',
+            'default'           => '',
+            'sanitize_callback' => 'sanitize_text_field',
+        ]);
+    }
 }
 
 /* ---------------------------------------------------------------------------
@@ -1036,6 +1049,40 @@ function crm_admin_render_settings() {
                 <td>
                     <input type="text" id="crm_whatsapp_template_recordatorio_visita" name="crm_whatsapp_template_recordatorio_visita" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_recordatorio_visita', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
                     <p class="description">Nombre exacto de la plantilla para el recordatorio a jefes/crm_admin el día antes de una visita agendada (v1.20.127). El cliente recibe su recordatorio por email, no por WhatsApp — no hay plantilla para ese caso todavía.</p>
+                </td>
+            </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">WhatsApp a instalador (v1.20.129)</h3></th></tr>
+            <tr>
+                <td colspan="2" style="padding-top:0;">
+                    <p class="description" style="margin:0 0 10px;">Cada instalador debe activar esto para sí mismo desde "Mi perfil" (panel branded) — estas plantillas no envían nada si el instalador no ha marcado su casilla de WhatsApp, aunque el número esté guardado.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_whatsapp_template_instalador_asignado">Plantilla — instalación asignada</label></th>
+                <td>
+                    <input type="text" id="crm_whatsapp_template_instalador_asignado" name="crm_whatsapp_template_instalador_asignado" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_instalador_asignado', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
+                    <p class="description">Al instalador, cuando se le asigna una instalación nueva.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_whatsapp_template_instalador_visita">Plantilla — visita programada/reprogramada</label></th>
+                <td>
+                    <input type="text" id="crm_whatsapp_template_instalador_visita" name="crm_whatsapp_template_instalador_visita" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_instalador_visita', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
+                    <p class="description">Al instalador, cuando se le agenda o reprograma una visita (mismo texto sirve para ambos casos).</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_whatsapp_template_instalador_extra_resuelta">Plantilla — partida extra resuelta</label></th>
+                <td>
+                    <input type="text" id="crm_whatsapp_template_instalador_extra_resuelta" name="crm_whatsapp_template_instalador_extra_resuelta" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_instalador_extra_resuelta', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
+                    <p class="description">Al instalador que la declaró, cuando su partida extra queda aprobada o rechazada (por el jefe o por el cliente).</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_whatsapp_template_instalador_cierre_resuelto">Plantilla — cierre resuelto</label></th>
+                <td>
+                    <input type="text" id="crm_whatsapp_template_instalador_cierre_resuelto" name="crm_whatsapp_template_instalador_cierre_resuelto" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_instalador_cierre_resuelto', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
+                    <p class="description">Al instalador que lo declaró, cuando el jefe aprueba o rechaza su cierre de instalación.</p>
                 </td>
             </tr>
             <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Aviso de calendario (v1.20.127)</h3></th></tr>

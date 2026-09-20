@@ -6085,7 +6085,18 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		'fase'    => 'Fase 7 · resto',
 		'titulo'  => 'Canal por persona configurable, aviso de calendario, aviso de presupuesto estancado',
 		'estado'  => 'pendiente',
-		'detalle' => 'No empezado. El canal WhatsApp ya no está bloqueado (Fase 7 · WhatsApp) — esto puede arrancar en cuanto se decida el orden de prioridad.',
+		'detalle' => 'No empezado. El canal WhatsApp ya no está bloqueado (Fase 7 · WhatsApp) — esto puede arrancar en cuanto se decida el orden de prioridad. 3 piezas: (1) canal por persona configurable — hoy el canal WhatsApp es un único interruptor global para jefes, no por usuario; (2) aviso de calendario — recordatorio el día antes de una visita agendada; (3) aviso de presupuesto estancado al comercial.',
+	];
+
+	$fases[] = [
+		// v1.20.125: anotado a petición explícita del usuario 2026-09-20 —
+		// "eso es alcance nuevo, anótalo para más adelante" — no construir
+		// sin volver a hablarlo primero (no asumir qué eventos concretos
+		// avisan ni con qué plantillas).
+		'fase'    => 'Fase 7 · WhatsApp a instalador',
+		'titulo'  => 'Avisos por WhatsApp también al instalador (hoy solo in-app + email)',
+		'estado'  => 'pendiente',
+		'detalle' => 'Alcance nuevo, no un hueco de algo ya construido. Hoy el instalador solo recibe avisos por in-app + email (asignación, visita programada/reprogramada, partida extra aprobada/rechazada, cierre aprobado/rechazado) — nunca por WhatsApp, a diferencia de jefes/crm_admin y del cliente. Pedido por el usuario para más adelante: nueva instalación asignada, recordatorios de fecha (visita, cierre pendiente), etc. Por decidir antes de construir: qué eventos concretos avisan por este canal (no necesariamente todos los que hoy van por email), y las plantillas nuevas que Meta tendría que aprobar para cada uno — el campo crm_whatsapp del perfil del instalador ya existe y es reutilizable.',
 	];
 
 	$fases[] = [

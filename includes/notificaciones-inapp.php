@@ -83,6 +83,13 @@ function crm_notificar( $user_id, $tipo, $mensaje, $url = '' ) {
 function crm_notificar_jefes_instalaciones( $tipo, $mensaje, $url = '' ) {
 	$users = get_users( [ 'role__in' => [ 'jefe_instalaciones', 'crm_admin' ], 'fields' => 'ID' ] );
 	foreach ( $users as $user_id ) {
+		// v1.20.126: canal por persona — si un jefe/crm_admin ha desactivado
+		// para sí mismo la notificación in-app desde su perfil, se respeta
+		// (antes era siempre incondicional, solo el email/WhatsApp tenían
+		// interruptor y encima era el mismo para todos).
+		if ( function_exists( 'crm_inst_notif_canal_habilitado' ) && ! crm_inst_notif_canal_habilitado( (int) $user_id, 'inapp' ) ) {
+			continue;
+		}
 		crm_notificar( (int) $user_id, $tipo, $mensaje, $url );
 	}
 }

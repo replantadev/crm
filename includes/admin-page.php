@@ -1418,6 +1418,12 @@ function crm_admin_leads_mk_run_sync_post() {
  * roles sí entran a wp-admin, así que reutilizan la pantalla estándar en vez
  * de duplicar una página propia. Mismo user-meta `crm_whatsapp` para los dos
  * casos — es el mismo dato de perfil independientemente de por dónde se edite.
+ *
+ * v1.20.126: se añaden 3 casillas de canal (in-app/email/WhatsApp) — antes
+ * había un único interruptor global en Ajustes que aplicaba a TODOS los
+ * jefes/crm_admin por igual; ahora cada uno elige el suyo aquí. Si alguien
+ * nunca las toca, `crm_inst_notif_canal_habilitado()` (includes/instalaciones.php)
+ * cae al ajuste global de siempre — nadie deja de recibir avisos de golpe.
  */
 add_action('show_user_profile', 'crm_admin_render_whatsapp_profile_field');
 add_action('edit_user_profile', 'crm_admin_render_whatsapp_profile_field');
@@ -1426,6 +1432,11 @@ function crm_admin_render_whatsapp_profile_field($user) {
         return;
     }
     $whatsapp = (string) get_user_meta($user->ID, 'crm_whatsapp', true);
+
+    $canal_valor = function ($canal, $default_global) use ($user) {
+        $meta = get_user_meta($user->ID, 'crm_notif_canal_' . $canal, true);
+        return $meta === '' ? (bool) get_option('crm_inst_aviso_canal_' . $canal, $default_global) : $meta === '1';
+    };
     ?>
     <h2>CRM — Avisos de instalaciones</h2>
     <table class="form-table">
@@ -1433,7 +1444,16 @@ function crm_admin_render_whatsapp_profile_field($user) {
             <th><label for="crm_whatsapp">WhatsApp</label></th>
             <td>
                 <input type="text" id="crm_whatsapp" name="crm_whatsapp" class="regular-text" value="<?php echo esc_attr($whatsapp); ?>" placeholder="+34600000000">
-                <p class="description">Número al que llegarían los avisos de materiales pendientes por WhatsApp, si ese canal está activado en Ajustes. En blanco, no recibes nada por este canal (el email sigue funcionando igual).</p>
+                <p class="description">Número al que llegarían los avisos de materiales pendientes por WhatsApp, si ese canal está activado abajo. En blanco, no recibes nada por este canal (el email sigue funcionando igual).</p>
+            </td>
+        </tr>
+        <tr>
+            <th>Mis canales de aviso</th>
+            <td>
+                <label style="display:block;margin-bottom:4px;"><input type="checkbox" name="crm_notif_canal_inapp" value="1" <?php checked($canal_valor('inapp', true)); ?>> Notificación in-app (campana)</label>
+                <label style="display:block;margin-bottom:4px;"><input type="checkbox" name="crm_notif_canal_email" value="1" <?php checked($canal_valor('email', true)); ?>> Email</label>
+                <label style="display:block;"><input type="checkbox" name="crm_notif_canal_whatsapp" value="1" <?php checked($canal_valor('whatsapp', false)); ?>> WhatsApp</label>
+                <p class="description">Por qué canales quieres recibir TÚ los avisos de instalaciones (materiales pendientes, instalación en marcha, etc.). Si no tocas esto, se usa el valor por defecto de Ajustes/Panel de control.</p>
             </td>
         </tr>
     </table>
@@ -1445,13 +1465,21 @@ function crm_admin_guardar_whatsapp_profile_field($user_id) {
     if (!current_user_can('edit_user', $user_id)) {
         return;
     }
-    if (!isset($_POST['crm_whatsapp'])) {
-        return;
+    if (isset($_POST['crm_whatsapp'])) {
+        $whatsapp = sanitize_text_field(wp_unslash($_POST['crm_whatsapp']));
+        if ($whatsapp === '' || preg_match('/^[0-9+\s()-]{6,20}$/', $whatsapp)) {
+            // Mismo criterio que el perfil del instalador: si no parece un teléfono, no se guarda nada raro.
+            update_user_meta($user_id, 'crm_whatsapp', $whatsapp);
+        }
     }
-    $whatsapp = sanitize_text_field(wp_unslash($_POST['crm_whatsapp']));
-    if ($whatsapp !== '' && !preg_match('/^[0-9+\s()-]{6,20}$/', $whatsapp)) {
-        return; // Mismo criterio que el perfil del instalador: si no parece un teléfono, no se guarda nada raro.
+    // v1.20.126: solo se guardan estas 3 casillas si el formulario que se
+    // envió es el del perfil de wp-admin (trae 'crm_whatsapp' como marcador
+    // de que este bloque estaba presente) — así un guardado de otro
+    // formulario que no incluya estos campos no los resetea a "desmarcado".
+    if (isset($_POST['crm_whatsapp'])) {
+        foreach (['inapp', 'email', 'whatsapp'] as $canal) {
+            update_user_meta($user_id, 'crm_notif_canal_' . $canal, !empty($_POST['crm_notif_canal_' . $canal]) ? '1' : '0');
+        }
     }
-    update_user_meta($user_id, 'crm_whatsapp', $whatsapp);
 }
 

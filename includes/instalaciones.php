@@ -1800,7 +1800,8 @@ function crm_inst_notificaciones_settings_render() {
 					<?php endfor; ?>
 				</select>
 			</p>
-			<p style="margin:10px 0 4px;font-weight:600;">Canales de este aviso (y del aviso de "instalación en marcha"/cierre parcial):</p>
+			<p style="margin:10px 0 4px;font-weight:600;">Canales por defecto de este aviso (y del aviso de "instalación en marcha"/cierre parcial):</p>
+			<p style="font-size:12.5px;color:#6b7280;margin:0 0 8px;">v1.20.126: cada jefe/crm_admin puede elegir sus propios canales desde su perfil (wp-admin → tu usuario → "CRM — Avisos de instalaciones") — esto de aquí es solo el valor que se usa mientras alguien no haya elegido el suyo.</p>
 			<label style="display:block;margin-bottom:4px;">
 				<input type="checkbox" name="crm_inst_aviso_canal_inapp" value="1" <?php checked( get_option( 'crm_inst_aviso_canal_inapp', true ) ); ?>>
 				Notificación in-app (campana)
@@ -1876,10 +1877,9 @@ function crm_inst_aviso_materiales_pendientes_run() {
 		return;
 	}
 
-	$canal_inapp    = (bool) get_option( 'crm_inst_aviso_canal_inapp', true );
-	$canal_email    = (bool) get_option( 'crm_inst_aviso_canal_email', true );
-	$canal_whatsapp = (bool) get_option( 'crm_inst_aviso_canal_whatsapp', false );
-
+	// v1.20.126: el filtro por canal ya no se decide aquí de golpe para
+	// todos — cada función de abajo lo decide POR JEFE (crm_inst_notif_canal_habilitado()),
+	// así que las 3 se llaman siempre y cada una envía a quien corresponda.
 	foreach ( $rows as $r ) {
 		$pendientes = crm_inst_materiales_pendientes( (int) $r['id'] );
 		if ( $pendientes <= 0 ) {
@@ -1913,24 +1913,41 @@ function crm_inst_aviso_materiales_pendientes_run() {
 		}
 		$url = add_query_arg( 'id', $r['id'], home_url( '/instalacion/' ) );
 
-		if ( $canal_inapp && function_exists( 'crm_notificar_jefes_instalaciones' ) ) {
+		if ( function_exists( 'crm_notificar_jefes_instalaciones' ) ) {
 			crm_notificar_jefes_instalaciones( 'materiales_pendientes_aviso', $mensaje, $url );
 		}
-		if ( $canal_email ) {
-			crm_inst_aviso_enviar_email_jefes( 'Materiales pendientes antes de una visita', $mensaje, $url );
-		}
-		if ( $canal_whatsapp ) {
-			crm_inst_aviso_enviar_whatsapp_jefes(
-				$r['cliente_nombre'] ?: ( 'instalación #' . $r['id'] ),
-				$r['direccion_instalacion'],
-				$fecha_label,
-				$pendientes,
-				$estado_pedido_corto,
-				$url
-			);
-		}
+		crm_inst_aviso_enviar_email_jefes( 'Materiales pendientes antes de una visita', $mensaje, $url );
+		crm_inst_aviso_enviar_whatsapp_jefes(
+			$r['cliente_nombre'] ?: ( 'instalación #' . $r['id'] ),
+			$r['direccion_instalacion'],
+			$fecha_label,
+			$pendientes,
+			$estado_pedido_corto,
+			$url
+		);
 		crm_inst_log_action( (int) $r['id'], 'instalacion', 'aviso_materiales_pendientes', $mensaje );
 	}
+}
+
+/**
+ * v1.20.126 — canal por persona: cada jefe_instalaciones/crm_admin puede
+ * elegir sus propios canales (in-app/email/WhatsApp) en su perfil de
+ * wp-admin, en vez de depender de un único interruptor global para todos.
+ * Si el usuario nunca ha tocado esa preferencia (meta vacío, nunca
+ * guardado), se cae al ajuste global de siempre — así nadie deja de recibir
+ * avisos de golpe solo porque nunca entró a configurarlo.
+ *
+ * @param int    $user_id
+ * @param string $canal 'inapp'|'email'|'whatsapp'
+ * @return bool
+ */
+function crm_inst_notif_canal_habilitado( $user_id, $canal ) {
+	$valor = get_user_meta( (int) $user_id, 'crm_notif_canal_' . $canal, true );
+	if ( $valor === '' ) {
+		$default_global = [ 'inapp' => true, 'email' => true, 'whatsapp' => false ];
+		return (bool) get_option( 'crm_inst_aviso_canal_' . $canal, $default_global[ $canal ] ?? false );
+	}
+	return $valor === '1';
 }
 
 /**
@@ -1977,7 +1994,7 @@ function crm_inst_aviso_enviar_email_jefes( $asunto, $mensaje, $url = '' ) {
 	$body .= '<p style="color:#666;font-size:12px">Aviso automático del CRM.</p>';
 	$headers = [ 'Content-Type: text/html; charset=UTF-8' ];
 	foreach ( $users as $u ) {
-		if ( ! empty( $u->user_email ) ) {
+		if ( ! empty( $u->user_email ) && crm_inst_notif_canal_habilitado( $u->ID, 'email' ) ) {
 			wp_mail( $u->user_email, '[CRM] ' . $asunto, $body, $headers );
 		}
 	}
@@ -2004,7 +2021,7 @@ function crm_inst_aviso_enviar_whatsapp_jefes( $cliente_nombre, $direccion, $fec
 	$users = get_users( [ 'role__in' => [ 'jefe_instalaciones', 'crm_admin' ], 'fields' => [ 'ID' ] ] );
 	foreach ( $users as $u ) {
 		$telefono = get_user_meta( (int) $u->ID, 'crm_whatsapp', true );
-		if ( empty( $telefono ) ) {
+		if ( empty( $telefono ) || ! crm_inst_notif_canal_habilitado( $u->ID, 'whatsapp' ) ) {
 			continue;
 		}
 		// v1.20.115: antes solo mandaba cliente/fecha/nº pendientes — el
@@ -2036,7 +2053,7 @@ function crm_inst_aviso_enviar_whatsapp_en_ejecucion( $cliente_nombre, $instalad
 	$users = get_users( [ 'role__in' => [ 'jefe_instalaciones', 'crm_admin' ], 'fields' => [ 'ID' ] ] );
 	foreach ( $users as $u ) {
 		$telefono = get_user_meta( (int) $u->ID, 'crm_whatsapp', true );
-		if ( empty( $telefono ) ) {
+		if ( empty( $telefono ) || ! crm_inst_notif_canal_habilitado( $u->ID, 'whatsapp' ) ) {
 			continue;
 		}
 		$resultado = crm_whatsapp_enviar_plantilla( $telefono, $template, [ $cliente_nombre, $instalador_nombre, $url ] );
@@ -2235,13 +2252,11 @@ function crm_inst_ajax_marcar_material_montado() {
 					$url_ficha
 				);
 			}
-			if ( (bool) get_option( 'crm_inst_aviso_canal_whatsapp', false ) ) {
-				crm_inst_aviso_enviar_whatsapp_en_ejecucion(
-					$cliente_nombre ?: ( 'instalación #' . $instalacion_id ),
-					wp_get_current_user()->display_name,
-					$url_ficha
-				);
-			}
+			crm_inst_aviso_enviar_whatsapp_en_ejecucion(
+				$cliente_nombre ?: ( 'instalación #' . $instalacion_id ),
+				wp_get_current_user()->display_name,
+				$url_ficha
+			);
 		}
 	}
 
@@ -6082,10 +6097,27 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 	];
 
 	$fases[] = [
-		'fase'    => 'Fase 7 · resto',
-		'titulo'  => 'Canal por persona configurable, aviso de calendario, aviso de presupuesto estancado',
+		// v1.20.126: la fase "resto" (3 piezas) se separa en filas propias
+		// según se va construyendo cada una — más fácil de seguir que un
+		// único "pendiente" que tapa que ya hay una hecha.
+		'fase'    => 'Fase 7 · canal por persona',
+		'titulo'  => 'Cada jefe/crm_admin elige sus propios canales de aviso (in-app/email/WhatsApp)',
+		'estado'  => 'en_pruebas',
+		'detalle' => 'Antes había un único interruptor global (Ajustes) que aplicaba a TODOS los jefes/crm_admin por igual. Ahora cada uno lo elige en su perfil de wp-admin (sección "CRM — Avisos de instalaciones", junto al número de WhatsApp) — 3 casillas nuevas, `crm_notif_canal_inapp/email/whatsapp` como user-meta. Si alguien no las toca nunca, se usa el valor global de siempre (nadie deja de recibir avisos de golpe). Los ajustes globales de Ajustes/Panel de control pasan a ser solo el valor por defecto. Construido, sin prueba real todavía (con 2+ jefes con preferencias distintas).',
+	];
+
+	$fases[] = [
+		'fase'    => 'Fase 7 · aviso de calendario',
+		'titulo'  => 'Recordatorio el día antes de una visita agendada (cliente, instalador y jefes)',
 		'estado'  => 'pendiente',
-		'detalle' => 'No empezado. El canal WhatsApp ya no está bloqueado (Fase 7 · WhatsApp) — esto puede arrancar en cuanto se decida el orden de prioridad. 3 piezas: (1) canal por persona configurable — hoy el canal WhatsApp es un único interruptor global para jefes, no por usuario; (2) aviso de calendario — recordatorio el día antes de una visita agendada; (3) aviso de presupuesto estancado al comercial.',
+		'detalle' => 'No empezado. Confirmado con el usuario 2026-09-20: el recordatorio debe llegar a los 3 (cliente, instalador asignado, jefes/crm_admin), cada uno por sus propios canales.',
+	];
+
+	$fases[] = [
+		'fase'    => 'Fase 7 · presupuesto estancado',
+		'titulo'  => 'Aviso al comercial cuando un presupuesto de Holded lleva demasiado sin moverse',
+		'estado'  => 'pendiente',
+		'detalle' => 'No empezado. Confirmado con el usuario 2026-09-20: "estancado" = lleva X días sin cambiar de estado en Holded (umbral configurable por crm_admin, por defecto 7 días) — esto ya cubre el caso más específico de "sigue enviado sin respuesta", que es un caso particular de "no ha cambiado de estado". Pendiente de resolver en el diseño: hoy no existe ningún camino para saber qué usuario de WordPress es el comercial dueño de un presupuesto concreto (el mapa `crm_holded_usuarios_mapa` solo da un nombre, no una cuenta real) — habría que construirlo encadenando contact_id del presupuesto → holded_contact_id del cliente → user_id del cliente.',
 	];
 
 	$fases[] = [

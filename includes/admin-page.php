@@ -656,6 +656,14 @@ function crm_admin_render_updates() {
         <span id="crm-check-result" class="description" style="margin-left:12px"></span>
     </p>
 
+    <hr>
+    <h2>Caché del servidor</h2>
+    <p class="description" style="max-width:700px;">Si acabas de actualizar el plugin y una página nueva sigue sin aparecer (error de "no tienes permisos" en una página que debería existir), puede que PHP esté ejecutando una versión compilada antigua del código (OPcache) aunque los archivos en el servidor ya estén al día. Este botón fuerza a PHP a recompilar el plugin desde cero.</p>
+    <p>
+        <button id="crm-purge-cache" class="button">Purgar caché del servidor (OPcache)</button>
+        <span id="crm-purge-result" class="description" style="margin-left:12px"></span>
+    </p>
+
     <script>
     (function(){
         var btn = document.getElementById('crm-check-updates');
@@ -676,10 +684,70 @@ function crm_admin_render_updates() {
                 .catch(function(){ btn.disabled = false; msg.textContent = 'Error de red'; });
         });
     })();
+    (function(){
+        var btn = document.getElementById('crm-purge-cache');
+        var msg = document.getElementById('crm-purge-result');
+        if (!btn) return;
+        btn.addEventListener('click', function(){
+            btn.disabled = true;
+            msg.textContent = 'Purgando…';
+            var body = new URLSearchParams();
+            body.append('action', 'crm_purge_cache');
+            body.append('nonce', '<?php echo esc_js($nonce); ?>');
+            fetch(ajaxurl, {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'}, body: body.toString()})
+                .then(function(r){ return r.json(); })
+                .then(function(j){
+                    btn.disabled = false;
+                    msg.textContent = (j && j.data && j.data.message) ? j.data.message : 'Sin respuesta';
+                })
+                .catch(function(){ btn.disabled = false; msg.textContent = 'Error de red'; });
+        });
+    })();
     </script>
     <?php
     crm_admin_page_footer();
 }
+
+/**
+ * v1.20.118 — botón "Purgar caché del servidor" (wp-admin → CRM →
+ * Actualizaciones). Nace de un caso real: la página wp-admin → CRM → Email
+ * (registrada en includes/mail-settings.php) daba "no tienes permisos" a un
+ * administrator real incluso recién reactivado el plugin y con Members
+ * dando todos los permisos — el Editor de plugins de WordPress confirmó que
+ * ese archivo ni siquiera aparecía en el listado real de ficheros del
+ * plugin activo, señal de que PHP seguía ejecutando bytecode compilado de
+ * una versión antigua (OPcache) aunque el archivo en disco ya estuviera
+ * actualizado. `opcache_reset()` no está garantizado en todo hosting
+ * (algunos lo deshabilitan por seguridad), de ahí el mensaje explícito si
+ * no está disponible en vez de fallar en silencio.
+ */
+add_action('wp_ajax_crm_purge_cache', function () {
+    if (!current_user_can('crm_admin') || !check_ajax_referer('crm_admin_actions', 'nonce', false)) {
+        wp_send_json_error(['message' => 'Sin permisos.'], 403);
+    }
+
+    $acciones = [];
+
+    if (function_exists('opcache_reset')) {
+        $acciones[] = opcache_reset() ? 'OPcache reiniciado.' : 'OPcache no se pudo reiniciar (opcache_reset devolvió false).';
+    } else {
+        $acciones[] = 'OPcache no disponible en este servidor (nada que hacer ahí).';
+    }
+
+    wp_cache_flush();
+    $acciones[] = 'Caché de objetos de WordPress vaciada.';
+
+    delete_transient('crm_plugin_cache');
+    delete_transient('crm_db_size');
+    delete_site_transient('update_plugins');
+    $acciones[] = 'Transients del CRM y de actualizaciones borrados.';
+
+    if (function_exists('crm_log_action')) {
+        crm_log_action('cache_purgada', implode(' ', $acciones), null, 0, 'info');
+    }
+
+    wp_send_json_success(['message' => implode(' ', $acciones)]);
+});
 
 /* ---------------------------------------------------------------------------
  * Ajustes

@@ -346,54 +346,71 @@ function crm_whatsapp_log_error($template_name, $mensaje, $http_code = null) {
 // log — la primera respuesta real dirá si el parseo hay que ajustarlo.
 //
 // Endpoint público (Meta no puede autenticarse como un usuario de
-// WordPress): REST API de WP, no una página ni un shortcode. No pasa por
-// admin-lockdown.php (eso solo bloquea /wp-admin/, no /wp-json/).
+// WordPress): NO se sirve vía la REST API de WP — el framework de la REST
+// API envuelve automáticamente cualquier respuesta en JSON, lo que en la
+// verificación (GET) rompe el handshake: Meta exige el "challenge" tal
+// cual, en texto plano y SIN comillas, y `WP_REST_Response($challenge)`
+// lo devuelve como `"1234567890"` (con comillas) en vez de `1234567890` —
+// confirmado en vivo contra el endpoint real, no una suposición. Por eso
+// se intercepta la petición a mano en `init` (antes de que WP intente
+// enrutarla como REST) y se responde con `echo`/`exit`, control total del
+// body exacto que se envía. No pasa por admin-lockdown.php (eso solo
+// bloquea /wp-admin/, esto es una ruta cualquiera del sitio).
 // ──────────────────────────────────────────────────────────────────────────────
 
-add_action('rest_api_init', function () {
-    register_rest_route('crm/v1', '/whatsapp-webhook', [
-        [
-            'methods'             => 'GET',
-            'callback'            => 'crm_whatsapp_webhook_verificar',
-            'permission_callback' => '__return_true',
-        ],
-        [
-            'methods'             => 'POST',
-            'callback'            => 'crm_whatsapp_webhook_recibir',
-            'permission_callback' => '__return_true',
-        ],
-    ]);
-});
+add_action('init', 'crm_whatsapp_webhook_interceptar', 1);
+function crm_whatsapp_webhook_interceptar() {
+    $path = parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+    if (!is_string($path) || rtrim($path, '/') !== '/wp-json/crm/v1/whatsapp-webhook') {
+        return;
+    }
+    $metodo = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    if ($metodo === 'GET') {
+        crm_whatsapp_webhook_verificar();
+    } elseif ($metodo === 'POST') {
+        crm_whatsapp_webhook_recibir();
+    } else {
+        status_header(405);
+    }
+    exit;
+}
 
 /**
  * Handshake que Meta hace UNA vez al guardar la URL del webhook en su panel
  * (y cada vez que se vuelve a verificar) — responde con el "challenge" tal
- * cual si el token coincide.
+ * cual (texto plano, sin JSON) si el token coincide.
  *
  * Los parámetros que manda Meta llevan puntos (`hub.mode`, no `hub_mode`) —
  * PHP convierte automáticamente los puntos de los nombres de parámetros de
  * query string en guiones bajos al rellenar $_GET, así que leerlos con
  * guion bajo aquí es lo correcto, no un error.
  */
-function crm_whatsapp_webhook_verificar(WP_REST_Request $request) {
-    $modo      = $request->get_param('hub_mode');
-    $token     = (string) $request->get_param('hub_verify_token');
-    $challenge = $request->get_param('hub_challenge');
+function crm_whatsapp_webhook_verificar() {
+    $modo      = sanitize_text_field((string) ($_GET['hub_mode'] ?? ''));
+    $token     = (string) ($_GET['hub_verify_token'] ?? '');
+    $challenge = (string) ($_GET['hub_challenge'] ?? '');
 
-    $token_esperado = get_option('crm_whatsapp_webhook_verify_token', '');
-    if ($modo === 'subscribe' && $token !== '' && $token_esperado !== '' && hash_equals((string) $token_esperado, $token)) {
-        return new WP_REST_Response($challenge, 200);
+    $token_esperado = (string) get_option('crm_whatsapp_webhook_verify_token', '');
+    if ($modo === 'subscribe' && $token !== '' && $token_esperado !== '' && hash_equals($token_esperado, $token)) {
+        status_header(200);
+        header('Content-Type: text/plain');
+        echo $challenge; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+        return;
     }
-    return new WP_REST_Response('Token de verificación no válido.', 403);
+    status_header(403);
+    header('Content-Type: text/plain');
+    echo 'Token de verificacion no valido.';
 }
 
 /**
  * Recibe los eventos reales. Meta manda un POST por cada mensaje/cambio de
  * estado — solo nos interesa cuando alguien pulsa un botón de la plantilla
- * de confirmación de cita; el resto se ignora silenciosamente.
+ * de confirmación de cita; el resto se ignora silenciosamente. Responde
+ * siempre 200 rápido (JSON aquí no pasa nada, Meta no exige texto plano en
+ * la recepción de eventos — solo en el handshake GET de arriba).
  */
-function crm_whatsapp_webhook_recibir(WP_REST_Request $request) {
-    $body_raw = $request->get_body();
+function crm_whatsapp_webhook_recibir() {
+    $body_raw = file_get_contents('php://input');
 
     // Verificación de firma (HMAC con el App Secret de Meta) — sin secreto
     // configurado no se puede verificar de verdad; se procesa igual en ese
@@ -401,13 +418,16 @@ function crm_whatsapp_webhook_recibir(WP_REST_Request $request) {
     // pero en cuanto haya secreto, una firma que no cuadre se rechaza.
     $secreto = trim((string) get_option('crm_whatsapp_app_secret', ''));
     if ($secreto !== '') {
-        $firma_recibida  = (string) $request->get_header('x_hub_signature_256');
+        $firma_recibida  = (string) ($_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '');
         $firma_calculada = 'sha256=' . hash_hmac('sha256', $body_raw, $secreto);
         if ($firma_recibida === '' || !hash_equals($firma_calculada, $firma_recibida)) {
             if (function_exists('crm_log_action')) {
                 crm_log_action('whatsapp_webhook_firma_invalida', 'Webhook de WhatsApp recibido con firma inválida o ausente.', null, 0, 'error');
             }
-            return new WP_REST_Response(['status' => 'firma inválida'], 403);
+            status_header(403);
+            header('Content-Type: application/json');
+            echo wp_json_encode(['status' => 'firma invalida']);
+            return;
         }
     }
 
@@ -423,7 +443,9 @@ function crm_whatsapp_webhook_recibir(WP_REST_Request $request) {
         crm_whatsapp_webhook_procesar_mensaje($mensaje);
     }
 
-    return new WP_REST_Response(['status' => 'ok'], 200);
+    status_header(200);
+    header('Content-Type: application/json');
+    echo wp_json_encode(['status' => 'ok']);
 }
 
 /**

@@ -63,10 +63,74 @@ function crm_flujos_roadmap_shared_css() {
     .crm-roadmap-badge-en_pruebas { background:#fef3c7; color:#92400e; }
     .crm-roadmap-badge-pendiente { background:#f3f4f6; color:#6b7280; }
     .crm-roadmap-badge-bloqueado { background:#fee2e2; color:#991b1b; }
-    .crm-flujo-card { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:20px; margin-bottom:24px; }
-    .crm-flujo-card h2, .crm-flujo-card h3 { margin-top:0; }
+    .crm-flujo-card { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:20px; margin-bottom:24px; scroll-margin-top:20px; }
+    .crm-flujo-card h2, .crm-flujo-card h3 { margin-top:0; scroll-margin-top:20px; }
     .crm-flujo-card p { color:#666; }
+    .crm-flujos-toc { position:fixed; right:18px; bottom:18px; z-index:9999; font-size:13px; }
+    .crm-flujos-toc-btn { width:44px; height:44px; border-radius:50%; background:#1f2937; color:#fff; border:none; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.25); font-size:18px; line-height:44px; text-align:center; padding:0; }
+    .crm-flujos-toc-btn:hover { background:#111827; }
+    .crm-flujos-toc-panel { display:none; position:absolute; right:0; bottom:52px; width:280px; max-height:60vh; overflow-y:auto; background:#fff; border:1px solid #e5e7eb; border-radius:10px; box-shadow:0 4px 20px rgba(0,0,0,.15); padding:10px 0; }
+    .crm-flujos-toc.abierto .crm-flujos-toc-panel { display:block; }
+    .crm-flujos-toc-panel a { display:block; padding:7px 16px; color:#374151; text-decoration:none; }
+    .crm-flujos-toc-panel a:hover { background:#f3f4f6; color:#111827; }
+    .crm-flujos-toc-panel .crm-flujos-toc-titulo { display:block; padding:4px 16px 6px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#9ca3af; }
+    .crm-flujos-toc-panel hr { border:none; border-top:1px solid #f1f5f9; margin:6px 0; }
+    @media (max-width: 782px) {
+        .crm-flujos-toc { right:12px; bottom:12px; }
+        .crm-flujos-toc-panel { width:calc(100vw - 48px); max-width:320px; }
+    }
     CSS;
+}
+
+/**
+ * Índice/menú flotante mínimal (v1.20.122) — la página de Flujos se hizo
+ * larga (roadmap + 9 diagramas) y no había forma de saltar directamente a
+ * uno sin hacer scroll manual. Un botón flotante fijo (no ocupa espacio del
+ * contenido) que despliega la lista de anclas al pulsarlo — nada visible
+ * hasta que se abre, para no competir con el propio contenido.
+ *
+ * @param array $diagramas
+ * @return string
+ */
+function crm_flujos_render_toc_html(array $diagramas) {
+    ob_start();
+    ?>
+    <div class="crm-flujos-toc" id="crm-flujos-toc">
+        <button type="button" class="crm-flujos-toc-btn" id="crm-flujos-toc-btn" aria-label="Índice de esta página" title="Índice">☰</button>
+        <div class="crm-flujos-toc-panel">
+            <span class="crm-flujos-toc-titulo">Ir a</span>
+            <a href="#crm-roadmap">Roadmap</a>
+            <?php if (!empty($diagramas)) : ?>
+                <hr>
+                <span class="crm-flujos-toc-titulo">Diagramas</span>
+                <?php foreach ($diagramas as $d) :
+                    $slug  = sanitize_title($d['title'] ?? '');
+                    $label = wp_strip_all_tags($d['title'] ?? '');
+                ?>
+                    <a href="#flujo-<?php echo esc_attr($slug); ?>"><?php echo esc_html($label); ?></a>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+    </div>
+    <script>
+    (function () {
+        var toc = document.getElementById('crm-flujos-toc');
+        var btn = document.getElementById('crm-flujos-toc-btn');
+        if (!toc || !btn) { return; }
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            toc.classList.toggle('abierto');
+        });
+        toc.querySelectorAll('.crm-flujos-toc-panel a').forEach(function (a) {
+            a.addEventListener('click', function () { toc.classList.remove('abierto'); });
+        });
+        document.addEventListener('click', function (e) {
+            if (!toc.contains(e.target)) { toc.classList.remove('abierto'); }
+        });
+    })();
+    </script>
+    <?php
+    return ob_get_clean();
 }
 
 /**
@@ -133,7 +197,8 @@ function crm_flujos_render_diagramas_html(array $diagramas, $incluir_mermaid_js 
     }
     ob_start();
     foreach ($diagramas as $d) {
-        echo '<div class="crm-flujo-card">';
+        $slug = sanitize_title($d['title'] ?? '');
+        echo '<div class="crm-flujo-card" id="flujo-' . esc_attr($slug) . '">';
         echo '<h3>' . esc_html($d['title'] ?? '') . '</h3>';
         if (!empty($d['description'])) {
             echo '<p>' . esc_html($d['description']) . '</p>';
@@ -171,13 +236,15 @@ function crm_flujos_shortcode() {
     ob_start();
     ?>
     <style><?php echo crm_flujos_roadmap_shared_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></style>
-    <div class="crm-flujo-card">
+    <?php $diagramas = crm_flujos_get_diagramas(); ?>
+    <?php echo crm_flujos_render_toc_html($diagramas); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+    <div class="crm-flujo-card" id="crm-roadmap">
         <h2 style="margin-top:0;">Roadmap del CRM</h2>
         <p style="max-width:820px;color:#555;">Estado real de cada parte del CRM — hecho, en pruebas, pendiente o bloqueado. Lo registra cada módulo junto a su propio código (no es un documento aparte), para que nunca se desincronice de lo que el CRM hace de verdad.</p>
         <?php echo crm_roadmap_render_html(crm_roadmap_get_fases()); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
     </div>
     <p style="max-width:820px;color:#555;">Diagramas de los flujos principales del CRM:</p>
-    <?php echo crm_flujos_render_diagramas_html(crm_flujos_get_diagramas()); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+    <?php echo crm_flujos_render_diagramas_html($diagramas); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
     <?php
     return ob_get_clean();
 }
@@ -190,8 +257,10 @@ function crm_flujos_render_admin() {
     crm_admin_page_header('CRM · Flujos');
     ?>
     <style><?php echo crm_flujos_roadmap_shared_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></style>
+    <?php $diagramas = crm_flujos_get_diagramas(); ?>
+    <?php echo crm_flujos_render_toc_html($diagramas); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
 
-    <div class="crm-flujo-card">
+    <div class="crm-flujo-card" id="crm-roadmap">
         <h2 style="margin-top:0;">Roadmap del módulo de instalaciones</h2>
         <p style="max-width:820px;color:#555;">Estado real de cada fase — lo registra el módulo junto a su código (<code>add_filter('crm_roadmap_fases', ...)</code>), igual que los diagramas de abajo. También visible para <code>crm_admin</code> en <code>/panel-de-control/</code>.</p>
         <?php echo crm_roadmap_render_html(crm_roadmap_get_fases()); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
@@ -204,7 +273,7 @@ function crm_flujos_render_admin() {
         hace el CRM, el sitio a corregir es ese <code>add_filter</code>, no
         esta página.
     </p>
-    <?php echo crm_flujos_render_diagramas_html(crm_flujos_get_diagramas()); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+    <?php echo crm_flujos_render_diagramas_html($diagramas); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
     <?php
     crm_admin_page_footer();
 }

@@ -477,9 +477,20 @@ function crm_mail_ajax_test_canal() {
  * duplicado (dos entradas "Notificaciones" en la barra lateral). Renombrado
  * a "Email" / slug `crm-email` para no chocar.
  */
+// v1.20.120: prioridad 20 (no la 10 por defecto) — includes/mail-settings.php
+// se carga ANTES que includes/admin-page.php (que crea el menú "CRM" con
+// add_menu_page() y su primera pestaña "Dashboard"), así que sin esto
+// "Email" se registraba como el PRIMER submenú de 'crm-dashboard', antes de
+// que existiera el propio menú padre. WordPress generaba entonces mal el
+// enlace de "Email" en la barra lateral (enlazaba a /wp-admin/crm-email en
+// vez de admin.php?page=crm-email, 404) y el acceso directo por URL correcta
+// arrastraba la misma confusión ("no tienes permisos" aunque el usuario sí
+// tuviera la capacidad). includes/notificaciones-inapp.php ya usaba esta
+// misma prioridad 20 para su propio submenú por el mismo motivo — nunca se
+// aplicó aquí por descuido.
 add_action('admin_menu', function () {
     add_submenu_page('crm-dashboard', 'Email — proveedores e instaladores', 'Email', 'crm_admin', 'crm-email', 'crm_mail_render_admin_page');
-});
+}, 20);
 function crm_mail_render_admin_page() {
     if (!current_user_can('crm_admin')) {
         wp_die('Sin permisos');

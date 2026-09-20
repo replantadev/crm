@@ -551,6 +551,8 @@ function crm_inst_notificacion_tipos() {
 		[ 'trabajo', 'extra_rechazado', 'Partida extra rechazada' ],
 		[ 'instalador', 'asignar', 'Instalación asignada → instalador' ],
 		[ 'agenda', 'programar_visita', 'Visita agendada/reprogramada → instalador' ],
+		[ 'agenda', 'cita_confirmada_cliente', 'Cliente confirmó la cita por WhatsApp' ],
+		[ 'agenda', 'cita_cambio_solicitado', 'Cliente pidió cambiar la cita por WhatsApp' ],
 	];
 }
 
@@ -1851,6 +1853,7 @@ function crm_inst_notificaciones_settings_render() {
 		update_option( 'crm_inst_aviso_canal_whatsapp', ! empty( $_POST['crm_inst_aviso_canal_whatsapp'] ), false );
 		update_option( 'crm_inst_cierre_requiere_aprobacion', ! empty( $_POST['crm_inst_cierre_requiere_aprobacion'] ), false );
 		update_option( 'crm_inst_aviso_calendario_hora', max( 0, min( 23, (int) ( $_POST['crm_inst_aviso_calendario_hora'] ?? 9 ) ) ), false );
+		update_option( 'crm_inst_aviso_cliente_visita_email', ! empty( $_POST['crm_inst_aviso_cliente_visita_email'] ), false );
 		echo '<div style="padding:8px 12px;background:#d1fae5;color:#065f46;border-radius:6px;margin-bottom:10px;font-size:13px;">Configuración de notificaciones guardada.</div>';
 	}
 
@@ -1894,8 +1897,8 @@ function crm_inst_notificaciones_settings_render() {
 			</label>
 
 			<h4 style="margin:16px 0 8px;">Aviso de calendario (recordatorio día antes de la visita)</h4>
-			<p style="font-size:12.5px;color:#6b7280;margin:0 0 10px;">A la hora elegida del día ANTERIOR a cada visita agendada, se avisa a cliente (email), instalador asignado (in-app + email) y jefes/crm_admin (por sus propios canales, arriba).</p>
-			<p style="margin-bottom:16px;">
+			<p style="font-size:12.5px;color:#6b7280;margin:0 0 10px;">A la hora elegida del día ANTERIOR a cada visita agendada, se avisa a cliente (email + WhatsApp con botones de confirmación), instalador asignado (in-app + email + WhatsApp) y jefes/crm_admin (por sus propios canales, arriba).</p>
+			<p style="margin-bottom:10px;">
 				Enviar a las
 				<select name="crm_inst_aviso_calendario_hora">
 					<?php for ( $h = 0; $h <= 23; $h++ ) : ?>
@@ -1903,6 +1906,10 @@ function crm_inst_notificaciones_settings_render() {
 					<?php endfor; ?>
 				</select>
 			</p>
+			<label style="display:block;margin-bottom:16px;">
+				<input type="checkbox" name="crm_inst_aviso_cliente_visita_email" value="1" <?php checked( get_option( 'crm_inst_aviso_cliente_visita_email', false ) ); ?>>
+				Avisar también al cliente por email en el momento de agendar/reprogramar la visita (no solo con el recordatorio del día antes)
+			</label>
 
 			<h4 style="margin:16px 0 8px;">Cierre de instalación (instalador)</h4>
 			<label style="display:block;">
@@ -2236,7 +2243,7 @@ function crm_inst_aviso_calendario_run() {
 	$rows = $wpdb->get_results( $wpdb->prepare(
 		"SELECT a.id AS agenda_id, a.instalacion_id, a.fecha_cita, a.instalador_id,
 		        i.direccion_instalacion,
-		        c.cliente_nombre, c.email_cliente
+		        c.cliente_nombre, c.email_cliente, c.telefono
 		 FROM " . crm_inst_table_agenda() . " a
 		 INNER JOIN " . crm_inst_table_instalaciones() . " i ON i.id = a.instalacion_id
 		 LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id
@@ -2263,6 +2270,22 @@ function crm_inst_aviso_calendario_run() {
 				. ( $r['direccion_instalacion'] ? ' en ' . esc_html( $r['direccion_instalacion'] ) : '' ) . '.</p>'
 				. '<p style="color:#666;font-size:12px">Aviso automático del CRM.</p>';
 			wp_mail( $r['email_cliente'], 'Recordatorio: mañana tienes visita técnica', $body, [ 'Content-Type: text/html; charset=UTF-8' ] );
+		}
+		// v1.20.130 — Fase 8: confirmación de cita por WhatsApp (botones
+		// "Confirmo"/"Necesito cambiar"). La respuesta llega por el webhook
+		// de entrada (crm_whatsapp_webhook_recibir(), includes/whatsapp-api.php),
+		// que la correlaciona por teléfono + esta misma fila de agenda
+		// (marcada por `recordatorio_enviado_en`, sin necesitar un token
+		// aparte). Si no hay plantilla configurada, no se intenta nada —
+		// mismo criterio best-effort de siempre.
+		if ( ! empty( $r['telefono'] ) && function_exists( 'crm_whatsapp_configurado' ) && crm_whatsapp_configurado() ) {
+			$template_cliente = trim( (string) get_option( 'crm_whatsapp_template_confirmacion_visita_cliente', '' ) );
+			if ( $template_cliente !== '' ) {
+				$resultado_cliente = crm_whatsapp_enviar_plantilla( $r['telefono'], $template_cliente, [ $cliente_nombre, $fecha_label, $r['direccion_instalacion'] ?: '—' ] );
+				if ( is_wp_error( $resultado_cliente ) ) {
+					crm_whatsapp_log_error( $template_cliente, 'Confirmación de visita al cliente #' . $r['instalacion_id'] . ': ' . $resultado_cliente->get_error_message() );
+				}
+			}
 		}
 
 		// Instalador asignado — in-app + email, mismo canal que el resto de
@@ -4034,11 +4057,13 @@ function crm_inst_ajax_guardar_agenda() {
 		wp_send_json_error( [ 'message' => 'Asigna primero al menos un instalador a esta instalación.' ] );
 	}
 
-	$fecha_mysql    = date( 'Y-m-d H:i:s', $timestamp );
-	$cliente_nombre = $wpdb->get_var( $wpdb->prepare(
-		"SELECT c.cliente_nombre FROM " . crm_inst_table_instalaciones() . " i LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id WHERE i.id = %d",
+	$fecha_mysql = date( 'Y-m-d H:i:s', $timestamp );
+	$cliente_row = $wpdb->get_row( $wpdb->prepare(
+		"SELECT c.cliente_nombre, c.email_cliente, i.direccion_instalacion
+		 FROM " . crm_inst_table_instalaciones() . " i LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id WHERE i.id = %d",
 		$instalacion_id
-	) );
+	), ARRAY_A );
+	$cliente_nombre = $cliente_row['cliente_nombre'] ?? '';
 
 	foreach ( $instaladores_asignados as $instalador_id ) {
 		$instalador_id = (int) $instalador_id;
@@ -4077,6 +4102,19 @@ function crm_inst_ajax_guardar_agenda() {
 	}
 
 	crm_inst_log_action( $instalacion_id, 'agenda', 'programar_visita', 'Visita programada para ' . date_i18n( 'd/m/Y H:i', $timestamp ) . ' (' . count( $instaladores_asignados ) . ' instalador(es)).' );
+
+	// v1.20.130: hasta ahora el cliente no se enteraba de que había visita
+	// programada/reprogramada hasta el recordatorio del día antes (v1.20.127)
+	// — el usuario pidió poder avisarle también en el momento de agendar,
+	// como opción (por si prefiere que sea el instalador quien llame).
+	if ( (bool) get_option( 'crm_inst_aviso_cliente_visita_email', false ) && ! empty( $cliente_row['email_cliente'] ) && is_email( $cliente_row['email_cliente'] ) ) {
+		$fecha_visita_label_cliente = date_i18n( 'd/m/Y H:i', $timestamp );
+		$body_cliente = '<p>Hola' . ( $cliente_nombre ? ' ' . esc_html( $cliente_nombre ) : '' ) . ',</p>'
+			. '<p>Te confirmamos tu visita técnica para el <strong>' . esc_html( $fecha_visita_label_cliente ) . '</strong>'
+			. ( ! empty( $cliente_row['direccion_instalacion'] ) ? ' en ' . esc_html( $cliente_row['direccion_instalacion'] ) : '' ) . '.</p>'
+			. '<p style="color:#666;font-size:12px">Aviso automático del CRM.</p>';
+		wp_mail( $cliente_row['email_cliente'], 'Visita técnica programada', $body_cliente, [ 'Content-Type: text/html; charset=UTF-8' ] );
+	}
 
 	wp_send_json_success( [ 'fecha_cita_label' => date_i18n( 'd/m/Y H:i', $timestamp ) ] );
 }
@@ -6509,8 +6547,8 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 	$fases[] = [
 		'fase'    => 'Fase 8',
 		'titulo'  => 'Agente de notificación al cliente (confirmación de cita, encuesta)',
-		'estado'  => 'pendiente',
-		'detalle' => 'No empezado. Necesita webhooks de Meta (recibir respuestas), deliberadamente no configurados — hoy el canal WhatsApp solo envía, no recibe.',
+		'estado'  => 'en_pruebas',
+		'detalle' => 'v1.20.130 — primera pieza de "confirmación de cita": se construyó el webhook de ENTRADA de WhatsApp (Meta Cloud API), lo primero que el CRM RECIBE en vez de solo enviar. Al mandar el recordatorio del día antes (Fase 7), el cliente recibe también una plantilla con 2 botones ("Confirmo" / "Necesito cambiar"); la respuesta llega a un endpoint REST propio (`crm_whatsapp_webhook_recibir()`, includes/whatsapp-api.php, ruta `/wp-json/crm/v1/whatsapp-webhook`), verificado por firma HMAC con el App Secret de Meta, y se correlaciona por teléfono + la cita pendiente más próxima de ese cliente (sin token propio — reutiliza `recordatorio_enviado_en`). "Confirmo" marca la fila de agenda como `confirmada` (estado que existía en el schema desde el principio pero nunca se usaba); "Necesito cambiar" solo avisa a jefes para que contacten, no reagenda solo. ADVERTENCIA REAL: el formato exacto del payload que Meta manda al pulsar un botón se construyó según su documentación, sin verificar contra una respuesta real todavía — el payload completo queda siempre en Logs (`whatsapp_webhook_recibido`) para ajustar el parseo en cuanto llegue la primera respuesta real. Pendiente: encuesta de satisfacción (no empezada).',
 	];
 
 	$fases[] = [

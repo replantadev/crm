@@ -158,6 +158,7 @@ function crm_whatsapp_settings_render() {
         'crm_whatsapp_template_instalador_visita'           => 'Visita programada/reprogramada (a instalador)',
         'crm_whatsapp_template_instalador_extra_resuelta'   => 'Partida extra resuelta (a instalador)',
         'crm_whatsapp_template_instalador_cierre_resuelto'  => 'Cierre resuelto (a instalador)',
+        'crm_whatsapp_template_confirmacion_visita_cliente' => 'Confirmación de cita (al cliente, con botones)',
     ];
     ?>
     <div class="crm-mail-canal" style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
@@ -268,6 +269,8 @@ function crm_whatsapp_test_parametros($opcion_plantilla) {
             return ['Partida extra de ejemplo', 'aprobado', home_url('/')];
         case 'crm_whatsapp_template_instalador_cierre_resuelto':
             return ['Cliente de prueba', 'aprobado', home_url('/')];
+        case 'crm_whatsapp_template_confirmacion_visita_cliente':
+            return ['Cliente de prueba', 'mañana 10:00', 'C/ Ejemplo 1, Madrid'];
         default:
             return [];
     }
@@ -294,6 +297,7 @@ function crm_whatsapp_ajax_test_envio() {
         'crm_whatsapp_template_instalador_visita',
         'crm_whatsapp_template_instalador_extra_resuelta',
         'crm_whatsapp_template_instalador_cierre_resuelto',
+        'crm_whatsapp_template_confirmacion_visita_cliente',
     ];
     if (!in_array($plantilla, $nombres_validos, true)) {
         wp_send_json_error(['message' => 'Plantilla no válida.']);
@@ -326,5 +330,198 @@ function crm_whatsapp_log_error($template_name, $mensaje, $http_code = null) {
             'error',
             ['template' => $template_name, 'http_code' => $http_code]
         );
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// v1.20.130 — Fase 8: webhook de ENTRADA. Hasta ahora WhatsApp solo enviaba
+// (todo lo de arriba en este archivo) — esto es lo primero que RECIBE algo
+// de Meta: la respuesta del cliente a los botones "Confirmo"/"Necesito
+// cambiar" de la plantilla de confirmación de cita.
+//
+// IMPORTANTE — sin verificar empíricamente todavía: el payload exacto que
+// Meta manda al pulsar un botón de plantilla se ha construido según su
+// documentación pública, no contra una respuesta real. Por eso
+// crm_whatsapp_webhook_recibir() registra SIEMPRE el payload completo en el
+// log — la primera respuesta real dirá si el parseo hay que ajustarlo.
+//
+// Endpoint público (Meta no puede autenticarse como un usuario de
+// WordPress): REST API de WP, no una página ni un shortcode. No pasa por
+// admin-lockdown.php (eso solo bloquea /wp-admin/, no /wp-json/).
+// ──────────────────────────────────────────────────────────────────────────────
+
+add_action('rest_api_init', function () {
+    register_rest_route('crm/v1', '/whatsapp-webhook', [
+        [
+            'methods'             => 'GET',
+            'callback'            => 'crm_whatsapp_webhook_verificar',
+            'permission_callback' => '__return_true',
+        ],
+        [
+            'methods'             => 'POST',
+            'callback'            => 'crm_whatsapp_webhook_recibir',
+            'permission_callback' => '__return_true',
+        ],
+    ]);
+});
+
+/**
+ * Handshake que Meta hace UNA vez al guardar la URL del webhook en su panel
+ * (y cada vez que se vuelve a verificar) — responde con el "challenge" tal
+ * cual si el token coincide.
+ *
+ * Los parámetros que manda Meta llevan puntos (`hub.mode`, no `hub_mode`) —
+ * PHP convierte automáticamente los puntos de los nombres de parámetros de
+ * query string en guiones bajos al rellenar $_GET, así que leerlos con
+ * guion bajo aquí es lo correcto, no un error.
+ */
+function crm_whatsapp_webhook_verificar(WP_REST_Request $request) {
+    $modo      = $request->get_param('hub_mode');
+    $token     = (string) $request->get_param('hub_verify_token');
+    $challenge = $request->get_param('hub_challenge');
+
+    $token_esperado = get_option('crm_whatsapp_webhook_verify_token', '');
+    if ($modo === 'subscribe' && $token !== '' && $token_esperado !== '' && hash_equals((string) $token_esperado, $token)) {
+        return new WP_REST_Response($challenge, 200);
+    }
+    return new WP_REST_Response('Token de verificación no válido.', 403);
+}
+
+/**
+ * Recibe los eventos reales. Meta manda un POST por cada mensaje/cambio de
+ * estado — solo nos interesa cuando alguien pulsa un botón de la plantilla
+ * de confirmación de cita; el resto se ignora silenciosamente.
+ */
+function crm_whatsapp_webhook_recibir(WP_REST_Request $request) {
+    $body_raw = $request->get_body();
+
+    // Verificación de firma (HMAC con el App Secret de Meta) — sin secreto
+    // configurado no se puede verificar de verdad; se procesa igual en ese
+    // caso (mejor que bloquear todo el flujo por un ajuste sin rellenar),
+    // pero en cuanto haya secreto, una firma que no cuadre se rechaza.
+    $secreto = trim((string) get_option('crm_whatsapp_app_secret', ''));
+    if ($secreto !== '') {
+        $firma_recibida  = (string) $request->get_header('x_hub_signature_256');
+        $firma_calculada = 'sha256=' . hash_hmac('sha256', $body_raw, $secreto);
+        if ($firma_recibida === '' || !hash_equals($firma_calculada, $firma_recibida)) {
+            if (function_exists('crm_log_action')) {
+                crm_log_action('whatsapp_webhook_firma_invalida', 'Webhook de WhatsApp recibido con firma inválida o ausente.', null, 0, 'error');
+            }
+            return new WP_REST_Response(['status' => 'firma inválida'], 403);
+        }
+    }
+
+    $payload = json_decode($body_raw, true);
+    if (function_exists('crm_log_action')) {
+        // Barato y útil de guardar siempre — sobre todo mientras no se ha
+        // verificado el formato real contra un envío de verdad.
+        crm_log_action('whatsapp_webhook_recibido', wp_json_encode($payload), null, 0, 'info');
+    }
+
+    $mensajes = $payload['entry'][0]['changes'][0]['value']['messages'] ?? [];
+    foreach ((array) $mensajes as $mensaje) {
+        crm_whatsapp_webhook_procesar_mensaje($mensaje);
+    }
+
+    return new WP_REST_Response(['status' => 'ok'], 200);
+}
+
+/**
+ * Un mensaje entrante = normalmente el clic de un botón. Se intenta leer el
+ * texto/payload del botón de varias formas posibles (distintas versiones de
+ * la API de Meta lo colocan en sitios algo distintos) — sin verificación
+ * real todavía, ver nota al principio de esta sección.
+ */
+function crm_whatsapp_webhook_procesar_mensaje($mensaje) {
+    $telefono_from = (string) ($mensaje['from'] ?? '');
+    if ($telefono_from === '') {
+        return;
+    }
+    $accion = strtolower((string) (
+        $mensaje['button']['payload']
+        ?? $mensaje['interactive']['button_reply']['id']
+        ?? $mensaje['button']['text']
+        ?? $mensaje['interactive']['button_reply']['title']
+        ?? $mensaje['text']['body']
+        ?? ''
+    ));
+    if ($accion === '') {
+        return;
+    }
+
+    $confirma = strpos($accion, 'confirm') !== false;
+    $cambio   = strpos($accion, 'cambi') !== false;
+    if (!$confirma && !$cambio) {
+        return;
+    }
+
+    if (!function_exists('crm_inst_table_agenda') || !function_exists('crm_inst_table_instalaciones')) {
+        return;
+    }
+
+    global $wpdb;
+    // El número que llega de Meta no lleva "+" ni espacios — comparar por
+    // los últimos 9 dígitos es más robusto que un match exacto contra lo
+    // que cada cliente tenga guardado (con o sin prefijo de país).
+    $sufijo = substr(preg_replace('/[^0-9]/', '', $telefono_from), -9);
+    if ($sufijo === '') {
+        return;
+    }
+
+    $cliente = $wpdb->get_row($wpdb->prepare(
+        "SELECT id, cliente_nombre FROM {$wpdb->prefix}crm_clients WHERE telefono LIKE %s ORDER BY id DESC LIMIT 1",
+        '%' . $wpdb->esc_like($sufijo)
+    ), ARRAY_A);
+    if (!$cliente) {
+        if (function_exists('crm_log_action')) {
+            crm_log_action('whatsapp_webhook_cliente_no_encontrado', 'Respuesta de WhatsApp de un número no reconocido: ' . $telefono_from, null, 0, 'notice');
+        }
+        return;
+    }
+
+    // La cita "pendiente de confirmar" más próxima de ese cliente: la que ya
+    // recibió el recordatorio (`recordatorio_enviado_en`, v1.20.127) y sigue
+    // sin resolverse. No hace falta un token propio — el teléfono + "la
+    // próxima cita a la que ya se le pidió confirmación" es suficiente para
+    // el caso normal (una visita activa a la vez).
+    $agenda_row = $wpdb->get_row($wpdb->prepare(
+        "SELECT a.id, a.instalacion_id, a.fecha_cita
+         FROM " . crm_inst_table_agenda() . " a
+         INNER JOIN " . crm_inst_table_instalaciones() . " i ON i.id = a.instalacion_id
+         WHERE i.client_id = %d
+           AND a.recordatorio_enviado_en IS NOT NULL
+           AND a.estado = 'pendiente'
+           AND a.fecha_cita >= %s
+         ORDER BY a.fecha_cita ASC
+         LIMIT 1",
+        (int) $cliente['id'],
+        current_time('mysql')
+    ), ARRAY_A);
+    if (!$agenda_row) {
+        if (function_exists('crm_log_action')) {
+            crm_log_action('whatsapp_webhook_sin_cita_pendiente', 'Respuesta de WhatsApp de ' . $cliente['cliente_nombre'] . ' sin ninguna cita pendiente de confirmar.', (int) $cliente['id'], 0, 'notice');
+        }
+        return;
+    }
+
+    $instalacion_id = (int) $agenda_row['instalacion_id'];
+    $fecha_label    = function_exists('date_i18n') ? date_i18n('d/m/Y H:i', strtotime($agenda_row['fecha_cita'])) : $agenda_row['fecha_cita'];
+    $url_ficha      = add_query_arg('id', $instalacion_id, home_url('/instalacion/'));
+
+    if ($confirma) {
+        $wpdb->update(crm_inst_table_agenda(), ['estado' => 'confirmada'], ['id' => (int) $agenda_row['id']]);
+        if (function_exists('crm_inst_log_action')) {
+            crm_inst_log_action($instalacion_id, 'agenda', 'cita_confirmada_cliente', 'El cliente confirmó por WhatsApp la visita del ' . $fecha_label . '.');
+        }
+        if (function_exists('crm_notificar_jefes_instalaciones')) {
+            crm_notificar_jefes_instalaciones('cita_confirmada_cliente', 'El cliente confirmó la visita — ' . $cliente['cliente_nombre'] . '.', $url_ficha);
+        }
+    } elseif ($cambio) {
+        if (function_exists('crm_inst_log_action')) {
+            crm_inst_log_action($instalacion_id, 'agenda', 'cita_cambio_solicitado', 'El cliente pidió cambiar por WhatsApp la visita del ' . $fecha_label . '.');
+        }
+        if (function_exists('crm_notificar_jefes_instalaciones')) {
+            crm_notificar_jefes_instalaciones('cita_cambio_solicitado', 'El cliente pidió cambiar la visita — ' . $cliente['cliente_nombre'] . '. Contactar para reagendar.', $url_ficha);
+        }
     }
 }

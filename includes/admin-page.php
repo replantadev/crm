@@ -235,6 +235,14 @@ function crm_register_admin_settings() {
             return ( $n >= 0 && $n <= 23 ) ? $n : 9;
         },
     ]);
+    // v1.20.130 — avisar también al cliente por email en el momento de
+    // agendar/reprogramar (antes solo se enteraba con el recordatorio del
+    // día antes, v1.20.127).
+    register_setting('crm_settings', 'crm_inst_aviso_cliente_visita_email', [
+        'type'              => 'boolean',
+        'default'           => false,
+        'sanitize_callback' => function ($v) { return !empty($v); },
+    ]);
     register_setting('crm_settings', 'crm_whatsapp_template_recordatorio_visita', [
         'type'              => 'string',
         'default'           => '',
@@ -262,6 +270,27 @@ function crm_register_admin_settings() {
             'sanitize_callback' => 'sanitize_text_field',
         ]);
     }
+    // v1.20.130 — Fase 8: confirmación de cita por WhatsApp + webhook de entrada.
+    register_setting('crm_settings', 'crm_whatsapp_template_confirmacion_visita_cliente', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
+    register_setting('crm_settings', 'crm_whatsapp_webhook_verify_token', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
+    // Mismo patrón que el token de acceso: nunca se imprime de vuelta, un
+    // valor vacío al guardar conserva el que ya hubiera.
+    register_setting('crm_settings', 'crm_whatsapp_app_secret', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => function ($v) {
+            $v = trim((string) $v);
+            return $v === '' ? get_option('crm_whatsapp_app_secret', '') : $v;
+        },
+    ]);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1095,7 +1124,49 @@ function crm_admin_render_settings() {
                             <option value="<?php echo esc_attr($h); ?>" <?php selected($hora_cal_actual, $h); ?>><?php echo esc_html(sprintf('%02d:00', $h)); ?></option>
                         <?php endfor; ?>
                     </select>
-                    <p class="description">A esta hora del día ANTERIOR a cada visita agendada, se avisa a cliente (email), instalador asignado (in-app + email) y jefes/crm_admin (por sus propios canales).</p>
+                    <p class="description">A esta hora del día ANTERIOR a cada visita agendada, se avisa a cliente (email + WhatsApp con botones de confirmación, v1.20.130), instalador asignado (in-app + email + WhatsApp) y jefes/crm_admin (por sus propios canales).</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_inst_aviso_cliente_visita_email">Avisar al cliente al agendar</label></th>
+                <td>
+                    <label><input type="checkbox" id="crm_inst_aviso_cliente_visita_email" name="crm_inst_aviso_cliente_visita_email" value="1" <?php checked(get_option('crm_inst_aviso_cliente_visita_email', false)); ?>> Enviar un email al cliente en el momento de programar/reprogramar la visita (v1.20.130)</label>
+                    <p class="description">Desmarcado (por defecto): el cliente se entera de la visita solo con el recordatorio del día antes. Marcado, recibe también un email inmediato al agendar/reprogramar.</p>
+                </td>
+            </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Confirmación de cita por WhatsApp (Fase 8, v1.20.130)</h3></th></tr>
+            <tr>
+                <td colspan="2" style="padding-top:0;">
+                    <?php
+                    // Se autogenera al entrar aquí la primera vez — no tiene
+                    // sentido pedirle al usuario que invente un token seguro
+                    // a mano, y hace falta uno estable para pegar en Meta.
+                    $verify_token = trim((string) get_option('crm_whatsapp_webhook_verify_token', ''));
+                    if ($verify_token === '') {
+                        $verify_token = wp_generate_password(32, false);
+                        update_option('crm_whatsapp_webhook_verify_token', $verify_token, false);
+                    }
+                    ?>
+                    <p class="description" style="margin:0 0 10px;">Esto permite RECIBIR la respuesta del cliente (botones "Confirmo"/"Necesito cambiar") a la plantilla del recordatorio del día antes — hasta ahora WhatsApp solo enviaba. Configúralo en tu app de Meta → WhatsApp → Configuración → Webhooks:</p>
+                    <table style="margin-bottom:10px;">
+                        <tr><td style="padding:2px 8px 2px 0;"><strong>URL de retorno (Callback URL)</strong></td><td><code><?php echo esc_html(rest_url('crm/v1/whatsapp-webhook')); ?></code></td></tr>
+                        <tr><td style="padding:2px 8px 2px 0;"><strong>Token de verificación</strong></td><td><code><?php echo esc_html($verify_token); ?></code></td></tr>
+                        <tr><td style="padding:2px 8px 2px 0;"><strong>Campo a suscribir</strong></td><td><code>messages</code></td></tr>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_whatsapp_app_secret">App Secret</label></th>
+                <td>
+                    <input type="password" id="crm_whatsapp_app_secret" name="crm_whatsapp_app_secret" class="regular-text" value="" autocomplete="off" placeholder="<?php echo trim((string) get_option('crm_whatsapp_app_secret', '')) !== '' ? '•••••••••••••••• (guardado, deja en blanco para no cambiarlo)' : 'Meta → Configuración → Básica → Secreto de la aplicación'; ?>">
+                    <p class="description">Para comprobar que las llamadas al webhook son de verdad de Meta (firma HMAC), no para llamar a la API — es un dato distinto del token de acceso de arriba. Sin esto configurado, el webhook funciona igual pero sin verificar la firma.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_whatsapp_template_confirmacion_visita_cliente">Plantilla — confirmación de cita (cliente)</label></th>
+                <td>
+                    <input type="text" id="crm_whatsapp_template_confirmacion_visita_cliente" name="crm_whatsapp_template_confirmacion_visita_cliente" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_confirmacion_visita_cliente', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
+                    <p class="description">Al cliente, junto con el recordatorio del día antes — debe tener 2 botones de respuesta rápida ("Confirmo la visita" / "Necesito cambiar la fecha") para que el webhook pueda interpretar la respuesta.</p>
                 </td>
             </tr>
             <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Presupuesto estancado (v1.20.127)</h3></th></tr>

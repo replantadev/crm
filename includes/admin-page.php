@@ -226,6 +226,29 @@ function crm_register_admin_settings() {
         'default'           => true,
         'sanitize_callback' => function ($v) { return !empty($v); },
     ]);
+    // v1.20.127 — Fase 7 · aviso de calendario (recordatorio día antes de visita).
+    register_setting('crm_settings', 'crm_inst_aviso_calendario_hora', [
+        'type'              => 'integer',
+        'default'           => 9,
+        'sanitize_callback' => function ($v) {
+            $n = (int) $v;
+            return ( $n >= 0 && $n <= 23 ) ? $n : 9;
+        },
+    ]);
+    register_setting('crm_settings', 'crm_whatsapp_template_recordatorio_visita', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
+    // v1.20.127 — Fase 7 · presupuesto estancado.
+    register_setting('crm_settings', 'crm_ventas_aviso_estancados_dias', [
+        'type'              => 'integer',
+        'default'           => 7,
+        'sanitize_callback' => function ($v) {
+            $n = (int) $v;
+            return $n >= 1 ? $n : 7;
+        },
+    ]);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1006,6 +1029,34 @@ function crm_admin_render_settings() {
                 <td>
                     <input type="text" id="crm_whatsapp_template_en_ejecucion" name="crm_whatsapp_template_en_ejecucion" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_en_ejecucion', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
                     <p class="description">Nombre exacto de la plantilla para avisar a jefes/crm_admin cuando el instalador marca la primera línea como montada ("cierre parcial").</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_whatsapp_template_recordatorio_visita">Plantilla — recordatorio de visita</label></th>
+                <td>
+                    <input type="text" id="crm_whatsapp_template_recordatorio_visita" name="crm_whatsapp_template_recordatorio_visita" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_recordatorio_visita', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
+                    <p class="description">Nombre exacto de la plantilla para el recordatorio a jefes/crm_admin el día antes de una visita agendada (v1.20.127). El cliente recibe su recordatorio por email, no por WhatsApp — no hay plantilla para ese caso todavía.</p>
+                </td>
+            </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Aviso de calendario (v1.20.127)</h3></th></tr>
+            <tr>
+                <th><label for="crm_inst_aviso_calendario_hora">Hora del recordatorio</label></th>
+                <td>
+                    <select id="crm_inst_aviso_calendario_hora" name="crm_inst_aviso_calendario_hora">
+                        <?php $hora_cal_actual = (int) get_option('crm_inst_aviso_calendario_hora', 9); ?>
+                        <?php for ($h = 0; $h <= 23; $h++) : ?>
+                            <option value="<?php echo esc_attr($h); ?>" <?php selected($hora_cal_actual, $h); ?>><?php echo esc_html(sprintf('%02d:00', $h)); ?></option>
+                        <?php endfor; ?>
+                    </select>
+                    <p class="description">A esta hora del día ANTERIOR a cada visita agendada, se avisa a cliente (email), instalador asignado (in-app + email) y jefes/crm_admin (por sus propios canales).</p>
+                </td>
+            </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Presupuesto estancado (v1.20.127)</h3></th></tr>
+            <tr>
+                <th><label for="crm_ventas_aviso_estancados_dias">Avisar tras</label></th>
+                <td>
+                    <input type="number" min="1" step="1" id="crm_ventas_aviso_estancados_dias" name="crm_ventas_aviso_estancados_dias" value="<?php echo esc_attr((int) get_option('crm_ventas_aviso_estancados_dias', 7)); ?>" style="width:70px;"> días sin aprobarse
+                    <p class="description">Avisa al comercial dueño del cliente (in-app + email) cuando un presupuesto de Holded lleva creado más de este número de días y sigue sin aprobar. Solo funciona si el cliente tiene un comercial asignado en su ficha — si no, queda anotado en Logs.</p>
                 </td>
             </tr>
         </table>

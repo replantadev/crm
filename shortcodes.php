@@ -543,6 +543,12 @@ function crm_admin_panel_widget() {
             <?php if (function_exists('crm_whatsapp_settings_render')) { crm_whatsapp_settings_render(); } ?>
         </div>
 
+        <!-- v1.20.127: aviso de presupuesto estancado al comercial -->
+        <div class="crm-panel-section">
+            <h3>Ventas — presupuesto estancado</h3>
+            <?php if (function_exists('crm_ventas_settings_render')) { crm_ventas_settings_render(); } ?>
+        </div>
+
         <!-- Log de Actividades -->
         <div class="crm-panel-section">
             <h3>Registro de actividades</h3>

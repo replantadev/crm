@@ -35,22 +35,166 @@ function crm_holded_get_estimates_cached() {
 }
 
 /**
- * Mapa contact_id (Holded) => ['id'=>client_id, 'nombre'=>...] para poder
- * enlazar cada presupuesto a la ficha de cliente del CRM cuando exista.
+ * Mapa contact_id (Holded) => ['id'=>client_id, 'nombre'=>..., 'user_id'=>...]
+ * para poder enlazar cada presupuesto a la ficha de cliente del CRM cuando
+ * exista. `user_id` (v1.20.127) es el comercial dueño del cliente en el
+ * CRM — el único camino real que existe hoy para resolver un presupuesto de
+ * Holded a una cuenta de WordPress notificable (el mapa
+ * `crm_holded_usuarios_mapa` de Ajustes solo da un nombre, no una cuenta).
  *
- * @return array<string,array{id:int,nombre:string}>
+ * @return array<string,array{id:int,nombre:string,user_id:int}>
  */
 function crm_ventas_mapa_clientes_por_contact_id() {
     global $wpdb;
     $rows = $wpdb->get_results(
-        "SELECT id, cliente_nombre, holded_contact_id FROM {$wpdb->prefix}crm_clients WHERE holded_contact_id IS NOT NULL AND holded_contact_id != ''",
+        "SELECT id, cliente_nombre, holded_contact_id, user_id FROM {$wpdb->prefix}crm_clients WHERE holded_contact_id IS NOT NULL AND holded_contact_id != ''",
         ARRAY_A
     );
     $mapa = [];
     foreach ((array) $rows as $r) {
-        $mapa[$r['holded_contact_id']] = ['id' => (int) $r['id'], 'nombre' => $r['cliente_nombre']];
+        $mapa[$r['holded_contact_id']] = ['id' => (int) $r['id'], 'nombre' => $r['cliente_nombre'], 'user_id' => (int) $r['user_id']];
     }
     return $mapa;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Fase 7 · presupuesto estancado (v1.20.127): avisa al comercial dueño del
+// cliente cuando un presupuesto lleva demasiado sin moverse. Confirmado con
+// el usuario 2026-09-20: "estancado" = lleva X días sin cambiar de estado
+// (umbral configurable, por defecto 7) — cubre también el caso más
+// específico de "sigue enviado sin respuesta", que es un caso particular de
+// éste. LIMITACIÓN REAL: la lista de /estimates de Holded no trae una fecha
+// de "última actualización", solo `date` (fecha de creación) — no hay forma
+// de saber si un presupuesto llevaba ya tiempo en un estado y cambió a otro
+// reciente sin traerse el detalle de cada uno (caro, ~1000 llamadas). Por
+// eso el reloj de "estancado" es días desde la CREACIÓN, no desde el último
+// cambio real — en la práctica es el mismo dato para el caso típico
+// (presupuesto que nunca se aprobó), pero uno que SÍ cambió de estado y
+// volvió a quedarse quieto no se detectaría hasta que Holded exponga esa
+// fecha en el listado.
+// ──────────────────────────────────────────────────────────────────────────────
+
+function crm_ventas_aviso_estancados_schedule_cron() {
+    if (!wp_next_scheduled('crm_ventas_aviso_estancados_cron_hourly')) {
+        wp_schedule_event(time() + 900, 'hourly', 'crm_ventas_aviso_estancados_cron_hourly');
+    }
+}
+add_action('init', function () {
+    if (!wp_doing_cron() && !wp_next_scheduled('crm_ventas_aviso_estancados_cron_hourly')) {
+        crm_ventas_aviso_estancados_schedule_cron();
+    }
+}, 20);
+
+add_action('crm_ventas_aviso_estancados_cron_hourly', 'crm_ventas_aviso_estancados_run');
+/**
+ * Recorre los presupuestos cacheados, marca como "estancado" el que lleva
+ * más de N días creado y sigue en borrador (`draft`), y avisa UNA VEZ al
+ * comercial dueño del cliente (si se puede resolver a una cuenta real) —
+ * dedup vía un option con los IDs ya avisados, no se repite aunque siga
+ * estancado en pasadas futuras.
+ */
+function crm_ventas_aviso_estancados_run() {
+    $hoy = current_time('Y-m-d');
+    if (get_option('crm_ventas_aviso_estancados_last_run', '') === $hoy) {
+        return;
+    }
+    update_option('crm_ventas_aviso_estancados_last_run', $hoy, false);
+
+    if (!function_exists('crm_holded_get_estimates_cached')) {
+        return;
+    }
+    $estimates = crm_holded_get_estimates_cached();
+    if (is_wp_error($estimates) || empty($estimates)) {
+        return;
+    }
+
+    $dias_umbral = max(1, (int) get_option('crm_ventas_aviso_estancados_dias', 7));
+    $limite_ts   = current_time('timestamp') - ($dias_umbral * DAY_IN_SECONDS);
+    $clientes    = crm_ventas_mapa_clientes_por_contact_id();
+    $avisados    = get_option('crm_ventas_estancados_avisados', []);
+    if (!is_array($avisados)) {
+        $avisados = [];
+    }
+
+    foreach ($estimates as $e) {
+        if (empty($e['draft'])) {
+            continue; // Ya aprobado/rechazado — no está estancado.
+        }
+        $doc_id = (string) ($e['id'] ?? $e['document_number'] ?? '');
+        if ($doc_id === '' || isset($avisados[$doc_id])) {
+            continue;
+        }
+        $fecha_ts = !empty($e['date']) ? strtotime((string) $e['date']) : false;
+        if ($fecha_ts === false || $fecha_ts > $limite_ts) {
+            continue; // Todavía no llega al umbral de días.
+        }
+
+        $contact_id = (string) ($e['contact_id'] ?? '');
+        $cliente    = $clientes[$contact_id] ?? null;
+        $comercial_id = $cliente['user_id'] ?? 0;
+        $cliente_nombre = $cliente['nombre'] ?? ($e['contact_name'] ?? 'cliente sin nombre');
+        $mensaje = 'Presupuesto ' . ($e['document_number'] ?? $doc_id) . ' de ' . $cliente_nombre . ' lleva más de ' . $dias_umbral . ' días sin aprobarse.';
+        $url = $cliente ? add_query_arg('client_id', $cliente['id'], home_url('/editar-cliente/')) : '';
+
+        if ($comercial_id > 0) {
+            $user = get_userdata($comercial_id);
+            if ($user) {
+                if (function_exists('crm_notificar')) {
+                    crm_notificar($comercial_id, 'presupuesto_estancado', $mensaje, $url);
+                }
+                if (!empty($user->user_email)) {
+                    $body = '<p>' . esc_html($mensaje) . '</p>';
+                    if ($url !== '') {
+                        $body .= '<p><a href="' . esc_url($url) . '">Ver ficha del cliente</a></p>';
+                    }
+                    $body .= '<p style="color:#666;font-size:12px">Aviso automático del CRM.</p>';
+                    wp_mail($user->user_email, '[CRM] Presupuesto estancado', $body, ['Content-Type: text/html; charset=UTF-8']);
+                }
+            }
+        } elseif (function_exists('crm_log_action')) {
+            // Sin comercial resoluble: se registra igualmente para que quede
+            // visible en Logs, en vez de perderse en silencio.
+            crm_log_action('presupuesto_estancado_sin_comercial', $mensaje, $cliente['id'] ?? null, 0, 'notice');
+        }
+
+        $avisados[$doc_id] = current_time('mysql');
+    }
+
+    update_option('crm_ventas_estancados_avisados', $avisados, false);
+}
+
+/**
+ * Ajustes de "Presupuesto estancado" para el FRONTEND (`/panel-de-control/`)
+ * — mismo patrón ya usado para email/WhatsApp/notificaciones de
+ * instalaciones: crm_admin no puede entrar a wp-admin, así que cualquier
+ * ajuste operativo necesita también su versión aquí.
+ */
+function crm_ventas_settings_render() {
+    if (!current_user_can('crm_admin')) {
+        return;
+    }
+    $nonce_action = 'crm_ventas_settings_guardar';
+    if (isset($_POST['crm_ventas_settings_guardar']) && wp_verify_nonce($_POST['crm_ventas_nonce'] ?? '', $nonce_action)) {
+        update_option('crm_ventas_aviso_estancados_dias', max(1, (int) ($_POST['crm_ventas_aviso_estancados_dias'] ?? 7)), false);
+        echo '<div style="padding:8px 12px;background:#d1fae5;color:#065f46;border-radius:6px;margin-bottom:10px;font-size:13px;">Configuración guardada.</div>';
+    }
+    $dias = (int) get_option('crm_ventas_aviso_estancados_dias', 7);
+    ?>
+    <div class="crm-mail-canal" style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
+        <h4 style="margin:0 0 8px;">Presupuesto estancado</h4>
+        <p style="font-size:12.5px;color:#6b7280;margin:0 0 10px;">Avisa al comercial dueño del cliente (in-app + email) cuando un presupuesto de Holded lleva demasiados días creado y sigue sin aprobarse. Solo puede avisar si el cliente en el CRM tiene un comercial asignado (campo "Comercial" de la ficha) — si no, queda anotado en Logs sin avisar a nadie.</p>
+        <form method="post">
+            <?php wp_nonce_field($nonce_action, 'crm_ventas_nonce'); ?>
+            <input type="hidden" name="crm_ventas_settings_guardar" value="1">
+            <p>
+                Avisar cuando lleve más de
+                <input type="number" min="1" step="1" name="crm_ventas_aviso_estancados_dias" value="<?php echo esc_attr($dias); ?>" style="width:60px;">
+                días sin aprobarse
+            </p>
+            <p><button type="submit" class="crm-btn">Guardar</button></p>
+        </form>
+    </div>
+    <?php
 }
 
 /**
@@ -272,7 +416,7 @@ add_filter('crm_roadmap_fases', function ($fases) {
         'fase'    => 'Ventas',
         'titulo'  => 'Menú "Ventas": presupuestos de Holded y resumen mensual',
         'estado'  => 'en_pruebas',
-        'detalle' => 'Presupuestos (todos los de Holded, con estado y cliente enlazado) y Resumen (generados/aprobados/importe por mes). Confirmado 2026-09-17: la topbar del CRM ya se ve bien en las 2 páginas (antes mostraban el header de Astra, v1.20.108). Sigue sin confirmar el contenido en sí — los datos de presupuestos/resumen con carga real de Holded (puede tardar la primera vez con muchos presupuestos).',
+        'detalle' => 'Presupuestos (todos los de Holded, con estado y cliente enlazado) y Resumen (generados/aprobados/importe por mes). Confirmado 2026-09-17: la topbar del CRM ya se ve bien en las 2 páginas (antes mostraban el header de Astra, v1.20.108). Sigue sin confirmar el contenido en sí — los datos de presupuestos/resumen con carga real de Holded (puede tardar la primera vez con muchos presupuestos). v1.20.127: `crm_ventas_mapa_clientes_por_contact_id()` ahora también resuelve el comercial (user_id) de cada cliente — lo usa el nuevo aviso de "presupuesto estancado" (ver Fase 7 en el roadmap de instalaciones).',
     ];
     return $fases;
 });

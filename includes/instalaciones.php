@@ -199,6 +199,7 @@ function crm_instalaciones_install_tables() {
   fecha_cita DATETIME NOT NULL,
   estado ENUM('pendiente','confirmada','reagendada') NOT NULL DEFAULT 'pendiente',
   instalador_id BIGINT(20) UNSIGNED NOT NULL,
+  recordatorio_enviado_en DATETIME DEFAULT NULL,
   PRIMARY KEY  (id),
   KEY instalacion_id (instalacion_id),
   KEY instalador_id (instalador_id),
@@ -1777,11 +1778,13 @@ function crm_inst_notificaciones_settings_render() {
 		update_option( 'crm_inst_aviso_canal_email', ! empty( $_POST['crm_inst_aviso_canal_email'] ), false );
 		update_option( 'crm_inst_aviso_canal_whatsapp', ! empty( $_POST['crm_inst_aviso_canal_whatsapp'] ), false );
 		update_option( 'crm_inst_cierre_requiere_aprobacion', ! empty( $_POST['crm_inst_cierre_requiere_aprobacion'] ), false );
+		update_option( 'crm_inst_aviso_calendario_hora', max( 0, min( 23, (int) ( $_POST['crm_inst_aviso_calendario_hora'] ?? 9 ) ) ), false );
 		echo '<div style="padding:8px 12px;background:#d1fae5;color:#065f46;border-radius:6px;margin-bottom:10px;font-size:13px;">Configuración de notificaciones guardada.</div>';
 	}
 
 	$dias_antes = (int) get_option( 'crm_inst_aviso_dias_antes', 3 );
 	$hora       = (int) get_option( 'crm_inst_aviso_hora', 9 );
+	$hora_cal   = (int) get_option( 'crm_inst_aviso_calendario_hora', 9 );
 	?>
 	<div class="crm-mail-canal" style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
 		<form method="post">
@@ -1817,6 +1820,17 @@ function crm_inst_notificaciones_settings_render() {
 					<span style="color:#9ca3af;">(sin efecto hasta que WhatsApp esté conectado, más abajo)</span>
 				<?php endif; ?>
 			</label>
+
+			<h4 style="margin:16px 0 8px;">Aviso de calendario (recordatorio día antes de la visita)</h4>
+			<p style="font-size:12.5px;color:#6b7280;margin:0 0 10px;">A la hora elegida del día ANTERIOR a cada visita agendada, se avisa a cliente (email), instalador asignado (in-app + email) y jefes/crm_admin (por sus propios canales, arriba).</p>
+			<p style="margin-bottom:16px;">
+				Enviar a las
+				<select name="crm_inst_aviso_calendario_hora">
+					<?php for ( $h = 0; $h <= 23; $h++ ) : ?>
+						<option value="<?php echo esc_attr( $h ); ?>" <?php selected( $hora_cal, $h ); ?>><?php echo esc_html( sprintf( '%02d:00', $h ) ); ?></option>
+					<?php endfor; ?>
+				</select>
+			</p>
 
 			<h4 style="margin:16px 0 8px;">Cierre de instalación (instalador)</h4>
 			<label style="display:block;">
@@ -2059,6 +2073,136 @@ function crm_inst_aviso_enviar_whatsapp_en_ejecucion( $cliente_nombre, $instalad
 		$resultado = crm_whatsapp_enviar_plantilla( $telefono, $template, [ $cliente_nombre, $instalador_nombre, $url ] );
 		if ( is_wp_error( $resultado ) ) {
 			crm_whatsapp_log_error( $template, 'Aviso "en ejecución" a jefe #' . $u->ID . ': ' . $resultado->get_error_message() );
+		}
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Fase 7 · aviso de calendario (v1.20.127): recordatorio el día antes de una
+// visita agendada — a cliente, instalador asignado y jefes/crm_admin,
+// confirmado con el usuario 2026-09-20. Cron independiente del de materiales
+// pendientes (hook y opción `_last_run` propios, para no pisarse entre sí).
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Registra el cron cada hora — la comprobación real solo actúa una vez al
+ * día, a la hora configurada (`crm_inst_aviso_calendario_hora`). Mismo
+ * patrón que `crm_inst_aviso_schedule_cron()`.
+ */
+function crm_inst_aviso_calendario_schedule_cron() {
+	if ( ! wp_next_scheduled( 'crm_inst_aviso_calendario_cron_hourly' ) ) {
+		wp_schedule_event( time() + 600, 'hourly', 'crm_inst_aviso_calendario_cron_hourly' );
+	}
+}
+add_action( 'init', function () {
+	if ( ! wp_doing_cron() && ! wp_next_scheduled( 'crm_inst_aviso_calendario_cron_hourly' ) ) {
+		crm_inst_aviso_calendario_schedule_cron();
+	}
+}, 20 );
+
+add_action( 'crm_inst_aviso_calendario_cron_hourly', 'crm_inst_aviso_calendario_run' );
+/**
+ * Busca filas de agenda (una por instalación+instalador) con visita mañana
+ * que todavía no llevan recordatorio enviado, y avisa a los 3 implicados.
+ * El dedup es POR FILA (`recordatorio_enviado_en`), no un flag global por
+ * día como el de materiales pendientes — así una instalación con 2
+ * instaladores asignados avisa a cada uno independientemente, y si el cron
+ * se relanza a mano no se duplica nada ya enviado.
+ */
+function crm_inst_aviso_calendario_run() {
+	$hoy = current_time( 'Y-m-d' );
+	if ( get_option( 'crm_inst_aviso_calendario_last_run', '' ) === $hoy ) {
+		return;
+	}
+	$hora_config = (int) get_option( 'crm_inst_aviso_calendario_hora', 9 );
+	if ( (int) current_time( 'G' ) !== $hora_config ) {
+		return;
+	}
+	update_option( 'crm_inst_aviso_calendario_last_run', $hoy, false );
+
+	global $wpdb;
+	$manana        = date( 'Y-m-d', strtotime( '+1 day', current_time( 'timestamp' ) ) );
+	$manana_inicio = $manana . ' 00:00:00';
+	$manana_fin    = $manana . ' 23:59:59';
+
+	$rows = $wpdb->get_results( $wpdb->prepare(
+		"SELECT a.id AS agenda_id, a.instalacion_id, a.fecha_cita, a.instalador_id,
+		        i.direccion_instalacion,
+		        c.cliente_nombre, c.email_cliente
+		 FROM " . crm_inst_table_agenda() . " a
+		 INNER JOIN " . crm_inst_table_instalaciones() . " i ON i.id = a.instalacion_id
+		 LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id
+		 WHERE a.recordatorio_enviado_en IS NULL
+		   AND a.fecha_cita BETWEEN %s AND %s
+		   AND i.estado NOT IN ( 'finalizada', 'cancelada' )",
+		$manana_inicio, $manana_fin
+	), ARRAY_A );
+
+	if ( empty( $rows ) ) {
+		return;
+	}
+
+	foreach ( $rows as $r ) {
+		$fecha_label    = date_i18n( 'd/m/Y H:i', strtotime( $r['fecha_cita'] ) );
+		$cliente_nombre = $r['cliente_nombre'] ?: ( 'instalación #' . $r['instalacion_id'] );
+		$url            = add_query_arg( 'id', $r['instalacion_id'], home_url( '/instalacion/' ) );
+
+		// Cliente — por email (WhatsApp necesitaría una plantilla nueva
+		// aprobada por Meta, no construida en esta ronda).
+		if ( ! empty( $r['email_cliente'] ) && is_email( $r['email_cliente'] ) ) {
+			$body = '<p>Hola' . ( $r['cliente_nombre'] ? ' ' . esc_html( $r['cliente_nombre'] ) : '' ) . ',</p>'
+				. '<p>Te recordamos que <strong>mañana ' . esc_html( $fecha_label ) . '</strong> tienes programada una visita técnica'
+				. ( $r['direccion_instalacion'] ? ' en ' . esc_html( $r['direccion_instalacion'] ) : '' ) . '.</p>'
+				. '<p style="color:#666;font-size:12px">Aviso automático del CRM.</p>';
+			wp_mail( $r['email_cliente'], 'Recordatorio: mañana tienes visita técnica', $body, [ 'Content-Type: text/html; charset=UTF-8' ] );
+		}
+
+		// Instalador asignado — in-app + email, mismo canal que el resto de
+		// avisos al instalador (v1.20.110).
+		if ( (int) $r['instalador_id'] > 0 ) {
+			$mensaje_inst = 'Recordatorio: mañana ' . $fecha_label . ' tienes visita en ' . $cliente_nombre . '.';
+			crm_notificar( (int) $r['instalador_id'], 'recordatorio_visita', $mensaje_inst, $url );
+			if ( function_exists( 'crm_inst_email_instalador' ) ) {
+				crm_inst_email_instalador( (int) $r['instalador_id'], 'Recordatorio: visita mañana', $mensaje_inst, $url );
+			}
+		}
+
+		// Jefes/crm_admin — cada uno por sus propios canales (v1.20.126).
+		$mensaje_jefes = 'Visita mañana ' . $fecha_label . ' — ' . $cliente_nombre . '.';
+		if ( function_exists( 'crm_notificar_jefes_instalaciones' ) ) {
+			crm_notificar_jefes_instalaciones( 'recordatorio_visita', $mensaje_jefes, $url );
+		}
+		crm_inst_aviso_enviar_email_jefes( 'Recordatorio: visita mañana', $mensaje_jefes, $url );
+		crm_inst_aviso_recordatorio_enviar_whatsapp_jefes( $cliente_nombre, $fecha_label, $r['direccion_instalacion'], $url );
+
+		$wpdb->update( crm_inst_table_agenda(), [ 'recordatorio_enviado_en' => current_time( 'mysql' ) ], [ 'id' => (int) $r['agenda_id'] ] );
+		crm_inst_log_action( (int) $r['instalacion_id'], 'instalacion', 'recordatorio_visita_enviado', $mensaje_jefes );
+	}
+}
+
+/**
+ * Hermano por WhatsApp del recordatorio de visita a jefes — mismo patrón que
+ * `crm_inst_aviso_enviar_whatsapp_jefes()`, plantilla propia (necesita
+ * aprobación de Meta antes de poder usarse; si no hay nombre configurado,
+ * no se intenta nada).
+ */
+function crm_inst_aviso_recordatorio_enviar_whatsapp_jefes( $cliente_nombre, $fecha_label, $direccion, $url ) {
+	if ( ! function_exists( 'crm_whatsapp_configurado' ) || ! crm_whatsapp_configurado() ) {
+		return;
+	}
+	$template = trim( (string) get_option( 'crm_whatsapp_template_recordatorio_visita', '' ) );
+	if ( $template === '' ) {
+		return;
+	}
+	$users = get_users( [ 'role__in' => [ 'jefe_instalaciones', 'crm_admin' ], 'fields' => [ 'ID' ] ] );
+	foreach ( $users as $u ) {
+		$telefono = get_user_meta( (int) $u->ID, 'crm_whatsapp', true );
+		if ( empty( $telefono ) || ! crm_inst_notif_canal_habilitado( $u->ID, 'whatsapp' ) ) {
+			continue;
+		}
+		$resultado = crm_whatsapp_enviar_plantilla( $telefono, $template, [ $cliente_nombre, $fecha_label, $direccion ?: '—', $url ] );
+		if ( is_wp_error( $resultado ) ) {
+			crm_whatsapp_log_error( $template, 'Recordatorio de visita a jefe #' . $u->ID . ': ' . $resultado->get_error_message() );
 		}
 	}
 }
@@ -6109,15 +6253,15 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 	$fases[] = [
 		'fase'    => 'Fase 7 · aviso de calendario',
 		'titulo'  => 'Recordatorio el día antes de una visita agendada (cliente, instalador y jefes)',
-		'estado'  => 'pendiente',
-		'detalle' => 'No empezado. Confirmado con el usuario 2026-09-20: el recordatorio debe llegar a los 3 (cliente, instalador asignado, jefes/crm_admin), cada uno por sus propios canales.',
+		'estado'  => 'en_pruebas',
+		'detalle' => 'Cron propio (`crm_inst_aviso_calendario_cron_hourly`), hora configurable en Ajustes/Panel de control. Dedup por FILA de agenda (columna `recordatorio_enviado_en`), no un flag global por día — una instalación con 2 instaladores avisa a cada uno independientemente. Cliente: email. Instalador asignado: in-app + email. Jefes/crm_admin: in-app + email + WhatsApp, cada uno por sus propios canales (Fase 7 · canal por persona). La plantilla de WhatsApp a jefes es nueva (`crm_whatsapp_template_recordatorio_visita`) y necesita aprobación de Meta antes de poder usarse — mientras tanto ese tramo simplemente no envía nada, sin romper el resto. El cliente NO recibe por WhatsApp (necesitaría otra plantilla nueva, no construida). Construido, sin prueba real todavía.',
 	];
 
 	$fases[] = [
 		'fase'    => 'Fase 7 · presupuesto estancado',
 		'titulo'  => 'Aviso al comercial cuando un presupuesto de Holded lleva demasiado sin moverse',
-		'estado'  => 'pendiente',
-		'detalle' => 'No empezado. Confirmado con el usuario 2026-09-20: "estancado" = lleva X días sin cambiar de estado en Holded (umbral configurable por crm_admin, por defecto 7 días) — esto ya cubre el caso más específico de "sigue enviado sin respuesta", que es un caso particular de "no ha cambiado de estado". Pendiente de resolver en el diseño: hoy no existe ningún camino para saber qué usuario de WordPress es el comercial dueño de un presupuesto concreto (el mapa `crm_holded_usuarios_mapa` solo da un nombre, no una cuenta real) — habría que construirlo encadenando contact_id del presupuesto → holded_contact_id del cliente → user_id del cliente.',
+		'estado'  => 'en_pruebas',
+		'detalle' => 'Resuelto el hueco de diseño que bloqueaba esto: `crm_ventas_mapa_clientes_por_contact_id()` ahora también devuelve el `user_id` (comercial) del cliente en el CRM — encadenando contact_id del presupuesto → holded_contact_id del cliente → user_id, se puede avisar in-app + email al comercial real. Si el cliente no tiene comercial asignado en su ficha, queda anotado en Logs sin avisar a nadie (visible, no silencioso). Umbral configurable en Ajustes/Panel de control, por defecto 7 días. LIMITACIÓN REAL, documentada en el código (`includes/ventas.php`): Holded no expone en el listado de /estimates una fecha de "última actualización", solo la de creación — el reloj de "estancado" cuenta desde ahí, no desde el último cambio de estado real (en la práctica es el mismo dato para el caso típico de un presupuesto que nunca se aprobó). Dedup: se avisa UNA vez por presupuesto, nunca se repite aunque siga estancado semanas después. Construido, sin prueba real todavía (necesita un presupuesto real de prueba con más de N días y un cliente con comercial asignado).',
 	];
 
 	$fases[] = [

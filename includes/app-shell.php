@@ -434,8 +434,10 @@ function crm_app_shell_menu_items() {
             // sueltos — comercial/visitador conservan los enlaces planos de
             // arriba (Alta/Mis altas), sin dropdown, tal y como estaban.
             // v1.20.108: "Equipo" (antes "Resumen", mismo slug 'resumen') se
-            // mueve aquí dentro — el usuario pidió agruparlo con el resto en
-            // vez de dejarlo como enlace suelto al lado del desplegable.
+            // movió aquí dentro. v1.20.122: sale de aquí otra vez — el
+            // usuario pidió que "Equipo" fuera un ítem de primer nivel propio
+            // en vez de vivir escondido dentro de "Clientes" (ver el bloque
+            // 'Equipo' más abajo).
             'label' => 'Clientes',
             'icon'  => 'users',
             'roles' => ['administrator', 'crm_admin'],
@@ -444,7 +446,6 @@ function crm_app_shell_menu_items() {
                 ['label' => 'Mis clientes', 'slug' => 'mis-altas-de-cliente', 'icon' => 'list-bullets'],
                 ['label' => 'Todos los clientes', 'slug' => 'todas-las-altas-de-cliente', 'icon' => 'users'],
                 ['label' => 'Leads de marketing', 'slug' => 'asignar-leads', 'icon' => 'target'],
-                ['label' => 'Equipo', 'slug' => 'resumen', 'icon' => 'chart-bar'],
             ],
         ],
         [
@@ -457,6 +458,16 @@ function crm_app_shell_menu_items() {
                 ['label' => 'Presupuestos', 'slug' => 'ventas-presupuestos', 'icon' => 'file-text'],
                 ['label' => 'Resumen', 'slug' => 'ventas-resumen', 'icon' => 'chart-bar'],
             ],
+        ],
+        [
+            // v1.20.122: "Equipo" pasa de vivir dentro del desplegable
+            // "Clientes" (v1.20.108) a ser su propio ítem de primer nivel —
+            // pedido explícito del usuario. Mismo slug 'resumen' de siempre
+            // (histórico, la URL/página no cambia).
+            'label' => 'Equipo',
+            'slug'  => 'resumen',
+            'icon'  => 'chart-bar',
+            'roles' => ['administrator', 'crm_admin'],
         ],
         [
             'label'  => 'Mis leads',
@@ -901,7 +912,7 @@ add_filter('crm_roadmap_fases', function ($fases) {
         'fase'    => 'Menú',
         'titulo'  => 'Menú de administrator/crm_admin agrupado en "Clientes"/"Ventas" + menú hamburguesa en móvil',
         'estado'  => 'hecho',
-        'detalle' => 'Confirmado por el usuario funcionando en móvil (hamburguesa + acordeón) y en escritorio tras el fix del recorte por overflow del nav (v1.20.97). "Equipo" se movió dentro del desplegable "Clientes" (v1.20.108) y también confirmado. /flujos/, /ventas-presupuestos/ y /ventas-resumen/ mostraban el header de Astra en vez de la topbar (v1.20.108) — confirmado corregido 2026-09-17.',
+        'detalle' => 'Confirmado por el usuario funcionando en móvil (hamburguesa + acordeón) y en escritorio tras el fix del recorte por overflow del nav (v1.20.97). "Equipo" se movió dentro del desplegable "Clientes" (v1.20.108) y de vuelta a ítem de primer nivel propio (v1.20.122, a petición del usuario). /flujos/, /ventas-presupuestos/ y /ventas-resumen/ mostraban el header de Astra en vez de la topbar (v1.20.108) — confirmado corregido 2026-09-17.',
     ];
     return $fases;
 });

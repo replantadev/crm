@@ -336,6 +336,81 @@ function crm_logs_query(array $args = []) {
 }
 
 /**
+ * v1.20.128 — qué `action_type` del log general cuentan como "notificación
+ * enviada/respondida" hacia alguien fuera del propio cliente/comercial que
+ * mira la ficha. Combina los tipos propios del módulo de instalaciones
+ * (delegados vía `crm_inst_log_action()`, prefijo `inst_`, ver
+ * `crm_inst_notificacion_tipos()` en includes/instalaciones.php) con los
+ * de Ventas/presupuesto estancado y los de alta de cuenta comercial/admin.
+ * Un único sitio — si un módulo nuevo añade un aviso client_id-scoped,
+ * añadir aquí su action_type para que aparezca también en la ficha.
+ *
+ * @return string[]
+ */
+function crm_notificaciones_action_types() {
+    $tipos = [
+        'presupuesto_estancado_sin_comercial',
+        'presupuesto_estancado_avisado',
+        'notificacion_comercial_enviada',
+        'notificacion_comercial_error',
+        'notificacion_admin_enviada',
+        'notificacion_admin_error',
+    ];
+    if (function_exists('crm_inst_notificacion_tipos')) {
+        foreach (crm_inst_notificacion_tipos() as $t) {
+            $tipos[] = 'inst_' . $t[0] . '_' . $t[1];
+        }
+    }
+    return $tipos;
+}
+
+/**
+ * Notificaciones enviadas/respondidas de un cliente, para su ficha
+ * (`/editar-cliente/`) — mismo dato que ya existe en el log general
+ * (`crm_logs_query()`), filtrado a los `action_type` de
+ * `crm_notificaciones_action_types()` y buscado en TODOS los meses
+ * disponibles (no solo el actual, a diferencia del uso por defecto de
+ * `crm_logs_query()` en wp-admin → Logs).
+ *
+ * @param int $client_id
+ * @return string HTML listo para imprimir.
+ */
+function crm_cliente_render_notificaciones($client_id) {
+    $client_id = (int) $client_id;
+    if ($client_id <= 0) {
+        return '';
+    }
+    $tipos_validos = crm_notificaciones_action_types();
+    $resultado = crm_logs_query([
+        'client_id' => $client_id,
+        'months'    => crm_get_log_month_keys(),
+        'per_page'  => 100,
+    ]);
+    $filas = array_values(array_filter($resultado['rows'], function ($r) use ($tipos_validos) {
+        return in_array($r['action_type'], $tipos_validos, true);
+    }));
+
+    ob_start();
+    ?>
+    <div class="crm-section crm-section-notificaciones">
+        <h3 style="margin:0 0 6px;">Notificaciones</h3>
+        <p style="color:#6b7280;font-size:13px;margin:0 0 10px;">Avisos enviados a este cliente o sobre él (a un comercial, por ejemplo) — no incluye los de sus instalaciones que no tocan a este cliente directamente.</p>
+        <?php if (empty($filas)) : ?>
+            <p>Todavía no se ha enviado ninguna notificación sobre este cliente.</p>
+        <?php else : ?>
+            <?php foreach ($filas as $f) : ?>
+                <div style="font-size:12.5px;color:#4b5563;padding:6px 0;border-bottom:1px solid #f3f4f6;">
+                    <?php echo esc_html($f['details']); ?>
+                    <span style="float:right;color:#6b7280;"><?php echo esc_html(date_i18n('d/m/Y H:i', strtotime($f['created_at']))); ?></span>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+
+/**
  * Stream CSV de los logs según el filtro (sin paginar).
  *
  * NOTE: aborta el request escribiendo a stdout, debe llamarse solo desde

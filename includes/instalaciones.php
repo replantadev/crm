@@ -489,10 +489,15 @@ function crm_inst_log_action( $instalacion_id, $entity_type, $accion, $detalle, 
 			is_array( $context ) ? $context : [],
 			[ 'instalacion_id' => $instalacion_id ]
 		);
+		// v1.20.128: antes se pasaba SIEMPRE client_id=null aquí — el aviso
+		// nunca quedaba filtrable por cliente en el log general, aunque la
+		// instalación sí tenga un client_id real. Se resuelve (con caché
+		// estática por request, una sola consulta por instalación) para que
+		// la ficha de cliente pueda mostrar también estos avisos.
 		crm_log_action(
 			'inst_' . $entity_type . '_' . $accion,
 			$detalle,
-			null,
+			crm_inst_resolver_client_id( $instalacion_id ),
 			$user_id,
 			'info',
 			$general_context
@@ -500,6 +505,53 @@ function crm_inst_log_action( $instalacion_id, $entity_type, $accion, $detalle, 
 	}
 
 	return $result;
+}
+
+/**
+ * client_id de una instalación, con caché estática por request — se llama
+ * una vez por cada crm_inst_log_action(), que puede dispararse varias veces
+ * en la misma petición (p.ej. al declarar y luego notificar una partida
+ * extra), así que evita repetir la misma consulta de una fila.
+ */
+function crm_inst_resolver_client_id( $instalacion_id ) {
+	static $cache = [];
+	$instalacion_id = (int) $instalacion_id;
+	if ( ! array_key_exists( $instalacion_id, $cache ) ) {
+		global $wpdb;
+		$cache[ $instalacion_id ] = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT client_id FROM " . crm_inst_table_instalaciones() . " WHERE id = %d",
+			$instalacion_id
+		) );
+	}
+	return $cache[ $instalacion_id ] ?: null;
+}
+
+/**
+ * v1.20.128 — lista única de qué combinaciones (entity_type, accion) de
+ * `wp_crm_instalacion_log` cuentan como "notificación enviada/respondida" a
+ * alguien fuera del propio sistema (cliente, instalador, jefes, proveedor,
+ * comercial) — usada tanto para filtrar la sección "Notificaciones" de la
+ * ficha de instalación como para saber qué `action_type` del log general
+ * (`inst_{entity_type}_{accion}`) filtrar en la ficha de cliente. Un único
+ * sitio para las dos vistas, para que no se desincronicen entre sí.
+ *
+ * @return array<int, array{0:string,1:string,2:string}> [entity_type, accion, etiqueta]
+ */
+function crm_inst_notificacion_tipos() {
+	return [
+		[ 'instalacion', 'aviso_materiales_pendientes', 'Aviso de materiales pendientes → jefes' ],
+		[ 'instalacion', 'recordatorio_visita_enviado', 'Recordatorio de visita → cliente/instalador/jefes' ],
+		[ 'instalacion', 'aviso_instalacion_en_marcha_enviado', 'Instalación en marcha (cierre parcial) → jefes' ],
+		[ 'instalacion', 'notificar_proveedor', 'Aviso de pedido → proveedor' ],
+		[ 'instalacion', 'cierre_declarado', 'Cierre declarado por el instalador → jefes' ],
+		[ 'instalacion', 'cierre_aprobado', 'Cierre aprobado por el jefe → instalador' ],
+		[ 'instalacion', 'cierre_rechazado', 'Cierre rechazado por el jefe → instalador' ],
+		[ 'trabajo', 'extra_enviado_cliente', 'Partida extra enviada → cliente' ],
+		[ 'trabajo', 'extra_aprobado', 'Partida extra aprobada' ],
+		[ 'trabajo', 'extra_rechazado', 'Partida extra rechazada' ],
+		[ 'instalador', 'asignar', 'Instalación asignada → instalador' ],
+		[ 'agenda', 'programar_visita', 'Visita agendada/reprogramada → instalador' ],
+	];
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1587,6 +1639,25 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 		$instalacion_id
 	), ARRAY_A );
 
+	// v1.20.128: consulta propia (sin el LIMIT 50 de "Actividad" general, que
+	// podría dejar fuera un aviso viejo si hay mucho ruido de por medio) para
+	// la sección "Notificaciones" — filtrada a la lista blanca de
+	// crm_inst_notificacion_tipos(), en vez de mezclar avisos reales con
+	// ediciones internas (geocoding, vínculos de Holded, etc.).
+	$notificaciones = [];
+	foreach ( crm_inst_notificacion_tipos() as $tipo ) {
+		$notificaciones[] = $wpdb->prepare( "(l.entity_type = %s AND l.accion = %s)", $tipo[0], $tipo[1] );
+	}
+	$notificaciones = $wpdb->get_results(
+		"SELECT l.entity_type, l.accion, l.detalle, l.fecha, u.display_name
+		 FROM " . crm_inst_table_log() . " l
+		 LEFT JOIN {$wpdb->users} u ON u.ID = l.user_id
+		 WHERE l.instalacion_id = " . (int) $instalacion_id . "
+		   AND (" . implode( ' OR ', $notificaciones ) . ")
+		 ORDER BY l.fecha DESC",
+		ARRAY_A
+	);
+
 	// v1.20.102: una fila por instalador asignado, no una sola para toda la
 	// instalación — ver crm_inst_ajax_guardar_agenda().
 	$agenda_filas = $wpdb->get_results( $wpdb->prepare(
@@ -1648,6 +1719,7 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 		'agenda'              => $agenda ?: null,
 		'agenda_por_instalador' => $agenda_por_instalador,
 		'log'                 => $log,
+		'notificaciones'      => $notificaciones,
 		'cierre'              => [
 			'estado'               => $inst['cierre_estado'],
 			'conformidad'          => $inst['cierre_conformidad'] !== null ? (bool) $inst['cierre_conformidad'] : null,
@@ -2401,6 +2473,11 @@ function crm_inst_ajax_marcar_material_montado() {
 				wp_get_current_user()->display_name,
 				$url_ficha
 			);
+			// v1.20.128: el cambio de estado ya quedaba logueado (línea de
+			// arriba) pero el AVISO en sí — lo que de verdad interesa para
+			// la sección "Notificaciones" de la ficha — no tenía su propia
+			// entrada, a diferencia del resto de avisos de esta sección.
+			crm_inst_log_action( $instalacion_id, 'instalacion', 'aviso_instalacion_en_marcha_enviado', 'Aviso de "instalación en marcha" enviado a jefes/crm_admin (in-app + WhatsApp según canal de cada uno).' );
 		}
 	}
 
@@ -5275,12 +5352,28 @@ function crm_inst_shortcode_ficha() {
 
 				<div class="crm-inst-ficha-section">
 					<h4>Notificaciones</h4>
-					<p style="color:#6b7280;font-size:13px;">Asignación de instalador, agenda, partidas extra y cierre ya avisan por notificación in-app (campana arriba a la derecha). El aviso al cliente por WhatsApp/email (Fase 7 y 8 del plan) sigue pendiente de configurar credenciales:</p>
-					<div class="crm-inst-timeline">
-						<div class="crm-inst-timeline-step">Cliente notificado (lista)</div>
-						<div class="crm-inst-timeline-step">Reconfirmación día antes</div>
-						<div class="crm-inst-timeline-step">Encuesta de satisfacción</div>
-					</div>
+					<p style="color:#6b7280;font-size:13px;">Qué avisos se han enviado de esta instalación (a cliente, instalador, jefes o proveedor) y, cuando aplica, la respuesta — no es el registro completo de actividad (eso está más abajo), solo los eventos que salen del CRM hacia alguien.</p>
+					<?php
+					$notif_etiquetas = [];
+					foreach ( crm_inst_notificacion_tipos() as $t ) {
+						$notif_etiquetas[ $t[0] . ':' . $t[1] ] = $t[2];
+					}
+					?>
+					<?php if ( empty( $data['notificaciones'] ) ) : ?>
+						<p>Todavía no se ha enviado ningún aviso de esta instalación.</p>
+					<?php else : ?>
+						<?php foreach ( $data['notificaciones'] as $n ) :
+							$es_respuesta = in_array( $n['accion'], [ 'cierre_aprobado', 'cierre_rechazado', 'extra_aprobado', 'extra_rechazado' ], true );
+							$etiqueta = $notif_etiquetas[ $n['entity_type'] . ':' . $n['accion'] ] ?? $n['accion'];
+						?>
+							<div class="crm-inst-log-item">
+								<strong><?php echo $es_respuesta ? '✅ Respuesta' : '📤 Enviado'; ?>:</strong>
+								<?php echo esc_html( $etiqueta ); ?>
+								<span style="display:block;color:#6b7280;font-size:12.5px;"><?php echo esc_html( $n['detalle'] ); ?></span>
+								<span style="float:right;"><?php echo esc_html( date_i18n( 'd/m/Y H:i', strtotime( $n['fecha'] ) ) ); ?></span>
+							</div>
+						<?php endforeach; ?>
+					<?php endif; ?>
 				</div>
 
 				<div class="crm-inst-ficha-section">
@@ -6273,6 +6366,13 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		'titulo'  => 'Avisos por WhatsApp también al instalador (hoy solo in-app + email)',
 		'estado'  => 'pendiente',
 		'detalle' => 'Alcance nuevo, no un hueco de algo ya construido. Hoy el instalador solo recibe avisos por in-app + email (asignación, visita programada/reprogramada, partida extra aprobada/rechazada, cierre aprobado/rechazado) — nunca por WhatsApp, a diferencia de jefes/crm_admin y del cliente. Pedido por el usuario para más adelante: nueva instalación asignada, recordatorios de fecha (visita, cierre pendiente), etc. Por decidir antes de construir: qué eventos concretos avisan por este canal (no necesariamente todos los que hoy van por email), y las plantillas nuevas que Meta tendría que aprobar para cada uno — el campo crm_whatsapp del perfil del instalador ya existe y es reutilizable.',
+	];
+
+	$fases[] = [
+		'fase'    => 'Fase 7 · trazabilidad',
+		'titulo'  => 'Qué notificaciones se han enviado/respondido, visible en la ficha de instalación y de cliente',
+		'estado'  => 'en_pruebas',
+		'detalle' => 'Pedido explícito del usuario 2026-09-20: "todas las notis han de quedar anotadas y saber en la ficha de cliente y/o instalación qué notis se han enviado/respondido". La mayoría de los avisos YA quedaban registrados (`crm_inst_log_action()`), pero con 2 problemas reales: (1) la sección "Notificaciones" de la ficha de instalación era puramente decorativa — 3 pasos fijos sin datos reales, con texto ya desactualizado ("WhatsApp sigue pendiente de configurar"); (2) `crm_inst_log_action()` delegaba al log general con `client_id = null` SIEMPRE, así que ningún aviso de instalaciones era filtrable por cliente, y la ficha de cliente no mostraba ninguna notificación en absoluto. Corregido: nueva `crm_inst_resolver_client_id()` (caché por request) resuelve el client_id real de la instalación al delegar; nueva `crm_inst_notificacion_tipos()` (includes/instalaciones.php) es la lista única de qué combinaciones (entity_type, accion) cuentan como aviso real — la usan tanto la sección "Notificaciones" de la ficha de instalación (ahora con datos reales, distinguiendo "📤 Enviado" de "✅ Respuesta") como `crm_notificaciones_action_types()` (includes/logger.php) para la nueva sección "Notificaciones" de la ficha de cliente (`crm_cliente_render_notificaciones()`). De paso se tapó un hueco real: el aviso de "instalación en marcha" (cierre parcial) nunca tenía su propia entrada de log, solo el cambio de estado; y el caso normal de "presupuesto estancado SÍ avisado" (includes/ventas.php) tampoco quedaba anotado, solo el caso sin comercial.',
 	];
 
 	$fases[] = [

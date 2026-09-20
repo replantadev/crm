@@ -150,6 +150,12 @@ function crm_ventas_aviso_estancados_run() {
                     $body .= '<p style="color:#666;font-size:12px">Aviso automático del CRM.</p>';
                     wp_mail($user->user_email, '[CRM] Presupuesto estancado', $body, ['Content-Type: text/html; charset=UTF-8']);
                 }
+                // v1.20.128: antes solo quedaba anotado el caso "sin comercial
+                // resoluble" — el caso normal (sí se avisó a alguien) no
+                // dejaba ningún rastro consultable desde la ficha del cliente.
+                if (function_exists('crm_log_action')) {
+                    crm_log_action('presupuesto_estancado_avisado', $mensaje . ' Avisado: ' . $user->display_name . '.', $cliente['id'] ?? null, 0, 'info');
+                }
             }
         } elseif (function_exists('crm_log_action')) {
             // Sin comercial resoluble: se registra igualmente para que quede

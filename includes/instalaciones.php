@@ -5960,8 +5960,8 @@ MERMAID,
 	];
 
 	$diagramas[] = [
-		'title'       => 'WhatsApp Business — andamiaje sin credenciales todavía (v1.20.87)',
-		'description' => 'Construido antes de tener cuenta de ningún proveedor: nunca rompe nada si falta configurar algo, y el día que haya credenciales + plantillas aprobadas por Meta, empieza a enviar de verdad sin tocar código. Ver includes/whatsapp-api.php.',
+		'title'       => 'WhatsApp Business — conectado (Meta Cloud API, v1.20.113-121)',
+		'description' => 'Cuenta de Meta Business real, número dedicado y 3 plantillas creadas (aviso de materiales, validar partida extra, instalación en marcha) — pendientes de aprobación de Meta antes del primer envío real. Si algo falta configurar (token, plantilla), el aviso simplemente no se intenta y queda anotado en el log — nunca rompe el resto del flujo. Ajustes de solo lectura + botón de prueba en /panel-de-control/, edición completa en wp-admin → CRM → WhatsApp. Ver includes/whatsapp-api.php.',
 		'mermaid'     => <<<'MERMAID'
 flowchart TD
     A["Un flujo intenta avisar por WhatsApp (aviso materiales a jefes, o enviar partida extra al cliente)"] --> B{"crm_whatsapp_configurado() — token + phone_number_id en Ajustes"}
@@ -6003,8 +6003,8 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 	$fases[] = [
 		'fase'    => 'Fase 2',
 		'titulo'  => 'Alta de instalación desde un presupuesto de Holded',
-		'estado'  => 'en_pruebas',
-		'detalle' => 'Buscador de presupuestos aprobados, creación de cliente/instalación desde sus líneas — construido, sin una ronda de prueba formal todavía (con cliente nuevo y existente).',
+		'estado'  => 'hecho',
+		'detalle' => 'Buscador de presupuestos aprobados, creación de cliente/instalación desde sus líneas — probado con cliente nuevo y existente, confirmado por el usuario.',
 	];
 
 	// Fase 2bis (sincronización de clientes desde Holded) se registra ahora
@@ -6085,14 +6085,14 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		'fase'    => 'Fase 7 · resto',
 		'titulo'  => 'Canal por persona configurable, aviso de calendario, aviso de presupuesto estancado',
 		'estado'  => 'pendiente',
-		'detalle' => 'No empezado — depende en parte de que el canal WhatsApp deje de estar bloqueado.',
+		'detalle' => 'No empezado. El canal WhatsApp ya no está bloqueado (Fase 7 · WhatsApp) — esto puede arrancar en cuanto se decida el orden de prioridad.',
 	];
 
 	$fases[] = [
 		'fase'    => 'Fase 8',
 		'titulo'  => 'Agente de notificación al cliente (confirmación de cita, encuesta)',
 		'estado'  => 'pendiente',
-		'detalle' => 'No empezado — depende del canal WhatsApp (Fase 7) para el envío real.',
+		'detalle' => 'No empezado. Necesita webhooks de Meta (recibir respuestas), deliberadamente no configurados — hoy el canal WhatsApp solo envía, no recibe.',
 	];
 
 	$fases[] = [

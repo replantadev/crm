@@ -1754,6 +1754,82 @@ add_action( 'init', function () {
 	}
 }, 20 );
 
+/**
+ * v1.20.121 — ajustes de "Notificaciones de instalaciones" para el FRONTEND
+ * (`/panel-de-control/`). Hasta ahora estos ajustes (días de antelación,
+ * hora, y sobre todo los interruptores de canal in-app/email/WhatsApp de los
+ * avisos a jefes, más si el cierre del instalador requiere aprobación) solo
+ * existían en wp-admin → CRM → Ajustes — el mismo hueco ya corregido antes
+ * para email y WhatsApp: crm_admin no puede entrar a wp-admin, así que no
+ * podía activar/desactivar WhatsApp como canal de aviso sin pedirle a un
+ * administrator que entrara a tocarlo por él.
+ */
+function crm_inst_notificaciones_settings_render() {
+	if ( ! current_user_can( 'crm_admin' ) ) {
+		return;
+	}
+
+	$nonce_action = 'crm_inst_notificaciones_guardar';
+	if ( isset( $_POST['crm_inst_notificaciones_guardar'] ) && wp_verify_nonce( $_POST['crm_inst_notificaciones_nonce'] ?? '', $nonce_action ) ) {
+		update_option( 'crm_inst_aviso_dias_antes', max( 0, (int) ( $_POST['crm_inst_aviso_dias_antes'] ?? 3 ) ), false );
+		update_option( 'crm_inst_aviso_hora', max( 0, min( 23, (int) ( $_POST['crm_inst_aviso_hora'] ?? 9 ) ) ), false );
+		update_option( 'crm_inst_aviso_canal_inapp', ! empty( $_POST['crm_inst_aviso_canal_inapp'] ), false );
+		update_option( 'crm_inst_aviso_canal_email', ! empty( $_POST['crm_inst_aviso_canal_email'] ), false );
+		update_option( 'crm_inst_aviso_canal_whatsapp', ! empty( $_POST['crm_inst_aviso_canal_whatsapp'] ), false );
+		update_option( 'crm_inst_cierre_requiere_aprobacion', ! empty( $_POST['crm_inst_cierre_requiere_aprobacion'] ), false );
+		echo '<div style="padding:8px 12px;background:#d1fae5;color:#065f46;border-radius:6px;margin-bottom:10px;font-size:13px;">Configuración de notificaciones guardada.</div>';
+	}
+
+	$dias_antes = (int) get_option( 'crm_inst_aviso_dias_antes', 3 );
+	$hora       = (int) get_option( 'crm_inst_aviso_hora', 9 );
+	?>
+	<div class="crm-mail-canal" style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
+		<form method="post">
+			<?php wp_nonce_field( $nonce_action, 'crm_inst_notificaciones_nonce' ); ?>
+			<input type="hidden" name="crm_inst_notificaciones_guardar" value="1">
+
+			<h4 style="margin:0 0 8px;">Aviso de materiales pendientes (a jefes/crm_admin)</h4>
+			<p style="font-size:12.5px;color:#6b7280;margin:0 0 10px;">Si a esta distancia de la fecha de la visita todavía quedan materiales de Holded sin marcar "Recibido", se avisa cada día hasta que se resuelva.</p>
+			<p>
+				Avisar con
+				<input type="number" min="0" step="1" name="crm_inst_aviso_dias_antes" value="<?php echo esc_attr( $dias_antes ); ?>" style="width:60px;">
+				días antes de la visita, a las
+				<select name="crm_inst_aviso_hora">
+					<?php for ( $h = 0; $h <= 23; $h++ ) : ?>
+						<option value="<?php echo esc_attr( $h ); ?>" <?php selected( $hora, $h ); ?>><?php echo esc_html( sprintf( '%02d:00', $h ) ); ?></option>
+					<?php endfor; ?>
+				</select>
+			</p>
+			<p style="margin:10px 0 4px;font-weight:600;">Canales de este aviso (y del aviso de "instalación en marcha"/cierre parcial):</p>
+			<label style="display:block;margin-bottom:4px;">
+				<input type="checkbox" name="crm_inst_aviso_canal_inapp" value="1" <?php checked( get_option( 'crm_inst_aviso_canal_inapp', true ) ); ?>>
+				Notificación in-app (campana)
+			</label>
+			<label style="display:block;margin-bottom:4px;">
+				<input type="checkbox" name="crm_inst_aviso_canal_email" value="1" <?php checked( get_option( 'crm_inst_aviso_canal_email', true ) ); ?>>
+				Email
+			</label>
+			<label style="display:block;margin-bottom:10px;">
+				<input type="checkbox" name="crm_inst_aviso_canal_whatsapp" value="1" <?php checked( get_option( 'crm_inst_aviso_canal_whatsapp', false ) ); ?>>
+				WhatsApp
+				<?php if ( ! ( function_exists( 'crm_whatsapp_configurado' ) && crm_whatsapp_configurado() ) ) : ?>
+					<span style="color:#9ca3af;">(sin efecto hasta que WhatsApp esté conectado, más abajo)</span>
+				<?php endif; ?>
+			</label>
+
+			<h4 style="margin:16px 0 8px;">Cierre de instalación (instalador)</h4>
+			<label style="display:block;">
+				<input type="checkbox" name="crm_inst_cierre_requiere_aprobacion" value="1" <?php checked( get_option( 'crm_inst_cierre_requiere_aprobacion', false ) ); ?>>
+				El cierre que declara el instalador (conformidad + observaciones + fotos) queda pendiente hasta que un jefe de instalaciones lo valide
+			</label>
+			<p style="font-size:12.5px;color:#6b7280;margin:4px 0 0;">Desmarcado (por defecto): el cierre del instalador es definitivo al momento — la instalación pasa a "Finalizada" directamente.</p>
+
+			<p style="margin-top:14px;"><button type="submit" class="crm-btn">Guardar</button></p>
+		</form>
+	</div>
+	<?php
+}
+
 add_action( 'crm_inst_aviso_cron_hourly', 'crm_inst_aviso_materiales_pendientes_run' );
 /**
  * Comprueba instalaciones con visita agendada dentro de los próximos

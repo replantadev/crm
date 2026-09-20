@@ -531,6 +531,12 @@ function crm_admin_panel_widget() {
             <?php if (function_exists('crm_mail_settings_render_todo')) { crm_mail_settings_render_todo(); } ?>
         </div>
 
+        <!-- v1.20.121: ajustes de avisos de instalaciones (días/hora, canales in-app/email/WhatsApp, cierre del instalador) — mismo hueco que el email, solo existían en wp-admin -->
+        <div class="crm-panel-section">
+            <h3>Notificaciones de instalaciones</h3>
+            <?php if (function_exists('crm_inst_notificaciones_settings_render')) { crm_inst_notificaciones_settings_render(); } ?>
+        </div>
+
         <!-- v1.20.113: ajustes de WhatsApp Business — mismo hueco que el email, solo existían en wp-admin -->
         <div class="crm-panel-section">
             <h3>Notificaciones por WhatsApp</h3>

@@ -1622,9 +1622,17 @@ CSS;
  * mis-altas-de-cliente/todas-las-altas-de-cliente (crm-plugin.php) — un
  * único patrón de tabla ordenable en todo el CRM, no uno distinto por
  * pantalla.
+ *
+ * v1.20.135: el `$hook` que da WordPress para un submenú de un top-level
+ * personalizado NO es de fiar a ojo — se probó `'crm-dashboard_page_crm-clientes'`
+ * y nunca coincidía (confirmado en vivo: la consola no mostraba NINGÚN
+ * error de "no cargó el script", sino `$(...).DataTable is not a function`
+ * — la librería sencillamente nunca se encolaba). Comprobar `$_GET['page']`
+ * directamente es más simple y no depende de acertar el formato exacto del
+ * hook.
  */
 add_action('admin_enqueue_scripts', function ($hook) {
-    if ($hook !== 'crm-dashboard_page_crm-clientes') {
+    if (!isset($_GET['page']) || $_GET['page'] !== 'crm-clientes') {
         return;
     }
     wp_enqueue_script('datatables-js', 'https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js', ['jquery'], null, true);

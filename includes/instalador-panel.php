@@ -190,6 +190,33 @@ function crm_inst_panel_get_visitas_con_fecha($user_id) {
     return array_map('crm_inst_panel_format_visita_row', $rows);
 }
 
+/**
+ * v1.20.136 — mismo dato que `crm_inst_panel_get_visitas_con_fecha()` pero
+ * las citas YA TERMINADAS (finalizada/cancelada) — antes se mezclaban con
+ * las próximas/en ejecución en el mismo calendario sin ninguna distinción
+ * (el usuario reportó que podía confundir), ahora alimentan la pestaña
+ * "Histórico" aparte. Mismo criterio finalizada/cancelada que ya usa el
+ * resto del panel (`crm_inst_panel_get_visitas_con_fecha()`,
+ * `crm_inst_panel_siguiente_paso_texto()`) para "ya no queda nada por
+ * hacer" — no se inventa un criterio nuevo.
+ */
+function crm_inst_panel_get_visitas_historico($user_id) {
+    global $wpdb;
+    $rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT a.instalacion_id, a.fecha_cita, i.tipo_instalacion, i.subtipo_instalacion,
+                i.direccion_instalacion, i.lat, i.lng, i.cierre_estado, i.estado,
+                i.proveedor_pedido_estado, i.checklist_confirmado_en, c.cliente_nombre, c.telefono, c.email_cliente
+         FROM " . crm_inst_table_agenda() . " a
+         INNER JOIN " . crm_inst_table_instalaciones() . " i ON i.id = a.instalacion_id
+         LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id
+         WHERE a.instalador_id = %d AND i.estado IN ('finalizada', 'cancelada')
+         ORDER BY a.fecha_cita DESC",
+        (int) $user_id
+    ), ARRAY_A);
+
+    return array_map('crm_inst_panel_format_visita_row', $rows);
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Suscripción a Google Calendar / Apple Calendar (v1.20.102)
 //
@@ -1842,6 +1869,13 @@ function crm_inst_shortcode_panel_calendario() {
     $settings  = crm_inst_panel_get_settings();
     $nonce     = wp_create_nonce('crm_inst_holded');
     $con_fecha = crm_inst_panel_get_visitas_con_fecha($user_id);
+    // v1.20.136: el usuario reportó que las instalaciones ya hechas se
+    // mezclaban con las próximas/en ejecución en el mismo calendario, sin
+    // que se pudiera distinguir de un vistazo — se separan en una pestaña
+    // "Histórico" aparte (finalizada/cancelada), reservando el calendario
+    // principal para lo que de verdad requiere acción.
+    $historico = crm_inst_panel_get_visitas_historico($user_id);
+    $hoy_medianoche = new DateTime( 'today' );
 
     // v1.20.54: cada evento se pinta del color de SU estado (misma paleta que
     // las tarjetas y el resto del CRM — crm_instalaciones_estado_color()), no
@@ -1858,7 +1892,37 @@ function crm_inst_shortcode_panel_calendario() {
         } catch (Exception $e) {
             continue;
         }
+        // v1.20.136: si la fecha ya pasó pero la instalación sigue sin
+        // cerrarse (estado != finalizada/cancelada, por eso sigue en esta
+        // pestaña), se pinta atenuada — no desaparece, pero no se confunde
+        // con una visita de verdad próxima.
+        $pasada = $start < $hoy_medianoche;
+        $color  = $pasada ? '#cbd5e1' : $v['estado_color'];
         $eventos[] = [
+            'id'              => (int) $v['instalacion_id'],
+            'title'           => ($pasada ? '⏱ ' : '') . $v['cliente_nombre'],
+            'start'           => $start->format('Y-m-d\TH:i:s'),
+            'end'             => $end->format('Y-m-d\TH:i:s'),
+            'backgroundColor' => $color,
+            'borderColor'     => $color,
+            'textColor'       => $pasada ? '#475569' : null,
+        ];
+    }
+    $eventos_json = wp_json_encode($eventos);
+
+    $eventos_historico = [];
+    foreach ($historico as $v) {
+        if (empty($v['fecha_cita'])) {
+            continue;
+        }
+        try {
+            $start = new DateTime($v['fecha_cita']);
+            $end   = clone $start;
+            $end->modify('+60 minutes');
+        } catch (Exception $e) {
+            continue;
+        }
+        $eventos_historico[] = [
             'id'              => (int) $v['instalacion_id'],
             'title'           => $v['cliente_nombre'],
             'start'           => $start->format('Y-m-d\TH:i:s'),
@@ -1867,7 +1931,7 @@ function crm_inst_shortcode_panel_calendario() {
             'borderColor'     => $v['estado_color'],
         ];
     }
-    $eventos_json = wp_json_encode($eventos);
+    $eventos_historico_json = wp_json_encode($eventos_historico);
 
     ob_start();
     ?>
@@ -1883,6 +1947,12 @@ function crm_inst_shortcode_panel_calendario() {
     .crm-panel-inst-leyenda { display:flex; flex-wrap:wrap; gap:12px; margin-top:10px; }
     .crm-panel-inst-leyenda-item { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:#6b7280; }
     .crm-panel-inst-leyenda-dot { width:9px; height:9px; border-radius:50%; display:inline-block; }
+    /* v1.20.136: pestañas próximas/en ejecución vs histórico */
+    .crm-panel-inst-cal-tabs { display:flex; gap:6px; margin-bottom:12px; }
+    .crm-panel-inst-cal-tab { padding:7px 14px; border:1px solid #e5e7eb; border-radius:6px; background:#fff; color:#4b5563; font-size:13px; font-weight:600; cursor:pointer; }
+    .crm-panel-inst-cal-tab.is-active { background:#1f2937; border-color:#1f2937; color:#fff; }
+    .crm-panel-inst-cal-panel { display:none; }
+    .crm-panel-inst-cal-panel.is-active { display:block; }
     </style>
     <div class="crm-panel-inst-wrap">
         <h2 style="display:flex; align-items:center; gap:10px; margin-top:0; font-size:19px; color:#1f2937;">
@@ -1890,7 +1960,20 @@ function crm_inst_shortcode_panel_calendario() {
             Calendario
         </h2>
 
-        <div id="crm-panel-inst-calendar"></div>
+        <div class="crm-panel-inst-cal-tabs">
+            <button type="button" class="crm-panel-inst-cal-tab is-active" data-tab="proximas">Próximas / en ejecución</button>
+            <button type="button" class="crm-panel-inst-cal-tab" data-tab="historico">Histórico<?php echo !empty($historico) ? ' (' . count($historico) . ')' : ''; ?></button>
+        </div>
+
+        <div class="crm-panel-inst-cal-panel is-active" data-panel="proximas">
+            <div id="crm-panel-inst-calendar"></div>
+        </div>
+        <div class="crm-panel-inst-cal-panel" data-panel="historico">
+            <div id="crm-panel-inst-calendar-historico"></div>
+            <?php if (empty($historico)) : ?>
+                <p class="crm-panel-inst-empty" style="margin-top:14px;">Todavía no tienes ninguna instalación finalizada o cancelada.</p>
+            <?php endif; ?>
+        </div>
 
         <?php if (function_exists('crm_inst_ics_url_para_usuario')) : ?>
             <div class="crm-panel-inst-card" style="margin-top:16px;">
@@ -1926,7 +2009,7 @@ function crm_inst_shortcode_panel_calendario() {
             <p class="crm-panel-inst-empty" style="margin-top:14px;">No tienes ninguna visita programada todavía.</p>
         <?php endif; ?>
 
-        <?php foreach ($con_fecha as $v) :
+        <?php foreach (array_merge($con_fecha, $historico) as $v) :
             if (empty($v['fecha_cita'])) {
                 continue;
             }
@@ -1948,7 +2031,9 @@ function crm_inst_shortcode_panel_calendario() {
     <script>
     (function () {
         var eventos = <?php echo $eventos_json; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>;
+        var eventosHistorico = <?php echo $eventos_historico_json; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>;
         var mountEl = document.getElementById('crm-panel-inst-calendar');
+        var mountElHistorico = document.getElementById('crm-panel-inst-calendar-historico');
         var overlay = document.getElementById('crm-panel-inst-modal-overlay');
         var body    = document.getElementById('crm-panel-inst-modal-body');
         var closeBtn = document.getElementById('crm-panel-inst-modal-close');
@@ -1976,21 +2061,48 @@ function crm_inst_shortcode_panel_calendario() {
             }
         });
 
-        var calendar = new FullCalendar.Calendar(mountEl, {
+        var calendarOpts = {
             initialView: 'dayGridMonth',
             locale: 'es',
             firstDay: 1,
             height: 'auto',
             headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,listMonth' },
             buttonText: { today: 'Hoy', month: 'Mes', list: 'Lista' },
-            events: eventos,
             eventTimeFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
             eventClick: function (info) {
                 info.jsEvent.preventDefault();
                 openModal(info.event.id);
             }
-        });
+        };
+
+        var calendar = new FullCalendar.Calendar(mountEl, Object.assign({}, calendarOpts, { events: eventos }));
         calendar.render();
+
+        // v1.20.136: pestañas "Próximas/en ejecución" vs "Histórico" — el
+        // calendario de histórico se crea la primera vez que se abre esa
+        // pestaña (FullCalendar calcula el tamaño según el contenedor
+        // visible en ese momento; si se renderiza estando oculto sale mal).
+        var calendarHistorico = null;
+        document.querySelectorAll('.crm-panel-inst-cal-tab').forEach(function (tab) {
+            tab.addEventListener('click', function () {
+                document.querySelectorAll('.crm-panel-inst-cal-tab').forEach(function (t) { t.classList.remove('is-active'); });
+                document.querySelectorAll('.crm-panel-inst-cal-panel').forEach(function (p) { p.classList.remove('is-active'); });
+                tab.classList.add('is-active');
+                var panel = document.querySelector('.crm-panel-inst-cal-panel[data-panel="' + tab.getAttribute('data-tab') + '"]');
+                if (panel) { panel.classList.add('is-active'); }
+
+                if (tab.getAttribute('data-tab') === 'historico' && mountElHistorico) {
+                    if (!calendarHistorico) {
+                        calendarHistorico = new FullCalendar.Calendar(mountElHistorico, Object.assign({}, calendarOpts, { events: eventosHistorico }));
+                        calendarHistorico.render();
+                    } else {
+                        calendarHistorico.updateSize();
+                    }
+                } else {
+                    calendar.updateSize();
+                }
+            });
+        });
 
         var icsInput = document.getElementById('crm-panel-inst-ics-url');
         var icsBtn   = document.getElementById('crm-panel-inst-ics-copiar-btn');

@@ -1154,163 +1154,16 @@ button.remove-file {
     opacity: 1; 
 }
 
-/* === TABLAS MATERIAL DESIGN PARA IPAD === */
-
-.crm-table-container {
-    background: rgba(255, 255, 255, 0.98);
-    backdrop-filter: blur(20px);
-    border-radius: 24px;
-    padding: 32px;
-    margin: 24px auto;
-    max-width: 1400px;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    overflow: hidden;
-    position: relative;
-}
-
-.crm-table-container::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background: linear-gradient(90deg, #3b82f6, #8b5cf6, #06b6d4);
-    border-radius: 24px 24px 0 0;
-}
-
-.crm-table-header {
-    margin-bottom: 16px; /* Reducido de 28px */
-    text-align: center;
-    border-bottom: 2px solid rgba(15, 23, 42, 0.08);
-    padding-bottom: 12px; /* Reducido de 24px */
-}
-
-.crm-table-header h3 {
-    margin: 0 0 6px 0; /* Reducido de 12px */
-    color: rgb(15, 23, 42);
-    font-size: 20px; /* Reducido de 26px */
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px; /* Reducido de 12px */
-    line-height: 1.2;
-}
-
-.crm-logo-small {
-    width: 22px; /* Reducido de 28px */
-    height: 22px; /* Reducido de 28px */
-    border-radius: 6px;
-    vertical-align: middle;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.table-subtitle {
-    color: rgb(100, 116, 139);
-    font-size: 14px; /* Reducido de 16px */
-    margin: 0;
-    font-weight: 400;
-}
-
-.table-responsive {
-    overflow-x: auto;
-    border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
-    background: white;
-}
-
-.crm-table-material {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-    background: white;
-    border-radius: 16px;
-    overflow: hidden;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.05);
-}
-
-.crm-table-material thead {
-    background: linear-gradient(135deg, rgb(15, 23, 42) 0%, rgb(30, 41, 59) 50%, rgb(15, 23, 42) 100%);
-    position: relative;
-}
-
-.crm-table-material thead::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, #3b82f6, #8b5cf6);
-}
-
-.crm-table-material th {
-    padding: 18px 20px;
-    text-align: left;
-    font-weight: 600;
-    color: white;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    border: none;
-    position: relative;
-    white-space: nowrap;
-}
-
-.crm-table-material th:first-child {
-    border-top-left-radius: 16px;
-}
-
-.crm-table-material th:last-child {
-    border-top-right-radius: 16px;
-}
-
-.crm-table-material td {
-    padding: 16px 20px;
-    border-bottom: 1px solid rgba(15, 23, 42, 0.03);
-    color: rgb(15, 23, 42);
-    font-size: 14px;
-    vertical-align: middle;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    background: white;
-    line-height: 1.5;
-}
-
-.crm-table-material tbody tr {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.crm-table-material tbody tr:hover {
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.03), rgba(139, 92, 246, 0.02));
-    transform: translateY(-1px);
-    box-shadow: 0 4px 20px rgba(59, 130, 246, 0.08);
-}
-
-.crm-table-material tbody tr:last-child td:first-child {
-    border-bottom-left-radius: 16px;
-}
-
-.crm-table-material tbody tr:last-child td:last-child {
-    border-bottom-right-radius: 16px;
-}
-
-.crm-table-material tbody tr:last-child td {
-    border-bottom: none;
-}
-
-/* Columnas específicas optimizadas */
-.th-id { width: 70px; text-align: center; }
-.th-fecha { width: 110px; }
-.th-cliente { width: 200px; }
-.th-empresa { width: 180px; }
-.th-contacto { width: 160px; }
-.th-intereses { width: 140px; }
-.th-estado { width: 180px; }
-.th-updated { width: 120px; }
-.th-acciones { width: 140px; text-align: center; }
+/* v1.20.134: la generación "Material Design para iPad" de .crm-table-container/
+   .crm-table-header/.crm-table-material/.th-* que vivía aquí se ha quitado —
+   quedaba apilada sobre la generación más nueva de abajo ("TABLA MODERNA
+   UNIFICADA", ~línea 2900) sin que nadie borrara la vieja al escribir la
+   nueva. Como esta vieja NO redeclaraba `line-height` en su regla `td` pero
+   la nueva tampoco la tocaba, ese `line-height:1.5` colado desde aquí seguía
+   aplicándose a todas las tablas .crm-table-material del sitio (de ahí el
+   aspecto "muy alto" de los detalles bajo el nombre del cliente en Altas) —
+   causa real, no una sospecha. La única fuente de verdad para estas clases
+   es ahora el bloque "TABLA MODERNA UNIFICADA".*/
 
 /* Badges de estado con glassmorphism */
 .estado-badge {
@@ -1430,59 +1283,6 @@ button.remove-file {
     background: #fef2f2;
     transform: none;
     box-shadow: 0 1px 2px rgba(15,23,42,.06);
-}
-
-/* Responsive para iPad */
-@media (max-width: 1024px) {
-    .crm-table-container {
-        padding: 20px;
-        margin: 16px;
-        border-radius: 20px;
-    }
-    
-    .table-responsive {
-        border-radius: 12px;
-    }
-    
-    .crm-table-material {
-        border-radius: 12px;
-    }
-    
-    .crm-table-material th,
-    .crm-table-material td {
-        padding: 12px 16px;
-        font-size: 13px;
-    }
-    
-    .th-cliente, .th-empresa { 
-        width: 140px; 
-    }
-    
-    .th-contacto, .th-intereses { 
-        width: 110px; 
-    }
-}
-
-@media (max-width: 768px) {
-    .crm-table-container {
-        margin: 8px;
-        padding: 16px;
-        border-radius: 16px;
-    }
-    
-    .crm-table-material th,
-    .crm-table-material td {
-        padding: 8px 12px;
-        font-size: 12px;
-    }
-    
-    .crm-table-header h3 {
-        font-size: 20px;
-    }
-    
-    .table-subtitle {
-        font-size: 14px;
-    }
 }
 
 /* DataTables personalizado para Material Design */
@@ -3036,19 +2836,20 @@ button.aceptar-presupuesto{background:#25C685;color:#fff;font-size:12px;margin:4
 }
 
 .crm-table-header {
-    padding: 16px 20px;
+    padding: 10px 16px;
     border-bottom: 1px solid #f3f4f6;
     background: #fafbfc;
 }
 
 .crm-table-header h3 {
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
     color: #1f2937;
-    margin: 0 0 4px 0;
+    margin: 0 0 2px 0;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+    line-height: 1.3;
 }
 
 .crm-logo-small {
@@ -3098,9 +2899,34 @@ button.aceptar-presupuesto{background:#25C685;color:#fff;font-size:12px;margin:4
 }
 
 .crm-table-material tbody td {
-    padding: 12px 16px;
+    padding: 10px 14px;
     vertical-align: middle;
     color: #374151;
+    line-height: 1.35;
+}
+
+/* v1.20.134: celda "nombre + detalles" condensada — mismo tratamiento tanto
+   en crm_lista_altas() (PHP) como en todas-las-altasv2.js, para que las dos
+   vistas de clientes se vean iguales en vez de cada una a su aire. */
+.crm-table-material .cliente-info {
+    line-height: 1.4;
+}
+.crm-table-material .cliente-info strong {
+    display: block;
+    font-size: 13.5px;
+    color: #111827;
+}
+.crm-table-material .cliente-info .cliente-detalle {
+    display: block;
+    font-size: 11.5px;
+    color: #6b7280;
+    line-height: 1.5;
+}
+/* .email-link (más antigua, azul) pinta el color de los enlaces normales del
+   CRM — se respeta aquí en vez de dejar que .cliente-detalle lo tape de gris,
+   solo se toma de ahí el tamaño/interlineado condensado. */
+.crm-table-material .cliente-info .cliente-detalle.email-link {
+    color: #3b82f6;
 }
 
 /* Columnas específicas */

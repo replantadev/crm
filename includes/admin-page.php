@@ -538,8 +538,7 @@ function crm_admin_render_clientes() {
     </p>
 
     <p>
-        <input type="search" id="crm-clientes-buscar" placeholder="Buscar por nombre, email o comercial…" style="min-width:280px;">
-        <button type="button" class="button" id="crm-clientes-seleccionar-todos">Seleccionar visibles</button>
+        <button type="button" class="button" id="crm-clientes-seleccionar-todos">Seleccionar todos los filtrados</button>
         <button type="button" class="button" id="crm-clientes-deseleccionar">Deseleccionar todo</button>
         <button type="button" class="button button-link-delete" id="crm-clientes-borrar-btn" disabled>
             Eliminar seleccionados (<span id="crm-clientes-contador">0</span>)
@@ -547,106 +546,135 @@ function crm_admin_render_clientes() {
         <span id="crm-clientes-msg" style="margin-left:8px;font-size:13px;"></span>
     </p>
 
-    <table class="wp-list-table widefat fixed striped">
-        <thead>
-            <tr>
-                <th style="width:32px;"><input type="checkbox" id="crm-clientes-check-all"></th>
-                <th style="width:60px;">ID</th>
-                <th>Nombre</th>
-                <th>Email</th>
-                <th>Teléfono</th>
-                <th>Comercial</th>
-                <th>Origen</th>
-                <th>Estado</th>
-                <th>Instalaciones</th>
-                <th>Alta</th>
-            </tr>
-        </thead>
-        <tbody id="crm-clientes-tbody">
-            <?php if (empty($clientes)) : ?>
-                <tr><td colspan="10">No hay ningún cliente todavía.</td></tr>
-            <?php endif; ?>
-            <?php foreach ($clientes as $c) :
-                $n_inst = $instalaciones_por_cliente[(int) $c['id']] ?? 0;
-                $texto_busqueda = strtolower($c['cliente_nombre'] . ' ' . $c['email_cliente'] . ' ' . $c['delegado']);
-            ?>
-                <tr data-buscar="<?php echo esc_attr($texto_busqueda); ?>">
-                    <td><input type="checkbox" class="crm-cliente-check" value="<?php echo (int) $c['id']; ?>" data-nombre="<?php echo esc_attr($c['cliente_nombre']); ?>" data-inst="<?php echo (int) $n_inst; ?>"></td>
-                    <td><?php echo (int) $c['id']; ?></td>
-                    <td><?php echo esc_html($c['cliente_nombre']); ?></td>
-                    <td><?php echo esc_html($c['email_cliente']); ?></td>
-                    <td><?php echo esc_html($c['telefono']); ?></td>
-                    <td><?php echo esc_html($c['delegado']); ?></td>
-                    <td><?php echo esc_html($c['origen_lead']); ?></td>
-                    <td><?php echo esc_html($c['estado']); ?></td>
-                    <td><?php echo $n_inst > 0 ? (int) $n_inst : '—'; ?></td>
-                    <td><?php echo esc_html(!empty($c['fecha']) ? date_i18n('d/m/Y H:i', strtotime($c['fecha'])) : '—'); ?></td>
-                </tr>
-            <?php endforeach; ?>
-        </tbody>
-    </table>
+    <!-- v1.20.134: mismo sistema de tabla que el resto del CRM
+         (.crm-table-container/.crm-table-material, css/crm-styles.css) en
+         vez de las clases nativas de wp-admin — para que esta pantalla se
+         vea igual que las demás tablas de clientes, no distinta por vivir
+         en wp-admin. -->
+    <div class="crm-table-container">
+        <div class="table-responsive">
+            <table class="crm-table-material" id="crm-clientes-tabla">
+                <thead>
+                    <tr>
+                        <th style="width:32px;"><input type="checkbox" id="crm-clientes-check-all"></th>
+                        <th style="width:50px;">ID</th>
+                        <th>Nombre</th>
+                        <th>Email</th>
+                        <th>Teléfono</th>
+                        <th>Comercial</th>
+                        <th>Origen</th>
+                        <th>Estado</th>
+                        <th>Instalaciones</th>
+                        <th>Alta</th>
+                    </tr>
+                </thead>
+                <tbody id="crm-clientes-tbody">
+                    <?php foreach ($clientes as $c) :
+                        $n_inst = $instalaciones_por_cliente[(int) $c['id']] ?? 0;
+                    ?>
+                        <tr>
+                            <td><input type="checkbox" class="crm-cliente-check" value="<?php echo (int) $c['id']; ?>" data-nombre="<?php echo esc_attr($c['cliente_nombre']); ?>" data-inst="<?php echo (int) $n_inst; ?>"></td>
+                            <td><?php echo (int) $c['id']; ?></td>
+                            <td><?php echo esc_html($c['cliente_nombre']); ?></td>
+                            <td><?php echo esc_html($c['email_cliente']); ?></td>
+                            <td><?php echo esc_html($c['telefono']); ?></td>
+                            <td><?php echo esc_html($c['delegado']); ?></td>
+                            <td><?php echo esc_html($c['origen_lead']); ?></td>
+                            <td><?php echo esc_html($c['estado']); ?></td>
+                            <td><?php echo $n_inst > 0 ? (int) $n_inst : '—'; ?></td>
+                            <td data-order="<?php echo esc_attr(!empty($c['fecha']) ? strtotime($c['fecha']) : 0); ?>"><?php echo esc_html(!empty($c['fecha']) ? date_i18n('d/m/Y H:i', strtotime($c['fecha'])) : '—'); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php if (empty($clientes)) : ?>
+        <p>No hay ningún cliente todavía.</p>
+    <?php endif; ?>
 
     <script>
-    (function () {
-        var buscar   = document.getElementById('crm-clientes-buscar');
+    jQuery(function ($) {
+        var seleccionados = new Set();
+        var tablaEl = document.getElementById('crm-clientes-tabla');
         var checkAll = document.getElementById('crm-clientes-check-all');
-        var btnSeleccionarVisibles = document.getElementById('crm-clientes-seleccionar-todos');
+        var btnSeleccionarFiltrados = document.getElementById('crm-clientes-seleccionar-todos');
         var btnDeseleccionar = document.getElementById('crm-clientes-deseleccionar');
         var btnBorrar = document.getElementById('crm-clientes-borrar-btn');
         var contador  = document.getElementById('crm-clientes-contador');
         var msg       = document.getElementById('crm-clientes-msg');
-        var tbody     = document.getElementById('crm-clientes-tbody');
 
-        function filasVisibles() {
-            return Array.prototype.filter.call(tbody.querySelectorAll('tr[data-buscar]'), function (tr) {
-                return tr.style.display !== 'none';
-            });
-        }
-        function checksMarcados() {
-            return Array.prototype.filter.call(tbody.querySelectorAll('.crm-cliente-check'), function (cb) { return cb.checked; });
-        }
-        function actualizarContador() {
-            var marcados = checksMarcados();
-            contador.textContent = marcados.length;
-            btnBorrar.disabled = marcados.length === 0;
-        }
-
-        buscar.addEventListener('input', function () {
-            var termino = buscar.value.trim().toLowerCase();
-            tbody.querySelectorAll('tr[data-buscar]').forEach(function (tr) {
-                tr.style.display = tr.getAttribute('data-buscar').indexOf(termino) === -1 ? 'none' : '';
-            });
+        // v1.20.134: ordenable + paginable (DataTables, mismo patrón que
+        // mis-altas-de-cliente/todas-las-altas-de-cliente). La casilla no se
+        // puede ordenar; el resto sí, incluida "Alta" por su valor real
+        // (data-order) en vez del texto formateado.
+        var tabla = $(tablaEl).DataTable({
+            pageLength: 25,
+            order: [[1, 'desc']],
+            columnDefs: [{ orderable: false, targets: 0 }],
+            language: {
+                url: 'https://cdn.datatables.net/plug-ins/1.13.4/i18n/es-ES.json'
+            }
         });
 
+        // La selección se guarda por ID, no por casilla — así sobrevive a
+        // cambiar de página/orden/filtro (DataTables saca las filas de otras
+        // páginas del DOM visible).
+        function actualizarContador() {
+            contador.textContent = seleccionados.size;
+            btnBorrar.disabled = seleccionados.size === 0;
+        }
+        function sincronizarCasillasVisibles() {
+            tablaEl.querySelectorAll('.crm-cliente-check').forEach(function (cb) {
+                cb.checked = seleccionados.has(cb.value);
+            });
+        }
+
+        $(tablaEl).on('change', '.crm-cliente-check', function () {
+            if (this.checked) { seleccionados.add(this.value); } else { seleccionados.delete(this.value); }
+            actualizarContador();
+        });
+        tabla.on('draw', sincronizarCasillasVisibles);
+
         checkAll.addEventListener('change', function () {
-            filasVisibles().forEach(function (tr) {
-                var cb = tr.querySelector('.crm-cliente-check');
-                if (cb) { cb.checked = checkAll.checked; }
+            tablaEl.querySelectorAll('.crm-cliente-check').forEach(function (cb) {
+                cb.checked = checkAll.checked;
+                if (checkAll.checked) { seleccionados.add(cb.value); } else { seleccionados.delete(cb.value); }
             });
             actualizarContador();
         });
-        btnSeleccionarVisibles.addEventListener('click', function () {
-            filasVisibles().forEach(function (tr) {
-                var cb = tr.querySelector('.crm-cliente-check');
-                if (cb) { cb.checked = true; }
+        btnSeleccionarFiltrados.addEventListener('click', function () {
+            // Todas las filas que cumplen el filtro/búsqueda actual, en
+            // TODAS las páginas — no solo la página visible.
+            tabla.rows({ search: 'applied' }).nodes().to$().find('.crm-cliente-check').each(function () {
+                seleccionados.add(this.value);
             });
+            sincronizarCasillasVisibles();
             actualizarContador();
         });
         btnDeseleccionar.addEventListener('click', function () {
-            tbody.querySelectorAll('.crm-cliente-check').forEach(function (cb) { cb.checked = false; });
+            seleccionados.clear();
             checkAll.checked = false;
+            sincronizarCasillasVisibles();
             actualizarContador();
-        });
-        tbody.addEventListener('change', function (e) {
-            if (e.target.classList.contains('crm-cliente-check')) { actualizarContador(); }
         });
 
         btnBorrar.addEventListener('click', function () {
-            var marcados = checksMarcados();
-            if (marcados.length === 0) { return; }
-            var totalInst = marcados.reduce(function (sum, cb) { return sum + parseInt(cb.getAttribute('data-inst') || '0', 10); }, 0);
-            var nombres = marcados.slice(0, 8).map(function (cb) { return cb.getAttribute('data-nombre'); }).join(', ') + (marcados.length > 8 ? '…' : '');
-            var aviso = 'Vas a eliminar PERMANENTEMENTE ' + marcados.length + ' cliente(s):\n' + nombres;
+            if (seleccionados.size === 0) { return; }
+            var idsSeleccionados = Array.from(seleccionados);
+            var nombresPorId = {};
+            var totalInst = 0;
+            // tabla.rows().nodes() recorre TODAS las filas del dataset, no
+            // solo las de la página actual — DataTables mantiene el resto en
+            // memoria aunque no estén pintadas ahora mismo.
+            tabla.rows().nodes().to$().find('.crm-cliente-check').each(function () {
+                if (seleccionados.has(this.value)) {
+                    nombresPorId[this.value] = this.getAttribute('data-nombre');
+                    totalInst += parseInt(this.getAttribute('data-inst') || '0', 10);
+                }
+            });
+            var nombres = idsSeleccionados.slice(0, 8).map(function (id) { return nombresPorId[id] || ('#' + id); }).join(', ') + (idsSeleccionados.length > 8 ? '…' : '');
+            var aviso = 'Vas a eliminar PERMANENTEMENTE ' + idsSeleccionados.length + ' cliente(s):\n' + nombres;
             if (totalInst > 0) { aviso += '\n\nIncluye ' + totalInst + ' instalación(es) y todo lo colgado de ellas.'; }
             aviso += '\n\nEsto no se puede deshacer. ¿Seguro?';
             if (!window.confirm(aviso)) { return; }
@@ -658,7 +686,7 @@ function crm_admin_render_clientes() {
             var body = new URLSearchParams();
             body.set('action', 'crm_bulk_borrar_clientes');
             body.set('nonce', <?php echo wp_json_encode($nonce); ?>);
-            marcados.forEach(function (cb) { body.append('client_ids[]', cb.value); });
+            idsSeleccionados.forEach(function (id) { body.append('client_ids[]', id); });
 
             fetch(ajaxurl, { method: 'POST', body: body })
                 .then(function (r) { return r.json(); })
@@ -666,10 +694,12 @@ function crm_admin_render_clientes() {
                     if (resp.success) {
                         msg.style.color = '#065f46';
                         msg.textContent = resp.data.message;
-                        marcados.forEach(function (cb) {
-                            var fila = cb.closest('tr');
-                            if (fila) { fila.remove(); }
+                        idsSeleccionados.forEach(function (id) {
+                            var cb = tablaEl.querySelector('.crm-cliente-check[value="' + id + '"]');
+                            if (cb) { tabla.row($(cb).closest('tr')).remove(); }
+                            seleccionados.delete(id);
                         });
+                        tabla.draw(false);
                         actualizarContador();
                     } else {
                         msg.style.color = '#991b1b';
@@ -683,7 +713,7 @@ function crm_admin_render_clientes() {
                     btnBorrar.disabled = false;
                 });
         });
-    })();
+    });
     </script>
     <?php
     crm_admin_page_footer();
@@ -1584,6 +1614,21 @@ CSS;
     wp_register_style('crm-admin-inline', false);
     wp_enqueue_style('crm-admin-inline');
     wp_add_inline_style('crm-admin-inline', $css);
+});
+
+/**
+ * v1.20.134 — DataTables solo en wp-admin → CRM → Clientes, para ordenar y
+ * paginar. Mismo CDN/versión (1.13.4) + idioma español que ya se usa en
+ * mis-altas-de-cliente/todas-las-altas-de-cliente (crm-plugin.php) — un
+ * único patrón de tabla ordenable en todo el CRM, no uno distinto por
+ * pantalla.
+ */
+add_action('admin_enqueue_scripts', function ($hook) {
+    if ($hook !== 'crm-dashboard_page_crm-clientes') {
+        return;
+    }
+    wp_enqueue_script('datatables-js', 'https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js', ['jquery'], null, true);
+    wp_enqueue_style('datatables-css', 'https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css');
 });
 
 /* ---------------------------------------------------------------------------

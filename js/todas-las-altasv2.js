@@ -237,14 +237,21 @@ document.addEventListener("DOMContentLoaded", function () {
     }
     /* ----------  Construir celda “Cliente”  ---------- */
     function buildClienteCell(c) {
+        // v1.20.134: mismo tratamiento condensado que crm_lista_altas()
+        // (.cliente-info/.cliente-detalle en css/crm-styles.css) — antes
+        // esta vista imprimía las líneas sueltas con <br>, heredando el
+        // font-size/line-height completo de la celda (se veía más grande
+        // que la otra tabla de clientes) y sin saltarse los campos vacíos.
         const dir = c.direccion ? `${c.direccion}, ` : "";
         const city = c.poblacion || "";
-        return `
-    <strong>${c.cliente_nombre}</strong><br>
-    ${c.email_cliente}<br>
-    ${c.empresa}<br>
-    ${dir}${city}
-  `;
+        const direccionCompleta = (dir + city).trim();
+        let html = '<div class="cliente-info">';
+        html += `<strong>${c.cliente_nombre || ''}</strong>`;
+        if (c.email_cliente) { html += `<span class="cliente-detalle">${c.email_cliente}</span>`; }
+        if (c.empresa) { html += `<span class="cliente-detalle">${c.empresa}</span>`; }
+        if (direccionCompleta) { html += `<span class="cliente-detalle">${direccionCompleta}</span>`; }
+        html += '</div>';
+        return html;
     }
 
     /* ---------- Estado por sector ---------- */

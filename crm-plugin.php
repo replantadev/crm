@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.133
+Version: 1.20.134
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.133');
+define('CRM_PLUGIN_VERSION', '1.20.134');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -2906,19 +2906,24 @@ function crm_lista_altas()
                         return data;
                     }
                 },
-                { 
+                {
                     "data": "cliente_nombre",
                     "render": function(data, type, row) {
+                        // v1.20.134: mismo tratamiento condensado que
+                        // todas-las-altasv2.js (.cliente-info/.cliente-detalle
+                        // en css/crm-styles.css) — antes cada vista tenía su
+                        // propio tamaño de letra suelto en línea, ahora las 2
+                        // se ven iguales.
                         let html = '<div class="cliente-info">';
                         html += '<strong>' + data + '</strong>';
                         if (row.empresa) {
-                            html += '<br><span class="empresa-name" style="color: #666; font-size: 13px;">' + row.empresa + '</span>';
+                            html += '<span class="cliente-detalle">' + row.empresa + '</span>';
                         }
                         if (row.email_cliente) {
-                            html += '<br><a href="mailto:' + row.email_cliente + '" class="email-link" style="color: #007cba; font-size: 12px;">' + row.email_cliente + '</a>';
+                            html += '<a href="mailto:' + row.email_cliente + '" class="cliente-detalle email-link">' + row.email_cliente + '</a>';
                         }
                         if (crmData.see_all && row.comercial_nombre) {
-                            html += '<br><span style="display:inline-block; margin-top:3px; padding:1px 7px; background:#eef2ff; color:#3730a3; border-radius:10px; font-size:11px; font-weight:600;">Comercial: ' + row.comercial_nombre + '</span>';
+                            html += '<span class="cliente-detalle">Comercial: ' + row.comercial_nombre + '</span>';
                         }
                         html += '</div>';
                         return html;

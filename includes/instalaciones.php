@@ -2535,6 +2535,22 @@ function crm_inst_ajax_marcar_material_montado() {
 	}
 
 	if ( $montado ) {
+		// v1.20.133: bug real reportado por el usuario — se podía marcar una
+		// línea como montada sin haber confirmado antes el checklist
+		// (materiales recibidos + plan de seguridad aceptado,
+		// `checklist_confirmado_en`). La UI del panel del instalador ya
+		// oculta/bloquea este paso hasta confirmar el checklist, pero el
+		// servidor no lo exigía — mismo criterio que el respaldo autoritativo
+		// que ya existe en `crm_inst_ajax_confirmar_checklist()` (v1.20.73)
+		// para los materiales pendientes: no basta con que la UI lo impida,
+		// tiene que estar bloqueado también si alguien manipula la petición.
+		$checklist_confirmado_en = $wpdb->get_var( $wpdb->prepare(
+			"SELECT checklist_confirmado_en FROM " . crm_inst_table_instalaciones() . " WHERE id = %d",
+			$instalacion_id
+		) );
+		if ( empty( $checklist_confirmado_en ) ) {
+			wp_send_json_error( [ 'message' => 'Todavía no has confirmado el checklist (materiales recibidos + plan de seguridad) — confírmalo antes de marcar líneas como montadas.' ] );
+		}
 		$wpdb->update(
 			crm_inst_table_trabajos(),
 			[ 'montado_en' => current_time( 'mysql' ), 'montado_por' => $user_id ],

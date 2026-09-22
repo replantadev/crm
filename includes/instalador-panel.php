@@ -488,15 +488,28 @@ function crm_inst_panel_render_card(array $v, $con_fecha, $permitir_cierre = tru
                             $badge_text  = 'Pendiente de pedir';
                         }
                         $montado = !empty($m['montado_en']);
+                        // v1.20.133: bug real reportado por el usuario — esta
+                        // casilla solo se deshabilitaba con $permitir_cierre
+                        // (un flag de contexto de la tarjeta, sin relación),
+                        // nunca comprobaba si el checklist (materiales
+                        // recibidos + plan de seguridad) ya estaba
+                        // confirmado. Se podía marcar una línea como montada
+                        // antes de haber confirmado nada — el servidor ya
+                        // lo bloquea también (crm_inst_ajax_marcar_material_montado()),
+                        // esto es que la UI lo refleje sin necesitar el
+                        // viaje de ida y vuelta al servidor para enterarse.
+                        $checklist_ok = !empty($v['checklist_confirmado_en']);
                     ?>
                         <li class="crm-panel-inst-material-linea" data-trabajo-id="<?php echo esc_attr($m['id']); ?>">
                             <?php echo esc_html($m['unidades']); ?> × <span class="crm-panel-search-target" data-original="<?php echo esc_attr($m['descripcion']); ?>"><?php echo esc_html($m['descripcion']); ?></span>
                             <span class="crm-panel-inst-extra-badge crm-panel-inst-extra-badge-<?php echo esc_attr($badge_class === 'ok' ? 'aprobado' : ($badge_class === 'bajo' ? 'pendiente' : 'rechazado')); ?>"><?php echo esc_html($badge_text); ?></span>
-                            <label class="crm-panel-inst-material-montado-label">
-                                <input type="checkbox" class="crm-panel-inst-material-montado" data-trabajo-id="<?php echo esc_attr($m['id']); ?>" <?php checked($montado); ?> <?php disabled(!$permitir_cierre); ?>>
+                            <label class="crm-panel-inst-material-montado-label" <?php echo (!$checklist_ok && !$montado) ? 'title="Confirma primero el checklist de materiales y plan de seguridad, más abajo"' : ''; ?>>
+                                <input type="checkbox" class="crm-panel-inst-material-montado" data-trabajo-id="<?php echo esc_attr($m['id']); ?>" <?php checked($montado); ?> <?php disabled(!$permitir_cierre || !$checklist_ok); ?>>
                                 <span class="crm-panel-inst-material-montado-texto">
                                     <?php if ($montado) : ?>
                                         Montada <?php echo esc_html(date_i18n('d/m H:i', strtotime($m['montado_en']))); ?><?php echo $m['montado_por_nombre'] ? ' — ' . esc_html($m['montado_por_nombre']) : ''; ?>
+                                    <?php elseif (!$checklist_ok) : ?>
+                                        Confirma el checklist primero
                                     <?php else : ?>
                                         Marcar como montada
                                     <?php endif; ?>

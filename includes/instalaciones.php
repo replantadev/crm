@@ -53,6 +53,45 @@ function crm_inst_table_log() {
 	return $wpdb->prefix . 'crm_instalacion_log';
 }
 
+/**
+ * v1.20.132 — borrado completo de UNA instalación: las 5 tablas hijas
+ * (documentos, agenda, trabajos, instaladores, log) más la fila propia. Sin
+ * FK CONSTRAINT en este esquema (ver nota de `crm_instalaciones_install_tables()`
+ * más abajo), así que sin esto una instalación borrada a mano dejaría
+ * huérfanas sus 5 tablas — nunca hizo falta hasta ahora porque no existía
+ * NINGÚN borrado de instalación en todo el plugin. Usado por el borrado
+ * (individual y en lote) de clientes, `crm_purge_client_related_data()`
+ * en crm-plugin.php.
+ *
+ * @param int $instalacion_id
+ */
+function crm_inst_borrar_instalacion_completa( $instalacion_id ) {
+	$instalacion_id = (int) $instalacion_id;
+	if ( $instalacion_id <= 0 ) {
+		return;
+	}
+	global $wpdb;
+
+	// Los documentos llevan fichero subido de verdad — borrarlo también, no
+	// solo la fila de la tabla.
+	$documentos = $wpdb->get_results( $wpdb->prepare(
+		"SELECT ruta FROM " . crm_inst_table_documentos() . " WHERE instalacion_id = %d",
+		$instalacion_id
+	), ARRAY_A );
+	foreach ( (array) $documentos as $doc ) {
+		if ( ! empty( $doc['ruta'] ) && function_exists( 'crm_is_uploads_url' ) && function_exists( 'crm_delete_uploaded_file_by_url' ) && crm_is_uploads_url( $doc['ruta'] ) ) {
+			crm_delete_uploaded_file_by_url( $doc['ruta'] );
+		}
+	}
+
+	$wpdb->delete( crm_inst_table_documentos(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
+	$wpdb->delete( crm_inst_table_agenda(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
+	$wpdb->delete( crm_inst_table_trabajos(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
+	$wpdb->delete( crm_inst_table_instaladores(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
+	$wpdb->delete( crm_inst_table_log(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
+	$wpdb->delete( crm_inst_table_instalaciones(), [ 'id' => $instalacion_id ], [ '%d' ] );
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Creación / actualización de tablas (dbDelta)
 // ──────────────────────────────────────────────────────────────────────────────

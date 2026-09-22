@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.131
+Version: 1.20.132
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.131');
+define('CRM_PLUGIN_VERSION', '1.20.132');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -3398,6 +3398,67 @@ function crm_purge_client_related_data($client_id, array $client_data = []) {
         $wpdb->delete($wpdb->prefix . CRM_NOTES_TABLE, ['client_id' => $client_id], ['%d']);
     }
     $wpdb->delete($wpdb->prefix . 'crm_visitas', ['client_id' => $client_id], ['%d']);
+
+    // v1.20.132: hasta ahora borrar un cliente NO tocaba sus instalaciones
+    // (ni sus 5 tablas hijas: instaladores, trabajos, documentos, agenda,
+    // log) ni las filas del log de actividad que lo referencian — quedaban
+    // huérfanas con un client_id que ya no existe. No hay FK CONSTRAINT en
+    // este esquema (dbDelta no las gestiona, ver docblock de
+    // crm_instalaciones_install_tables()), así que la limpieza es 100% de
+    // código, aquí.
+    if (function_exists('crm_inst_table_instalaciones') && function_exists('crm_inst_borrar_instalacion_completa')) {
+        $instalacion_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT id FROM " . crm_inst_table_instalaciones() . " WHERE client_id = %d",
+            $client_id
+        ));
+        foreach ($instalacion_ids as $instalacion_id) {
+            crm_inst_borrar_instalacion_completa((int) $instalacion_id);
+        }
+    }
+    if (function_exists('crm_get_log_month_keys')) {
+        foreach (crm_get_log_month_keys() as $month) {
+            $wpdb->delete($wpdb->prefix . 'crm_activity_log_' . $month, ['client_id' => $client_id], ['%d']);
+        }
+    }
+}
+
+/**
+ * v1.20.132 — borrado real de un cliente (delete + purga completa + log),
+ * compartido por el borrado individual (`crm_borrar_cliente`) y el borrado
+ * en lote (`crm_ajax_bulk_borrar_clientes`) — antes esta secuencia solo
+ * vivía dentro del handler individual, duplicarla en el de lote se habría
+ * desincronizado tarde o temprano.
+ *
+ * @param int $client_id
+ * @return array{ok:bool, nombre:string}
+ */
+function crm_eliminar_cliente_completo($client_id) {
+    global $wpdb;
+    $client_id  = (int) $client_id;
+    $table_name = $wpdb->prefix . 'crm_clients';
+
+    $client_data = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $client_id), ARRAY_A);
+    if (!$client_data) {
+        return ['ok' => false, 'nombre' => ''];
+    }
+
+    $deleted = $wpdb->delete($table_name, ['id' => $client_id], ['%d']);
+    if (!$deleted) {
+        return ['ok' => false, 'nombre' => $client_data['cliente_nombre'] ?? ''];
+    }
+
+    crm_purge_client_related_data($client_id, $client_data);
+    $current_user = wp_get_current_user();
+    $log_details = sprintf(
+        'Cliente eliminado: %s | Email: %s | Teléfono: %s | Estado: %s',
+        $client_data['cliente_nombre'] ?? '',
+        $client_data['email_cliente']  ?? '',
+        $client_data['telefono']       ?? '',
+        $client_data['estado']         ?? ''
+    );
+    crm_log_action('cliente_eliminado', $log_details, $client_id, $current_user->ID);
+
+    return ['ok' => true, 'nombre' => $client_data['cliente_nombre'] ?? ('#' . $client_id)];
 }
 
 add_action('wp_ajax_crm_borrar_cliente', 'crm_borrar_cliente');
@@ -3419,35 +3480,69 @@ function crm_borrar_cliente()
         return;
     }
 
-    global $wpdb;
-    $table_name = $wpdb->prefix . "crm_clients";
-
-    // Obtener datos del cliente antes de eliminarlo (para purgar archivos y log)
-    $client_data = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $client_id), ARRAY_A);
-    if (!$client_data) {
-        wp_send_json_error(['message' => 'Cliente no encontrado.']);
-        return;
-    }
-
-    $deleted = $wpdb->delete($table_name, ['id' => $client_id], ['%d']);
-
-    if ($deleted) {
-        crm_purge_client_related_data($client_id, $client_data);
-        $current_user = wp_get_current_user();
-        $log_details  = sprintf(
-            'Cliente eliminado: %s | Email: %s | Teléfono: %s | Estado: %s',
-            $client_data['cliente_nombre'] ?? '',
-            $client_data['email_cliente']  ?? '',
-            $client_data['telefono']       ?? '',
-            $client_data['estado']         ?? ''
-        );
-        crm_log_action('cliente_eliminado', $log_details, $client_id, $current_user->ID);
-
+    $resultado = crm_eliminar_cliente_completo($client_id);
+    if ($resultado['ok']) {
         wp_send_json_success(['message' => 'Cliente eliminado correctamente.']);
     } else {
-        wp_send_json_error(['message' => 'Error al eliminar el cliente.']);
+        wp_send_json_error(['message' => 'Cliente no encontrado o no se pudo eliminar.']);
     }
 }
+
+/**
+ * v1.20.132 — borrado EN LOTE, pedido explícitamente por el usuario para
+ * limpiar clientes de ejemplo antes de una prueba real con el equipo. No
+ * existe ningún marcador de "cliente de prueba" en el esquema (auditado
+ * antes de construir esto) — la selección es manual, por checkboxes, desde
+ * wp-admin → CRM → Clientes.
+ */
+add_action('wp_ajax_crm_bulk_borrar_clientes', 'crm_ajax_bulk_borrar_clientes');
+function crm_ajax_bulk_borrar_clientes() {
+    if (!current_user_can('crm_admin')) {
+        wp_send_json_error(['message' => 'No tienes permiso para realizar esta acción.'], 403);
+    }
+    if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'crm_obtener_clientes_nonce')) {
+        wp_send_json_error(['message' => 'Error de seguridad.'], 400);
+    }
+
+    $ids_raw = isset($_POST['client_ids']) ? (array) wp_unslash($_POST['client_ids']) : [];
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids_raw), function ($id) { return $id > 0; })));
+    if (empty($ids)) {
+        wp_send_json_error(['message' => 'No se ha seleccionado ningún cliente.']);
+    }
+
+    $borrados = 0;
+    $nombres  = [];
+    foreach ($ids as $client_id) {
+        $resultado = crm_eliminar_cliente_completo($client_id);
+        if ($resultado['ok']) {
+            $borrados++;
+            $nombres[] = $resultado['nombre'];
+        }
+    }
+
+    if ($borrados > 0 && function_exists('crm_log_action')) {
+        $resumen = implode(', ', array_slice($nombres, 0, 15)) . (count($nombres) > 15 ? '…' : '');
+        crm_log_action('clientes_eliminados_lote', 'Borrado en lote: ' . $borrados . ' cliente(s) — ' . $resumen, null, get_current_user_id());
+    }
+
+    wp_send_json_success([
+        'message'  => $borrados . ' de ' . count($ids) . ' cliente(s) eliminado(s).',
+        'borrados' => $borrados,
+    ]);
+}
+
+/**
+ * Roadmap de la gestión de clientes en wp-admin (v1.20.132) — ver includes/flujos-page.php.
+ */
+add_filter('crm_roadmap_fases', function ($fases) {
+    $fases[] = [
+        'fase'    => 'Clientes · wp-admin',
+        'titulo'  => 'Listado y borrado en lote de clientes desde wp-admin → CRM → Clientes',
+        'estado'  => 'en_pruebas',
+        'detalle' => 'Pedido por el usuario para limpiar clientes de ejemplo antes de una prueba real con el equipo. El borrado ahora es de verdad completo (antes dejaba huérfanas las instalaciones del cliente y las filas del log de actividad) — cascada nueva vía crm_inst_borrar_instalacion_completa() e integrada en crm_purge_client_related_data(). Sin marcador de "cliente de prueba" en el esquema, la selección en la pantalla es manual. De paso se corrigió el botón de borrar roto (desde que se creó) de la vista frontend "Todos los clientes". Construido, sin prueba real todavía.',
+    ];
+    return $fases;
+});
 
 // Sistema de notificaciones por email del CRM
 /**

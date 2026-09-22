@@ -471,7 +471,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
     function attachDeleteHandlers() {
-        const deleteButtons = document.querySelectorAll(".delete-btn");
+        // v1.20.132: el botón se pinta con clase "action-btn action-btn--delete"
+        // (línea ~109) pero este selector buscaba ".delete-btn" — nunca
+        // coincidían, así que el botón de borrar de esta vista no hacía
+        // nada desde que se creó. El backend (crm_borrar_cliente) siempre
+        // funcionó bien, era puramente un desajuste de nombre de clase aquí.
+        const deleteButtons = document.querySelectorAll(".action-btn--delete");
         deleteButtons.forEach((button) => {
             button.addEventListener("click", (event) => {
                 event.preventDefault();
@@ -528,10 +533,10 @@ document.addEventListener("DOMContentLoaded", function () {
             .then((result) => {
                 console.log("Datos procesados:", result);
                 // Remover estado de carga de todos los botones
-                document.querySelectorAll('.delete-btn.loading').forEach(btn => {
+                document.querySelectorAll('.action-btn--delete.loading').forEach(btn => {
                     btn.classList.remove('loading');
                 });
-                
+
                 if (result.success) {
                     showToast("Cliente eliminado correctamente.", "success");
                     setTimeout(() => location.reload(), 1500); // Recargar después del toast
@@ -542,7 +547,7 @@ document.addEventListener("DOMContentLoaded", function () {
             .catch((error) => {
                 console.error("Error al borrar cliente:", error);
                 // Remover estado de carga en caso de error
-                document.querySelectorAll('.delete-btn.loading').forEach(btn => {
+                document.querySelectorAll('.action-btn--delete.loading').forEach(btn => {
                     btn.classList.remove('loading');
                 });
                 showToast("Error de conexión al eliminar el cliente.", "error");

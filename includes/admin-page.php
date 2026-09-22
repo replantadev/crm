@@ -36,6 +36,7 @@ function crm_register_admin_menu() {
     );
 
     add_submenu_page('crm-dashboard', 'Dashboard', 'Dashboard', $cap, 'crm-dashboard', 'crm_admin_render_dashboard');
+    add_submenu_page('crm-dashboard', 'Clientes', 'Clientes', $cap, 'crm-clientes', 'crm_admin_render_clientes');
     add_submenu_page('crm-dashboard', 'Logs', 'Logs', $cap, 'crm-logs', 'crm_admin_render_logs');
     add_submenu_page('crm-dashboard', 'Actualizaciones', 'Actualizaciones', $cap, 'crm-updates', 'crm_admin_render_updates');
     add_submenu_page('crm-dashboard', 'Leads MK', 'Leads MK', $cap, 'crm-leads-mk', 'crm_admin_render_leads_mk');
@@ -311,6 +312,7 @@ function crm_admin_render_nav() {
     $current = isset($_GET['page']) ? sanitize_key((string) $_GET['page']) : '';
     $tabs = [
         'crm-dashboard' => 'Dashboard',
+        'crm-clientes'  => 'Clientes',
         'crm-logs'      => 'Logs',
         'crm-updates'   => 'Actualizaciones',
         'crm-leads-mk'  => 'Leads MK',
@@ -486,6 +488,203 @@ function crm_admin_render_dashboard() {
         }
     }
     ?>
+    <?php
+    crm_admin_page_footer();
+}
+
+/* ---------------------------------------------------------------------------
+ * Clientes (v1.20.132) — gestión y borrado en lote desde wp-admin, pedido
+ * explícito del usuario para limpiar clientes de ejemplo antes de una
+ * prueba real con el equipo. No existía ninguna pantalla de wp-admin para
+ * clientes hasta ahora (solo un contador de solo lectura en Dashboard) — el
+ * listado/borrado individual que sí existía en el frontend
+ * ("Todos los clientes") tenía el botón de borrar roto (desajuste de clase
+ * CSS/JS) y sin selección múltiple; esta pantalla nueva no depende de ese
+ * código, es autocontenida.
+ * ------------------------------------------------------------------------- */
+
+function crm_admin_render_clientes() {
+    if (!current_user_can('crm_admin')) {
+        wp_die('Sin permisos');
+    }
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'crm_clients';
+    $clientes = $wpdb->get_results(
+        "SELECT id, cliente_nombre, email_cliente, telefono, delegado, origen_lead, estado, fecha
+         FROM $table ORDER BY id DESC",
+        ARRAY_A
+    );
+
+    // Nº de instalaciones por cliente, para que el aviso de borrado sea
+    // concreto (no un "esto puede borrar cosas" genérico).
+    $instalaciones_por_cliente = [];
+    if (function_exists('crm_inst_table_instalaciones')) {
+        $filas = $wpdb->get_results(
+            "SELECT client_id, COUNT(*) AS total FROM " . crm_inst_table_instalaciones() . " WHERE client_id IS NOT NULL GROUP BY client_id",
+            ARRAY_A
+        );
+        foreach ((array) $filas as $f) {
+            $instalaciones_por_cliente[(int) $f['client_id']] = (int) $f['total'];
+        }
+    }
+
+    $nonce = wp_create_nonce('crm_obtener_clientes_nonce');
+
+    crm_admin_page_header('CRM · Clientes');
+    ?>
+    <p class="description" style="max-width:820px;">
+        Borrado <strong>permanente e irreversible</strong>: incluye instalaciones y todo lo colgado de ellas (agenda, documentos, partidas extra, registro de actividad), notas, visitas y ficheros subidos de cada cliente seleccionado. Pensado sobre todo para limpiar clientes de ejemplo antes de una prueba real — no hay forma de identificar automáticamente cuáles son de prueba, la selección es manual.
+    </p>
+
+    <p>
+        <input type="search" id="crm-clientes-buscar" placeholder="Buscar por nombre, email o comercial…" style="min-width:280px;">
+        <button type="button" class="button" id="crm-clientes-seleccionar-todos">Seleccionar visibles</button>
+        <button type="button" class="button" id="crm-clientes-deseleccionar">Deseleccionar todo</button>
+        <button type="button" class="button button-link-delete" id="crm-clientes-borrar-btn" disabled>
+            Eliminar seleccionados (<span id="crm-clientes-contador">0</span>)
+        </button>
+        <span id="crm-clientes-msg" style="margin-left:8px;font-size:13px;"></span>
+    </p>
+
+    <table class="wp-list-table widefat fixed striped">
+        <thead>
+            <tr>
+                <th style="width:32px;"><input type="checkbox" id="crm-clientes-check-all"></th>
+                <th style="width:60px;">ID</th>
+                <th>Nombre</th>
+                <th>Email</th>
+                <th>Teléfono</th>
+                <th>Comercial</th>
+                <th>Origen</th>
+                <th>Estado</th>
+                <th>Instalaciones</th>
+                <th>Alta</th>
+            </tr>
+        </thead>
+        <tbody id="crm-clientes-tbody">
+            <?php if (empty($clientes)) : ?>
+                <tr><td colspan="10">No hay ningún cliente todavía.</td></tr>
+            <?php endif; ?>
+            <?php foreach ($clientes as $c) :
+                $n_inst = $instalaciones_por_cliente[(int) $c['id']] ?? 0;
+                $texto_busqueda = strtolower($c['cliente_nombre'] . ' ' . $c['email_cliente'] . ' ' . $c['delegado']);
+            ?>
+                <tr data-buscar="<?php echo esc_attr($texto_busqueda); ?>">
+                    <td><input type="checkbox" class="crm-cliente-check" value="<?php echo (int) $c['id']; ?>" data-nombre="<?php echo esc_attr($c['cliente_nombre']); ?>" data-inst="<?php echo (int) $n_inst; ?>"></td>
+                    <td><?php echo (int) $c['id']; ?></td>
+                    <td><?php echo esc_html($c['cliente_nombre']); ?></td>
+                    <td><?php echo esc_html($c['email_cliente']); ?></td>
+                    <td><?php echo esc_html($c['telefono']); ?></td>
+                    <td><?php echo esc_html($c['delegado']); ?></td>
+                    <td><?php echo esc_html($c['origen_lead']); ?></td>
+                    <td><?php echo esc_html($c['estado']); ?></td>
+                    <td><?php echo $n_inst > 0 ? (int) $n_inst : '—'; ?></td>
+                    <td><?php echo esc_html(!empty($c['fecha']) ? date_i18n('d/m/Y H:i', strtotime($c['fecha'])) : '—'); ?></td>
+                </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+
+    <script>
+    (function () {
+        var buscar   = document.getElementById('crm-clientes-buscar');
+        var checkAll = document.getElementById('crm-clientes-check-all');
+        var btnSeleccionarVisibles = document.getElementById('crm-clientes-seleccionar-todos');
+        var btnDeseleccionar = document.getElementById('crm-clientes-deseleccionar');
+        var btnBorrar = document.getElementById('crm-clientes-borrar-btn');
+        var contador  = document.getElementById('crm-clientes-contador');
+        var msg       = document.getElementById('crm-clientes-msg');
+        var tbody     = document.getElementById('crm-clientes-tbody');
+
+        function filasVisibles() {
+            return Array.prototype.filter.call(tbody.querySelectorAll('tr[data-buscar]'), function (tr) {
+                return tr.style.display !== 'none';
+            });
+        }
+        function checksMarcados() {
+            return Array.prototype.filter.call(tbody.querySelectorAll('.crm-cliente-check'), function (cb) { return cb.checked; });
+        }
+        function actualizarContador() {
+            var marcados = checksMarcados();
+            contador.textContent = marcados.length;
+            btnBorrar.disabled = marcados.length === 0;
+        }
+
+        buscar.addEventListener('input', function () {
+            var termino = buscar.value.trim().toLowerCase();
+            tbody.querySelectorAll('tr[data-buscar]').forEach(function (tr) {
+                tr.style.display = tr.getAttribute('data-buscar').indexOf(termino) === -1 ? 'none' : '';
+            });
+        });
+
+        checkAll.addEventListener('change', function () {
+            filasVisibles().forEach(function (tr) {
+                var cb = tr.querySelector('.crm-cliente-check');
+                if (cb) { cb.checked = checkAll.checked; }
+            });
+            actualizarContador();
+        });
+        btnSeleccionarVisibles.addEventListener('click', function () {
+            filasVisibles().forEach(function (tr) {
+                var cb = tr.querySelector('.crm-cliente-check');
+                if (cb) { cb.checked = true; }
+            });
+            actualizarContador();
+        });
+        btnDeseleccionar.addEventListener('click', function () {
+            tbody.querySelectorAll('.crm-cliente-check').forEach(function (cb) { cb.checked = false; });
+            checkAll.checked = false;
+            actualizarContador();
+        });
+        tbody.addEventListener('change', function (e) {
+            if (e.target.classList.contains('crm-cliente-check')) { actualizarContador(); }
+        });
+
+        btnBorrar.addEventListener('click', function () {
+            var marcados = checksMarcados();
+            if (marcados.length === 0) { return; }
+            var totalInst = marcados.reduce(function (sum, cb) { return sum + parseInt(cb.getAttribute('data-inst') || '0', 10); }, 0);
+            var nombres = marcados.slice(0, 8).map(function (cb) { return cb.getAttribute('data-nombre'); }).join(', ') + (marcados.length > 8 ? '…' : '');
+            var aviso = 'Vas a eliminar PERMANENTEMENTE ' + marcados.length + ' cliente(s):\n' + nombres;
+            if (totalInst > 0) { aviso += '\n\nIncluye ' + totalInst + ' instalación(es) y todo lo colgado de ellas.'; }
+            aviso += '\n\nEsto no se puede deshacer. ¿Seguro?';
+            if (!window.confirm(aviso)) { return; }
+
+            btnBorrar.disabled = true;
+            msg.style.color = '#6b7280';
+            msg.textContent = 'Eliminando…';
+
+            var body = new URLSearchParams();
+            body.set('action', 'crm_bulk_borrar_clientes');
+            body.set('nonce', <?php echo wp_json_encode($nonce); ?>);
+            marcados.forEach(function (cb) { body.append('client_ids[]', cb.value); });
+
+            fetch(ajaxurl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (resp) {
+                    if (resp.success) {
+                        msg.style.color = '#065f46';
+                        msg.textContent = resp.data.message;
+                        marcados.forEach(function (cb) {
+                            var fila = cb.closest('tr');
+                            if (fila) { fila.remove(); }
+                        });
+                        actualizarContador();
+                    } else {
+                        msg.style.color = '#991b1b';
+                        msg.textContent = (resp.data && resp.data.message) ? resp.data.message : 'Error al eliminar.';
+                        btnBorrar.disabled = false;
+                    }
+                })
+                .catch(function () {
+                    msg.style.color = '#991b1b';
+                    msg.textContent = 'Error de conexión.';
+                    btnBorrar.disabled = false;
+                });
+        });
+    })();
+    </script>
     <?php
     crm_admin_page_footer();
 }

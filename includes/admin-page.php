@@ -617,7 +617,12 @@ function crm_admin_render_clientes() {
         // (data-order) en vez del texto formateado.
         var tabla = $(tablaEl).DataTable({
             pageLength: 25,
-            order: [[1, 'desc']],
+            // v1.20.142: apuntaba a la columna 1 (ID) en vez de la 9 ("Alta"),
+            // que es la que de verdad lleva el data-order de la fecha real —
+            // casi siempre coincidía por ser el ID autoincremental, pero deja
+            // de ser cierto en cuanto se importen leads con fecha distinta a
+            // la de alta en el CRM.
+            order: [[9, 'desc']],
             columnDefs: [{ orderable: false, targets: 0 }],
             language: {
                 url: 'https://cdn.datatables.net/plug-ins/1.13.4/i18n/es-ES.json'

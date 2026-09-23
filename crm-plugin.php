@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.147
+Version: 1.20.148
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.147');
+define('CRM_PLUGIN_VERSION', '1.20.148');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -4589,9 +4589,115 @@ add_action('plugins_loaded', function() {
         if (function_exists('crm_install_roles')) {
             crm_install_roles();
         }
+        // v1.20.148 — reunión con cliente 2026-09-22, punto 4 (cierre): la
+        // casilla de política de privacidad del checklist del instalador
+        // (v1.20.145) solo se muestra si el sitio tiene una página de
+        // privacidad configurada (get_privacy_policy_url()) — el sitio no
+        // tenía ninguna, así que la casilla nunca llegó a aparecer.
+        if (function_exists('crm_privacidad_asegurar_pagina')) {
+            crm_privacidad_asegurar_pagina();
+        }
         update_option('crm_plugin_version', CRM_PLUGIN_VERSION);
     }
 });
+
+/**
+ * Crea la página "Política de Privacidad" (con contenido real, no de
+ * relleno) y la marca como la página de privacidad del sitio en WordPress
+ * (Ajustes → Privacidad) si el sitio todavía no tiene ninguna — nunca pisa
+ * una ya configurada por el usuario, ni crea una segunda si ya existe una
+ * página con esa misma ruta.
+ *
+ * v1.20.148: hasta ahora no había ninguna, por eso la casilla de aceptación
+ * en el checklist del instalador (v1.20.145) nunca llegaba a mostrarse —
+ * get_privacy_policy_url() devolvía vacío.
+ *
+ * IMPORTANTE: el contenido cubre lo que este CRM trata realmente (datos de
+ * clientes vía Holded, comunicaciones por email/WhatsApp Business con Meta
+ * como encargado, fotos de instalaciones, datos de instaladores) pero dejo
+ * marcados entre corchetes los datos fiscales de la empresa (CIF, dirección,
+ * email de contacto de protección de datos) que no puedo rellenar por mi
+ * cuenta — hay que completarlos y, como con cualquier documento legal, que
+ * lo revise un abogado/gestoría antes de darlo por definitivo.
+ */
+function crm_privacidad_asegurar_pagina() {
+    if (!empty(get_option('wp_page_for_privacy_policy'))) {
+        return; // Ya hay una página de privacidad configurada — no tocar.
+    }
+
+    $slug = 'politica-de-privacidad';
+    $existente = get_page_by_path($slug, OBJECT, 'page');
+    if ($existente) {
+        update_option('wp_page_for_privacy_policy', $existente->ID);
+        return;
+    }
+
+    $contenido = <<<'HTML'
+<!-- wp:heading --><h2>1. Responsable del tratamiento</h2><!-- /wp:heading -->
+<!-- wp:paragraph --><p><strong>[NOMBRE FISCAL DE LA EMPRESA]</strong>, con CIF <strong>[CIF]</strong> y domicilio en <strong>[DIRECCIÓN FISCAL]</strong>, es responsable del tratamiento de los datos personales que se recogen a través de este CRM. Para cualquier cuestión relacionada con la protección de datos, puede contactar en <strong>[EMAIL DE CONTACTO PARA PROTECCIÓN DE DATOS]</strong>.</p><!-- /wp:paragraph -->
+
+<!-- wp:heading --><h2>2. Qué datos tratamos</h2><!-- /wp:heading -->
+<!-- wp:paragraph --><p>Según tu relación con nosotros, podemos tratar:</p><!-- /wp:paragraph -->
+<!-- wp:list --><ul>
+<li><strong>Clientes:</strong> nombre, dirección, teléfono, email, y los datos del presupuesto/contrato de la instalación (a través de nuestro programa de gestión, Holded).</li>
+<li><strong>Instaladores y personal:</strong> nombre, teléfono, email, y las fotografías tomadas durante las instalaciones como justificante del trabajo realizado.</li>
+</ul><!-- /wp:list -->
+
+<!-- wp:heading --><h2>3. Con qué finalidad tratamos tus datos</h2><!-- /wp:heading -->
+<!-- wp:list --><ul>
+<li>Gestionar la relación comercial: presupuestos, contratos y facturación.</li>
+<li>Planificar y ejecutar las visitas técnicas e instalaciones.</li>
+<li>Enviar comunicaciones relacionadas con tu instalación por email y/o WhatsApp (recordatorios de visita, confirmaciones, avisos de estado).</li>
+<li>Cumplir con nuestras obligaciones legales y fiscales.</li>
+</ul><!-- /wp:list -->
+
+<!-- wp:heading --><h2>4. Legitimación</h2><!-- /wp:heading -->
+<!-- wp:paragraph --><p>La ejecución de un contrato u oferta comercial en el que eres parte, y el cumplimiento de obligaciones legales aplicables (fiscales, mercantiles).</p><!-- /wp:paragraph -->
+
+<!-- wp:heading --><h2>5. A quién comunicamos tus datos (encargados del tratamiento)</h2><!-- /wp:heading -->
+<!-- wp:paragraph --><p>Para prestar el servicio, compartimos datos con proveedores que actúan como encargados del tratamiento bajo contrato:</p><!-- /wp:paragraph -->
+<!-- wp:list --><ul>
+<li><strong>Holded</strong> (gestión de presupuestos, contactos y facturación).</li>
+<li><strong>Meta / WhatsApp Business Platform</strong>, si recibes comunicaciones por WhatsApp.</li>
+<li>El proveedor de alojamiento web y envío de email de este sitio.</li>
+</ul><!-- /wp:list -->
+<!-- wp:paragraph --><p>No cedemos tus datos a terceros para fines distintos, salvo obligación legal.</p><!-- /wp:paragraph -->
+
+<!-- wp:heading --><h2>6. Plazo de conservación</h2><!-- /wp:heading -->
+<!-- wp:paragraph --><p>Conservamos los datos mientras dure la relación comercial y, después, durante los plazos de prescripción legal aplicables (fiscal, mercantil).</p><!-- /wp:paragraph -->
+
+<!-- wp:heading --><h2>7. Tus derechos</h2><!-- /wp:heading -->
+<!-- wp:paragraph --><p>Puedes ejercer tus derechos de acceso, rectificación, supresión, oposición, portabilidad y limitación del tratamiento escribiendo a <strong>[EMAIL DE CONTACTO PARA PROTECCIÓN DE DATOS]</strong>, adjuntando una copia de tu documento de identidad. También puedes presentar una reclamación ante la Agencia Española de Protección de Datos (www.aepd.es) si consideras que no hemos atendido tu solicitud correctamente.</p><!-- /wp:paragraph -->
+
+<!-- wp:paragraph --><p><em>Nota interna: los campos entre corchetes deben completarse con los datos fiscales reales antes de publicar esta página, y se recomienda que un abogado o asesoría revise el texto completo antes de darlo por definitivo.</em></p><!-- /wp:paragraph -->
+HTML;
+
+    $page_id = wp_insert_post([
+        'post_title'   => 'Política de Privacidad',
+        'post_name'    => $slug,
+        'post_content' => $contenido,
+        // v1.20.148: se publica directamente (no como borrador) para que
+        // get_privacy_policy_url() funcione ya y la casilla del checklist
+        // del instalador aparezca — PERO sigue llevando placeholders entre
+        // corchetes ([CIF], [DIRECCIÓN FISCAL], [EMAIL...]) que hay que
+        // rellenar cuanto antes; se avisa en Logs para que no se olvide.
+        'post_status'  => 'publish',
+        'post_type'    => 'page',
+    ]);
+
+    if ($page_id && !is_wp_error($page_id)) {
+        update_option('wp_page_for_privacy_policy', $page_id);
+        if (function_exists('crm_log_action')) {
+            crm_log_action(
+                'privacidad_pagina_creada',
+                'Página "Política de Privacidad" creada y publicada (id ' . $page_id . ') — ATENCIÓN: todavía lleva placeholders sin rellenar ([CIF], [DIRECCIÓN FISCAL], [EMAIL DE CONTACTO]) — edítala en Páginas → Política de Privacidad antes de que un cliente/instalador real la lea, e idealmente que la revise un abogado/gestoría.',
+                null,
+                0,
+                'notice'
+            );
+        }
+    }
+}
 
 /**
  * AJAX handler para quitar un interés/sector de un cliente

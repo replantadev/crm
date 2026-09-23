@@ -59,6 +59,7 @@ function crm_app_shell_get_settings() {
             'flujos',
             'ventas-presupuestos',
             'ventas-resumen',
+            'ventas-funnel',
         ],
         'brand_label' => 'CRM',
     ];
@@ -115,6 +116,8 @@ function crm_app_shell_trigger_shortcodes() {
         'crm_flujos',
         'crm_ventas_presupuestos',
         'crm_ventas_resumen',
+        // v1.20.152 — funnel de ventas (reunión 2026-09-22, punto 6).
+        'crm_funnel_ventas',
     ]);
 }
 
@@ -457,6 +460,8 @@ function crm_app_shell_menu_items() {
             'children' => [
                 ['label' => 'Presupuestos', 'slug' => 'ventas-presupuestos', 'icon' => 'file-text'],
                 ['label' => 'Resumen', 'slug' => 'ventas-resumen', 'icon' => 'chart-bar'],
+                // v1.20.152 — reunión con cliente 2026-09-22, punto 6.
+                ['label' => 'Funnel de ventas', 'slug' => 'ventas-funnel', 'icon' => 'chart-bar'],
             ],
         ],
         [

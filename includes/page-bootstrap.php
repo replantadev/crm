@@ -141,6 +141,12 @@ function crm_required_pages() {
             'title'   => 'Resumen de ventas',
             'content' => '[crm_ventas_resumen]',
         ],
+        [
+            // v1.20.152 — reunión con cliente 2026-09-22, punto 6.
+            'slug'    => 'ventas-funnel',
+            'title'   => 'Funnel de ventas',
+            'content' => '[crm_funnel_ventas]',
+        ],
     ];
     return apply_filters('crm_required_pages', $pages);
 }

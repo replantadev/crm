@@ -65,6 +65,10 @@ function crm_mail_eventos_por_canal() {
             'Instalador asignado a una instalación',
             'Visita programada o reprogramada en la agenda',
             'Alta de cuenta nueva (email para establecer contraseña) — página "Equipo"',
+            // v1.20.137 — reutiliza este mismo canal/remitente para el
+            // recordatorio de visita al CLIENTE (decisión explícita: no crear
+            // un canal "cliente" aparte todavía).
+            'Recordatorio de visita al día siguiente (al CLIENTE, no al instalador)',
         ],
         'comercial'  => [
             'Alta de cuenta nueva (email para establecer contraseña) — página "Equipo"',
@@ -236,6 +240,31 @@ function crm_mail_enviar($canal, $to, $subject, $body_html, array $extra_headers
     }
 
     return (bool) $enviado;
+}
+
+/**
+ * Envuelve un fragmento de HTML con el logo/marca ya configurados para el
+ * panel del instalador (`crm_instalador_panel_brand`/`_logo_url`/`_color`,
+ * includes/admin-page.php) — v1.20.137, para que los emails a CLIENTE (hasta
+ * ahora sin usar, el primero es el recordatorio de visita) no salgan en
+ * texto plano sin marca. Reutiliza la misma marca que ya existía para no
+ * añadir un juego de opciones nuevo.
+ *
+ * @param string $contenido_html Cuerpo del mensaje (ya en HTML).
+ * @return string
+ */
+function crm_mail_plantilla_cliente($contenido_html) {
+    $marca = get_option('crm_instalador_panel_brand', 'Ecovolt');
+    $logo  = get_option('crm_instalador_panel_logo_url', CRM_PLUGIN_URL . 'img/ecovolt-logo.jpg');
+    $color = get_option('crm_instalador_panel_color', '#15803d');
+
+    return '<div style="max-width:560px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;">'
+        . '<div style="padding:18px 0;border-bottom:3px solid ' . esc_attr($color) . ';text-align:center;">'
+        . ($logo ? '<img src="' . esc_url($logo) . '" alt="' . esc_attr($marca) . '" style="max-height:48px;">' : '<strong style="font-size:18px;">' . esc_html($marca) . '</strong>')
+        . '</div>'
+        . '<div style="padding:20px 4px;color:#1f2937;font-size:14px;line-height:1.5;">' . $contenido_html . '</div>'
+        . '<div style="padding:12px 4px;border-top:1px solid #e5e7eb;color:#9ca3af;font-size:11.5px;text-align:center;">Aviso automático de ' . esc_html($marca) . '.</div>'
+        . '</div>';
 }
 
 /**

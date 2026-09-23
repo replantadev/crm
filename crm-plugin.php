@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.136
+Version: 1.20.137
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.136');
+define('CRM_PLUGIN_VERSION', '1.20.137');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -2351,13 +2351,13 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
 function crm_enviar_notificacion_comercial($client_id, $client_data, $action_details)
 {
     global $wpdb;
-    
+
     // Obtener el comercial del cliente
     $comercial_id = isset($client_data['user_id']) ? intval($client_data['user_id']) : 0;
     if (!$comercial_id) {
         return false;
     }
-    
+
     $comercial = get_user_by('ID', $comercial_id);
     if (!$comercial) {
         return false;
@@ -2437,7 +2437,7 @@ function crm_enviar_notificacion_comercial($client_id, $client_data, $action_det
         'Content-Type: text/html; charset=UTF-8',
         'From: ' . get_option('blogname') . ' <' . get_option('admin_email') . '>'
     ];
-    
+
     return wp_mail($comercial->user_email, $subject, $message, $headers);
 }
 

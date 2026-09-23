@@ -2301,14 +2301,19 @@ function crm_inst_aviso_calendario_run() {
 		$cliente_nombre = $r['cliente_nombre'] ?: ( 'instalación #' . $r['instalacion_id'] );
 		$url            = add_query_arg( 'id', $r['instalacion_id'], home_url( '/instalacion/' ) );
 
-		// Cliente — por email (WhatsApp necesitaría una plantilla nueva
-		// aprobada por Meta, no construida en esta ronda).
-		if ( ! empty( $r['email_cliente'] ) && is_email( $r['email_cliente'] ) ) {
+		// Cliente — por email. v1.20.137: antes usaba wp_mail() directo, sin
+		// marca y con el remitente por defecto de WP (admin_email del
+		// sitio) en vez del remitente configurado en CRM → Email — el
+		// usuario lo detectó probando el flujo real. Ahora pasa por
+		// crm_mail_enviar() (canal "instalador", mismo remitente ya
+		// configurado — decisión explícita: no crear un canal "cliente"
+		// aparte) y por crm_mail_plantilla_cliente() para llevar el
+		// logo/marca configurados.
+		if ( ! empty( $r['email_cliente'] ) && is_email( $r['email_cliente'] ) && function_exists( 'crm_mail_enviar' ) ) {
 			$body = '<p>Hola' . ( $r['cliente_nombre'] ? ' ' . esc_html( $r['cliente_nombre'] ) : '' ) . ',</p>'
 				. '<p>Te recordamos que <strong>mañana ' . esc_html( $fecha_label ) . '</strong> tienes programada una visita técnica'
-				. ( $r['direccion_instalacion'] ? ' en ' . esc_html( $r['direccion_instalacion'] ) : '' ) . '.</p>'
-				. '<p style="color:#666;font-size:12px">Aviso automático del CRM.</p>';
-			wp_mail( $r['email_cliente'], 'Recordatorio: mañana tienes visita técnica', $body, [ 'Content-Type: text/html; charset=UTF-8' ] );
+				. ( $r['direccion_instalacion'] ? ' en ' . esc_html( $r['direccion_instalacion'] ) : '' ) . '.</p>';
+			crm_mail_enviar( 'instalador', $r['email_cliente'], 'Recordatorio: mañana tienes visita técnica', crm_mail_plantilla_cliente( $body ) );
 		}
 		// v1.20.130 — Fase 8: confirmación de cita por WhatsApp (botones
 		// "Confirmo"/"Necesito cambiar"). La respuesta llega por el webhook

@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.139
+Version: 1.20.140
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.139');
+define('CRM_PLUGIN_VERSION', '1.20.140');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -1341,11 +1341,22 @@ function crm_formulario_alta_cliente()
         <!-- ——— Acciones Globales ——— -->
         <div class="crm-global-actions">
             <?php if (crm_user_is_admin()): ?>
+                <!-- v1.20.140: los <i class="fas ..."> dependían de Font
+                     Awesome, que este plugin nunca ha encolado en ningún
+                     sitio — por eso no se veía ningún icono. SVG inline,
+                     igual que el botón del else de abajo. -->
                 <button type="submit" name="crm_guardar_cliente" class="crm-btn">
-                    <i class="fas fa-save" style="margin-right: 8px;"></i>Guardar ficha
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;vertical-align:-3px;">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                        <polyline points="17,21 17,13 7,13 7,21"></polyline>
+                        <polyline points="7,3 7,8 15,8"></polyline>
+                    </svg>Guardar ficha
                 </button>
                 <button type="submit" name="crm_guardar_notificar" class="crm-btn enviar-btn">
-                    <i class="fas fa-paper-plane" style="margin-right: 8px;"></i>Guardar y notificar comercial
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;vertical-align:-3px;">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>Guardar y notificar comercial
                 </button>
             <?php else: ?>
                 <button type="submit" name="crm_guardar_cliente" class="crm-btn">

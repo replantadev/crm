@@ -3546,6 +3546,18 @@ function crm_inst_ajax_cerrar_instalacion() {
 		}
 	}
 
+	// v1.20.146 — reunión con cliente 2026-09-22, punto 3: a veces no se
+	// instalan todas las placas/materiales del presupuesto (instalación
+	// incompleta, o el presupuesto llevaba de más). Las líneas de Holded que
+	// el instalador NO marcó como "montada" (montado_en, ya existía desde
+	// v1.20.104) son justo ese indicador — se destaca aquí para que
+	// crm_admin sepa que tiene que revisar/ajustar el presupuesto en Holded.
+	$lineas_sin_montar = $wpdb->get_col( $wpdb->prepare(
+		"SELECT descripcion FROM " . crm_inst_table_trabajos() . "
+		 WHERE instalacion_id = %d AND origen = 'holded' AND montado_en IS NULL",
+		$instalacion_id
+	) );
+
 	$requiere_aprobacion = crm_inst_cierre_requiere_aprobacion();
 	$update = [
 		'cierre_estado'        => $requiere_aprobacion ? 'declarado' : 'aprobado',
@@ -3566,6 +3578,7 @@ function crm_inst_ajax_cerrar_instalacion() {
 		'cierre_declarado',
 		'Cierre declarado por el instalador' . ( $fotos_subidas > 0 ? ' con ' . $fotos_subidas . ' foto(s)' : '' )
 			. ( $requiere_aprobacion ? ' (pendiente de validar).' : ' — instalación finalizada.' )
+			. ( ! empty( $lineas_sin_montar ) ? ' ATENCIÓN: ' . count( $lineas_sin_montar ) . ' línea(s) sin instalar (' . implode( ', ', $lineas_sin_montar ) . ') — revisar y ajustar presupuesto en Holded.' : '' )
 	);
 
 	if ( function_exists( 'crm_notificar_jefes_instalaciones' ) ) {
@@ -3576,6 +3589,9 @@ function crm_inst_ajax_cerrar_instalacion() {
 		$mensaje = $requiere_aprobacion
 			? 'Cierre pendiente de validar: ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) )
 			: 'Instalación finalizada: ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) );
+		if ( ! empty( $lineas_sin_montar ) ) {
+			$mensaje .= ' — ⚠ ' . count( $lineas_sin_montar ) . ' material(es) sin instalar, revisar presupuesto en Holded.';
+		}
 		crm_notificar_jefes_instalaciones( 'cierre_declarado', $mensaje, add_query_arg( 'id', $instalacion_id, home_url( '/instalacion/' ) ) );
 	}
 
@@ -5659,6 +5675,23 @@ function crm_inst_shortcode_ficha() {
 						</p>
 						<?php if ( ! empty( $data['cierre']['observaciones'] ) ) : ?>
 							<p class="crm-inst-field-info">Observaciones: <?php echo esc_html( $data['cierre']['observaciones'] ); ?></p>
+						<?php endif; ?>
+						<?php
+						// v1.20.146 — reunión con cliente 2026-09-22, punto 3: líneas
+						// de Holded que el instalador NO marcó como montadas —
+						// instalación incompleta o presupuesto con material de más.
+						$lineas_sin_montar_ficha = array_filter( $data['materiales'], function ( $m ) {
+							return $m['origen'] === 'holded' && empty( $m['montado_en'] );
+						} );
+						if ( ! empty( $lineas_sin_montar_ficha ) ) : ?>
+							<p class="crm-inst-field-info" style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;">
+								<strong style="color:#991b1b;">⚠ <?php echo count( $lineas_sin_montar_ficha ); ?> material(es) del presupuesto sin instalar</strong> — revisar y ajustar el presupuesto en Holded:
+								<ul style="margin:4px 0 0 18px;padding:0;">
+									<?php foreach ( $lineas_sin_montar_ficha as $m ) : ?>
+										<li><?php echo esc_html( $m['descripcion'] ); ?></li>
+									<?php endforeach; ?>
+								</ul>
+							</p>
 						<?php endif; ?>
 						<?php if ( ! empty( $data['cierre']['fotos'] ) ) :
 							$categorias_labels = crm_inst_categorias_fotos_cierre( $data['subtipo_instalacion'] );

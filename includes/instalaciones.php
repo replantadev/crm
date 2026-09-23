@@ -153,6 +153,8 @@ function crm_instalaciones_install_tables() {
   holded_waybill_numero VARCHAR(50) DEFAULT NULL,
   holded_waybill_aprobado TINYINT(1) DEFAULT NULL,
   holded_waybill_error VARCHAR(255) DEFAULT NULL,
+  duracion_dias TINYINT(1) UNSIGNED NOT NULL DEFAULT 1,
+  cierre_previsto DATE DEFAULT NULL,
   PRIMARY KEY  (id),
   KEY client_id (client_id),
   KEY jefe_instalaciones_id (jefe_instalaciones_id),
@@ -1779,6 +1781,8 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 		'holded_waybill_numero'  => $inst['holded_waybill_numero'],
 		'holded_waybill_aprobado' => $inst['holded_waybill_aprobado'] !== null ? (bool) $inst['holded_waybill_aprobado'] : null,
 		'holded_waybill_error'   => $inst['holded_waybill_error'],
+		'duracion_dias'       => (int) $inst['duracion_dias'],
+		'cierre_previsto'     => $inst['cierre_previsto'],
 	];
 }
 
@@ -4098,12 +4102,20 @@ function crm_inst_ajax_guardar_agenda() {
 	global $wpdb;
 	$instalacion_id = (int) ( $_POST['instalacion_id'] ?? 0 );
 	$fecha_raw      = sanitize_text_field( wp_unslash( $_POST['fecha_cita'] ?? '' ) );
+	// v1.20.143 — reunión con cliente 2026-09-22, punto 2: cuánto dura la
+	// instalación (1 o 2 días), usado para calcular el cierre previsto.
+	$duracion_dias  = (int) ( $_POST['duracion_dias'] ?? 1 );
+	if ( $duracion_dias !== 2 ) {
+		$duracion_dias = 1;
+	}
 
 	if ( $instalacion_id <= 0 || $fecha_raw === '' ) {
 		wp_send_json_error( [ 'message' => 'Elige una fecha.' ] );
 	}
 
-	// El <input type="datetime-local"> manda "YYYY-MM-DDTHH:MM".
+	// El selector de fecha/hora manda "YYYY-MM-DDTHH:MM" (mismo formato que
+	// el antiguo <input type="datetime-local">, construido ahora en JS a
+	// partir de la fecha + la hora rápida elegida — ver crm-inst-guardar-agenda-btn).
 	$timestamp = strtotime( str_replace( 'T', ' ', $fecha_raw ) );
 	if ( $timestamp === false ) {
 		wp_send_json_error( [ 'message' => 'Fecha no válida.' ] );
@@ -4161,22 +4173,83 @@ function crm_inst_ajax_guardar_agenda() {
 		);
 	}
 
-	crm_inst_log_action( $instalacion_id, 'agenda', 'programar_visita', 'Visita programada para ' . date_i18n( 'd/m/Y H:i', $timestamp ) . ' (' . count( $instaladores_asignados ) . ' instalador(es)).' );
+	// Cierre previsto = fecha de la visita + 2 días laborables, solo la
+	// primera vez (si el admin ya lo ajustó a mano después, reprogramar la
+	// visita no debe pisárselo — ver crm_inst_ajax_guardar_cierre_previsto()).
+	$cierre_previsto_actual = $wpdb->get_var( $wpdb->prepare(
+		"SELECT cierre_previsto FROM " . crm_inst_table_instalaciones() . " WHERE id = %d",
+		$instalacion_id
+	) );
+	$update_instalacion = [ 'duracion_dias' => $duracion_dias ];
+	if ( empty( $cierre_previsto_actual ) ) {
+		$update_instalacion['cierre_previsto'] = date( 'Y-m-d', crm_inst_sumar_dias_laborables( $timestamp, 2 ) );
+	}
+	$wpdb->update( crm_inst_table_instalaciones(), $update_instalacion, [ 'id' => $instalacion_id ] );
+
+	crm_inst_log_action( $instalacion_id, 'agenda', 'programar_visita', 'Visita programada para ' . date_i18n( 'd/m/Y H:i', $timestamp ) . ' (' . count( $instaladores_asignados ) . ' instalador(es)), duración estimada ' . $duracion_dias . ' día(s).' );
 
 	// v1.20.130: hasta ahora el cliente no se enteraba de que había visita
 	// programada/reprogramada hasta el recordatorio del día antes (v1.20.127)
 	// — el usuario pidió poder avisarle también en el momento de agendar,
 	// como opción (por si prefiere que sea el instalador quien llame).
-	if ( (bool) get_option( 'crm_inst_aviso_cliente_visita_email', false ) && ! empty( $cliente_row['email_cliente'] ) && is_email( $cliente_row['email_cliente'] ) ) {
+	if ( (bool) get_option( 'crm_inst_aviso_cliente_visita_email', false ) && ! empty( $cliente_row['email_cliente'] ) && is_email( $cliente_row['email_cliente'] ) && function_exists( 'crm_mail_enviar' ) ) {
 		$fecha_visita_label_cliente = date_i18n( 'd/m/Y H:i', $timestamp );
 		$body_cliente = '<p>Hola' . ( $cliente_nombre ? ' ' . esc_html( $cliente_nombre ) : '' ) . ',</p>'
 			. '<p>Te confirmamos tu visita técnica para el <strong>' . esc_html( $fecha_visita_label_cliente ) . '</strong>'
-			. ( ! empty( $cliente_row['direccion_instalacion'] ) ? ' en ' . esc_html( $cliente_row['direccion_instalacion'] ) : '' ) . '.</p>'
-			. '<p style="color:#666;font-size:12px">Aviso automático del CRM.</p>';
-		wp_mail( $cliente_row['email_cliente'], 'Visita técnica programada', $body_cliente, [ 'Content-Type: text/html; charset=UTF-8' ] );
+			. ( ! empty( $cliente_row['direccion_instalacion'] ) ? ' en ' . esc_html( $cliente_row['direccion_instalacion'] ) : '' ) . '.</p>';
+		crm_mail_enviar( 'instalador', $cliente_row['email_cliente'], 'Visita técnica programada', crm_mail_plantilla_cliente( $body_cliente ) );
 	}
 
 	wp_send_json_success( [ 'fecha_cita_label' => date_i18n( 'd/m/Y H:i', $timestamp ) ] );
+}
+
+/**
+ * Suma N días laborables (lunes a viernes, sin calendario de festivos) a un
+ * timestamp. v1.20.143 — usado para el "cierre previsto" por defecto.
+ *
+ * @param int $timestamp
+ * @param int $dias
+ * @return int Timestamp resultante (medianoche del día laborable calculado).
+ */
+function crm_inst_sumar_dias_laborables( $timestamp, $dias ) {
+	$fecha = (int) $timestamp;
+	$sumados = 0;
+	while ( $sumados < $dias ) {
+		$fecha = strtotime( '+1 day', $fecha );
+		if ( (int) date( 'N', $fecha ) < 6 ) { // 1=lunes … 5=viernes
+			$sumados++;
+		}
+	}
+	return $fecha;
+}
+
+/**
+ * Ajuste manual del "cierre previsto" — por defecto se calcula solo (visita
+ * + 2 días laborables), pero el admin puede corregirlo si el instalador le
+ * avisa de que la instalación se va a alargar.
+ */
+add_action( 'wp_ajax_crm_inst_guardar_cierre_previsto', 'crm_inst_ajax_guardar_cierre_previsto' );
+function crm_inst_ajax_guardar_cierre_previsto() {
+	if ( ! crm_inst_current_user_can_manage() || ! check_ajax_referer( 'crm_inst_holded', 'nonce', false ) ) {
+		wp_send_json_error( [ 'message' => 'Sin permisos.' ], 403 );
+	}
+
+	global $wpdb;
+	$instalacion_id  = (int) ( $_POST['instalacion_id'] ?? 0 );
+	$cierre_previsto = sanitize_text_field( wp_unslash( $_POST['cierre_previsto'] ?? '' ) );
+
+	if ( $instalacion_id <= 0 ) {
+		wp_send_json_error( [ 'message' => 'Instalación no válida.' ] );
+	}
+	$dt = DateTime::createFromFormat( 'Y-m-d', $cierre_previsto );
+	if ( ! $dt || $dt->format( 'Y-m-d' ) !== $cierre_previsto ) {
+		wp_send_json_error( [ 'message' => 'Fecha no válida (formato AAAA-MM-DD).' ] );
+	}
+
+	$wpdb->update( crm_inst_table_instalaciones(), [ 'cierre_previsto' => $cierre_previsto ], [ 'id' => $instalacion_id ] );
+	crm_inst_log_action( $instalacion_id, 'instalacion', 'cierre_previsto_actualizado', 'Cierre previsto ajustado a mano a ' . date_i18n( 'd/m/Y', $dt->getTimestamp() ) . '.' );
+
+	wp_send_json_success( [ 'cierre_previsto_label' => date_i18n( 'd/m/Y', $dt->getTimestamp() ) ] );
 }
 
 /**
@@ -5489,8 +5562,30 @@ function crm_inst_shortcode_ficha() {
 								</li>
 							<?php endforeach; ?>
 						</ul>
+						<?php
+						// v1.20.143 — reunión con cliente 2026-09-22, punto 2: la
+						// hora casi siempre es 7:00 u 8:00 — 3 botones rápidos en
+						// vez de escribirla a mano (más rápido y fiable en móvil),
+						// con "otra hora" para el caso raro.
+						$agenda_fecha_actual = ! empty( $data['agenda'] ) ? substr( $data['agenda']['fecha_cita'], 0, 10 ) : '';
+						$agenda_hora_actual  = ! empty( $data['agenda'] ) ? substr( $data['agenda']['fecha_cita'], 11, 5 ) : '08:00';
+						$agenda_hora_es_otra = ! in_array( $agenda_hora_actual, [ '07:00', '08:00' ], true );
+						?>
 						<p>
-							<input type="datetime-local" id="crm-inst-agenda-fecha" value="<?php echo esc_attr( ! empty( $data['agenda'] ) ? str_replace( ' ', 'T', substr( $data['agenda']['fecha_cita'], 0, 16 ) ) : '' ); ?>">
+							<input type="date" id="crm-inst-agenda-fecha" value="<?php echo esc_attr( $agenda_fecha_actual ); ?>">
+							<label><input type="radio" name="crm-inst-agenda-hora-opcion" value="08:00" <?php checked( ! $agenda_hora_es_otra && $agenda_hora_actual === '08:00' || ( $agenda_fecha_actual === '' ) ); ?>> 8:00</label>
+							<label><input type="radio" name="crm-inst-agenda-hora-opcion" value="07:00" <?php checked( $agenda_hora_actual === '07:00' ); ?>> 7:00</label>
+							<label><input type="radio" name="crm-inst-agenda-hora-opcion" value="otra" <?php checked( $agenda_hora_es_otra && $agenda_fecha_actual !== '' ); ?>> Otra hora</label>
+							<input type="time" id="crm-inst-agenda-hora-otra" value="<?php echo esc_attr( $agenda_hora_es_otra ? $agenda_hora_actual : '09:00' ); ?>" style="<?php echo ( $agenda_hora_es_otra && $agenda_fecha_actual !== '' ) ? '' : 'display:none;'; ?>">
+						</p>
+						<p>
+							<label for="crm-inst-agenda-duracion">Duración estimada:</label>
+							<select id="crm-inst-agenda-duracion">
+								<option value="1" <?php selected( (int) $data['duracion_dias'], 1 ); ?>>1 día</option>
+								<option value="2" <?php selected( (int) $data['duracion_dias'], 2 ); ?>>2 días</option>
+							</select>
+						</p>
+						<p>
 							<button type="button" class="crm-btn" id="crm-inst-guardar-agenda-btn"><?php echo empty( $data['agenda'] ) ? 'Programar visita' : 'Reprogramar'; ?></button>
 							<span id="crm-inst-agenda-msg"></span>
 						</p>
@@ -5515,6 +5610,15 @@ function crm_inst_shortcode_ficha() {
 
 				<div class="crm-inst-ficha-section">
 					<h4>Cierre de la instalación</h4>
+					<p class="crm-inst-field-info">
+						Cierre previsto:
+						<strong><?php echo $data['cierre_previsto'] ? esc_html( date_i18n( 'd/m/Y', strtotime( $data['cierre_previsto'] ) ) ) : '—'; ?></strong>
+						<span style="color:#6b7280;">(se calcula solo: fecha de la visita + 2 días laborables — puedes ajustarlo si la instalación se alarga)</span>
+						<br>
+						<input type="date" id="crm-inst-cierre-previsto-input" value="<?php echo esc_attr( $data['cierre_previsto'] ?: '' ); ?>">
+						<button type="button" class="crm-btn" id="crm-inst-cierre-previsto-btn">Guardar</button>
+						<span id="crm-inst-cierre-previsto-msg"></span>
+					</p>
 					<p class="crm-inst-field-info">
 						Checklist previo (materiales + plan de seguridad):
 						<?php if ( ! empty( $data['checklist_confirmado_en'] ) ) : ?>
@@ -5822,13 +5926,49 @@ function crm_inst_shortcode_ficha() {
 			setTimeout(function () { $('#crm-inst-agenda-fecha').trigger('focus'); }, 300);
 		});
 
+		// v1.20.143 — hora rápida (7:00/8:00/otra) en vez de escribirla a mano.
+		$('input[name="crm-inst-agenda-hora-opcion"]').on('change', function () {
+			$('#crm-inst-agenda-hora-otra').toggle($(this).val() === 'otra');
+		});
+
+		$('#crm-inst-cierre-previsto-btn').on('click', function () {
+			var btn = $(this).prop('disabled', true);
+			var fecha = $('#crm-inst-cierre-previsto-input').val();
+			$('#crm-inst-cierre-previsto-msg').text('');
+			if (!fecha) {
+				btn.prop('disabled', false);
+				$('#crm-inst-cierre-previsto-msg').css('color', '#991b1b').text('Elige una fecha.');
+				return;
+			}
+			$.post(ajaxurl, {
+				action: 'crm_inst_guardar_cierre_previsto', nonce: nonce, instalacion_id: instalacionId,
+				cierre_previsto: fecha
+			}, function (resp) {
+				btn.prop('disabled', false);
+				if (!resp.success) {
+					$('#crm-inst-cierre-previsto-msg').css('color', '#991b1b').text(resp.data.message);
+					return;
+				}
+				$('#crm-inst-cierre-previsto-msg').css('color', '#065f46').text('Guardado: ' + resp.data.cierre_previsto_label);
+				setTimeout(function () { location.reload(); }, 700);
+			});
+		});
+
 		$('#crm-inst-guardar-agenda-btn').on('click', function () {
 			var btn = $(this).prop('disabled', true);
-			var fecha = $('#crm-inst-agenda-fecha').val();
+			var fechaDia = $('#crm-inst-agenda-fecha').val();
+			var horaOpcion = $('input[name="crm-inst-agenda-hora-opcion"]:checked').val();
+			var hora = horaOpcion === 'otra' ? $('#crm-inst-agenda-hora-otra').val() : horaOpcion;
 			$('#crm-inst-agenda-msg').text('');
+			if (!fechaDia || !hora) {
+				btn.prop('disabled', false);
+				$('#crm-inst-agenda-msg').css('color', '#991b1b').text('Elige fecha y hora.');
+				return;
+			}
 			$.post(ajaxurl, {
 				action: 'crm_inst_guardar_agenda', nonce: nonce, instalacion_id: instalacionId,
-				fecha_cita: fecha
+				fecha_cita: fechaDia + 'T' + hora,
+				duracion_dias: $('#crm-inst-agenda-duracion').val()
 			}, function (resp) {
 				btn.prop('disabled', false);
 				if (!resp.success) {

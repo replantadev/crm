@@ -56,15 +56,48 @@ function crm_equipo_listar_usuarios($rol) {
     if (!isset(crm_equipo_roles_gestionables()[$rol])) {
         return [];
     }
+    global $wpdb;
     $usuarios = get_users(['role' => $rol, 'orderby' => 'display_name', 'order' => 'ASC']);
-    return array_map(function ($u) {
-        return [
+    return array_map(function ($u) use ($rol, $wpdb) {
+        $fila = [
             'id'       => (int) $u->ID,
             'nombre'   => $u->display_name,
             'email'    => $u->user_email,
             'whatsapp' => (string) get_user_meta($u->ID, 'crm_whatsapp', true),
         ];
+        // v1.20.149 — reunión con cliente 2026-09-22, punto 8: "KO" (baja) de
+        // un comercial — solo tiene sentido para ese rol, nunca instaladores.
+        if ($rol === 'comercial') {
+            $fila['ko'] = (bool) get_user_meta($u->ID, 'crm_comercial_ko', true);
+            $fila['cartera'] = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->prefix}crm_clients WHERE user_id = %d",
+                $u->ID
+            ));
+        }
+        return $fila;
     }, $usuarios);
+}
+
+/**
+ * Comerciales activos (no KO) — para el desplegable "reasignar a" al
+ * repartir la cartera de alguien que se marca como KO. v1.20.149.
+ *
+ * @param int $excluir_user_id No incluir a este (el que se está dando de baja).
+ * @return array<int,array{id:int,nombre:string}>
+ */
+function crm_equipo_comerciales_activos($excluir_user_id = 0) {
+    $usuarios = get_users(['role' => 'comercial', 'orderby' => 'display_name', 'order' => 'ASC']);
+    $out = [];
+    foreach ($usuarios as $u) {
+        if ((int) $u->ID === (int) $excluir_user_id) {
+            continue;
+        }
+        if (get_user_meta($u->ID, 'crm_comercial_ko', true)) {
+            continue;
+        }
+        $out[] = ['id' => (int) $u->ID, 'nombre' => $u->display_name];
+    }
+    return $out;
 }
 
 /**
@@ -132,9 +165,16 @@ function crm_equipo_gestion_widget() {
                     <?php else : ?>
                         <?php foreach ($usuarios as $u) : ?>
                             <div class="crm-equipo-lista-item" data-user-id="<?php echo esc_attr($u['id']); ?>">
-                                <span class="crm-equipo-lista-nombre"><?php echo esc_html($u['nombre']); ?></span>
-                                <span class="crm-equipo-lista-meta"><?php echo esc_html($u['email']); ?><?php echo $u['whatsapp'] !== '' ? ' · ' . esc_html($u['whatsapp']) : ''; ?></span>
+                                <span class="crm-equipo-lista-nombre"><?php echo esc_html($u['nombre']); ?><?php if (!empty($u['ko'])) : ?> <span style="color:#991b1b;font-weight:700;">(KO)</span><?php endif; ?></span>
+                                <span class="crm-equipo-lista-meta"><?php echo esc_html($u['email']); ?><?php echo $u['whatsapp'] !== '' ? ' · ' . esc_html($u['whatsapp']) : ''; ?><?php echo $rol_slug === 'comercial' ? ' · ' . (int) $u['cartera'] . ' cliente(s)' : ''; ?></span>
                                 <button type="button" class="crm-btn crm-equipo-editar-btn" data-user-id="<?php echo esc_attr($u['id']); ?>">Editar</button>
+                                <?php if ($rol_slug === 'comercial') : ?>
+                                    <?php if (!empty($u['ko'])) : ?>
+                                        <button type="button" class="crm-btn crm-equipo-ko-btn" data-user-id="<?php echo esc_attr($u['id']); ?>" data-ko="0" style="background:#065f46;">Reactivar</button>
+                                    <?php else : ?>
+                                        <button type="button" class="crm-btn crm-equipo-ko-btn" data-user-id="<?php echo esc_attr($u['id']); ?>" data-ko="1" style="background:#991b1b;">Marcar KO</button>
+                                    <?php endif; ?>
+                                <?php endif; ?>
                                 <div class="crm-equipo-edit-form" id="crm-equipo-edit-<?php echo esc_attr($u['id']); ?>">
                                     <label>Nombre</label>
                                     <input type="text" class="crm-equipo-edit-nombre" value="<?php echo esc_attr($u['nombre']); ?>">
@@ -147,6 +187,17 @@ function crm_equipo_gestion_widget() {
                                         <span class="crm-equipo-form-msg"></span>
                                     </p>
                                 </div>
+                                <?php if ($rol_slug === 'comercial') : ?>
+                                    <div class="crm-equipo-cartera-panel" id="crm-equipo-cartera-<?php echo esc_attr($u['id']); ?>" style="display:none;width:100%;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;margin-top:6px;">
+                                        <p style="margin:0 0 8px;font-size:12.5px;color:#92400e;">Reparte su cartera antes de marcarlo como KO: selecciona clientes, elige el comercial destino y pulsa "Reasignar".</p>
+                                        <div class="crm-equipo-cartera-lista"></div>
+                                        <p style="margin:8px 0 0;">
+                                            <select class="crm-equipo-cartera-destino"></select>
+                                            <button type="button" class="crm-btn crm-equipo-cartera-reasignar-btn" data-user-id="<?php echo esc_attr($u['id']); ?>">Reasignar seleccionados</button>
+                                            <span class="crm-equipo-cartera-msg"></span>
+                                        </p>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -209,7 +260,105 @@ function crm_equipo_gestion_widget() {
             });
         });
 
+        function cargarCartera(userId, panel) {
+            var lista = panel.querySelector('.crm-equipo-cartera-lista');
+            var destino = panel.querySelector('.crm-equipo-cartera-destino');
+            lista.innerHTML = 'Cargando…';
+            var body = new URLSearchParams();
+            body.set('action', 'crm_equipo_listar_cartera');
+            body.set('nonce', nonce);
+            body.set('user_id', userId);
+            fetch(ajaxurl, { method: 'POST', body: body })
+                .then(function (r) { return r.json(); })
+                .then(function (resp) {
+                    if (!resp.success) {
+                        lista.innerHTML = '<span style="color:#991b1b;">' + ((resp.data && resp.data.message) || 'Error.') + '</span>';
+                        return;
+                    }
+                    var clientes = resp.data.clientes || [];
+                    var comerciales = resp.data.comerciales || [];
+                    if (!clientes.length) {
+                        lista.innerHTML = '<em>Sin clientes pendientes de reasignar.</em>';
+                    } else {
+                        lista.innerHTML = clientes.map(function (c) {
+                            return '<label style="display:block;font-weight:400;font-size:13px;margin:2px 0;">' +
+                                '<input type="checkbox" class="crm-equipo-cartera-check" value="' + c.id + '"> ' +
+                                (c.cliente_nombre || ('Cliente #' + c.id)) + (c.empresa ? ' — ' + c.empresa : '') +
+                                '</label>';
+                        }).join('');
+                    }
+                    destino.innerHTML = comerciales.map(function (com) {
+                        return '<option value="' + com.id + '">' + com.nombre + '</option>';
+                    }).join('') || '<option value="">(no hay otro comercial activo)</option>';
+                });
+        }
+
         document.addEventListener('click', function (e) {
+            var koBtn = e.target.closest && e.target.closest('.crm-equipo-ko-btn');
+            if (koBtn) {
+                var userId = koBtn.getAttribute('data-user-id');
+                var ko = koBtn.getAttribute('data-ko') === '1';
+                var panel = document.getElementById('crm-equipo-cartera-' + userId);
+                koBtn.disabled = true;
+                var body = new URLSearchParams();
+                body.set('action', 'crm_equipo_marcar_ko');
+                body.set('nonce', nonce);
+                body.set('user_id', userId);
+                body.set('ko', ko ? '1' : '0');
+                fetch(ajaxurl, { method: 'POST', body: body })
+                    .then(function (r) { return r.json(); })
+                    .then(function (resp) {
+                        koBtn.disabled = false;
+                        if (!resp.success) {
+                            if (resp.data && resp.data.code === 'cartera_pendiente' && panel) {
+                                panel.style.display = 'block';
+                                cargarCartera(userId, panel);
+                            } else {
+                                alert((resp.data && resp.data.message) || 'Error.');
+                            }
+                            return;
+                        }
+                        location.reload();
+                    });
+                return;
+            }
+
+            var reasignarBtn = e.target.closest && e.target.closest('.crm-equipo-cartera-reasignar-btn');
+            if (reasignarBtn) {
+                var uId = reasignarBtn.getAttribute('data-user-id');
+                var panel2 = document.getElementById('crm-equipo-cartera-' + uId);
+                var checks = Array.from(panel2.querySelectorAll('.crm-equipo-cartera-check:checked')).map(function (c) { return c.value; });
+                var destinoId = panel2.querySelector('.crm-equipo-cartera-destino').value;
+                var msg = panel2.querySelector('.crm-equipo-cartera-msg');
+                if (!checks.length || !destinoId) {
+                    msg.style.color = '#991b1b';
+                    msg.textContent = 'Selecciona al menos un cliente y el comercial destino.';
+                    return;
+                }
+                reasignarBtn.disabled = true;
+                msg.style.color = '#6b7280';
+                msg.textContent = 'Reasignando…';
+                var body2 = new URLSearchParams();
+                body2.set('action', 'crm_equipo_reasignar_cartera');
+                body2.set('nonce', nonce);
+                checks.forEach(function (id) { body2.append('client_ids[]', id); });
+                body2.set('nuevo_comercial_id', destinoId);
+                fetch(ajaxurl, { method: 'POST', body: body2 })
+                    .then(function (r) { return r.json(); })
+                    .then(function (resp) {
+                        reasignarBtn.disabled = false;
+                        if (!resp.success) {
+                            msg.style.color = '#991b1b';
+                            msg.textContent = (resp.data && resp.data.message) || 'Error.';
+                            return;
+                        }
+                        msg.style.color = '#065f46';
+                        msg.textContent = resp.data.movidos + ' cliente(s) reasignado(s).';
+                        cargarCartera(uId, panel2);
+                    });
+                return;
+            }
+
             var editBtn = e.target.closest && e.target.closest('.crm-equipo-editar-btn');
             if (editBtn) {
                 var form = document.getElementById('crm-equipo-edit-' + editBtn.getAttribute('data-user-id'));
@@ -434,6 +583,154 @@ function crm_equipo_ajax_editar_usuario() {
     }
 
     wp_send_json_success([]);
+}
+
+/**
+ * Bloquea el login de un comercial marcado como KO — v1.20.149. No se toca
+ * la cuenta ni su historial, solo el acceso; reactivar (crm_comercial_ko
+ * a vacío) restaura el acceso normal al instante.
+ */
+add_filter('wp_authenticate_user', 'crm_authenticate_bloquear_ko', 20, 1);
+function crm_authenticate_bloquear_ko($user) {
+    if (is_wp_error($user)) {
+        return $user;
+    }
+    if (in_array('comercial', (array) $user->roles, true) && get_user_meta($user->ID, 'crm_comercial_ko', true)) {
+        return new WP_Error('crm_comercial_ko', 'Tu cuenta ha sido desactivada. Contacta con tu administrador si crees que es un error.');
+    }
+    return $user;
+}
+
+/**
+ * AJAX: marcar/desmarcar un comercial como KO (baja) — v1.20.149. No borra
+ * la cuenta ni el historial (decisión explícita del usuario): solo bloquea
+ * el acceso (crm_authenticate_bloquear_ko()) mientras conserva todo. Si
+ * todavía tiene clientes asignados, se niega a marcarlo como KO — hay que
+ * repartir antes su cartera (crm_equipo_ajax_reasignar_cartera()).
+ */
+add_action('wp_ajax_crm_equipo_marcar_ko', 'crm_equipo_ajax_marcar_ko');
+function crm_equipo_ajax_marcar_ko() {
+    if (!current_user_can('crm_admin') || !check_ajax_referer('crm_equipo_gestion', 'nonce', false)) {
+        wp_send_json_error(['message' => 'Sin permisos.'], 403);
+    }
+
+    global $wpdb;
+    $user_id = (int) ($_POST['user_id'] ?? 0);
+    $ko      = !empty($_POST['ko']);
+
+    $user = get_userdata($user_id);
+    if (!$user || !in_array('comercial', (array) $user->roles, true)) {
+        wp_send_json_error(['message' => 'Usuario no válido.']);
+    }
+
+    if ($ko) {
+        $cartera = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}crm_clients WHERE user_id = %d",
+            $user_id
+        ));
+        if ($cartera > 0) {
+            wp_send_json_error(['message' => 'Todavía tiene ' . $cartera . ' cliente(s) asignado(s) — reparte su cartera antes de marcarlo como KO.', 'code' => 'cartera_pendiente']);
+        }
+    }
+
+    update_user_meta($user_id, 'crm_comercial_ko', $ko ? '1' : '');
+
+    // Si ya tenía una sesión abierta en el navegador, marcarlo como KO no la
+    // corta por sí solo (el bloqueo de wp_authenticate_user solo actúa en el
+    // siguiente intento de login) — se invalida aquí mismo para que el
+    // acceso se corte al momento, no en su próximo login.
+    if ($ko && class_exists('WP_Session_Tokens')) {
+        WP_Session_Tokens::get_instance($user_id)->destroy_all();
+    }
+
+    if (function_exists('crm_log_action')) {
+        crm_log_action(
+            $ko ? 'comercial_marcado_ko' : 'comercial_reactivado',
+            ($ko ? 'Comercial marcado como KO (baja): ' : 'Comercial reactivado: ') . $user->display_name,
+            null, null, 'notice'
+        );
+    }
+
+    wp_send_json_success(['ko' => $ko]);
+}
+
+/**
+ * AJAX: cartera (clientes asignados) de un comercial, para el panel de
+ * reparto al marcarlo como KO. v1.20.149.
+ */
+add_action('wp_ajax_crm_equipo_listar_cartera', 'crm_equipo_ajax_listar_cartera');
+function crm_equipo_ajax_listar_cartera() {
+    if (!current_user_can('crm_admin') || !check_ajax_referer('crm_equipo_gestion', 'nonce', false)) {
+        wp_send_json_error(['message' => 'Sin permisos.'], 403);
+    }
+
+    global $wpdb;
+    $user_id = (int) ($_POST['user_id'] ?? 0);
+
+    $clientes = $wpdb->get_results($wpdb->prepare(
+        "SELECT id, cliente_nombre, empresa FROM {$wpdb->prefix}crm_clients WHERE user_id = %d ORDER BY cliente_nombre ASC",
+        $user_id
+    ), ARRAY_A);
+
+    wp_send_json_success([
+        'clientes'    => $clientes,
+        'comerciales' => crm_equipo_comerciales_activos($user_id),
+    ]);
+}
+
+/**
+ * AJAX: reasigna en lote un grupo de clientes a otro comercial activo —
+ * "el CRM manda, Holded se sincroniza": esto SOLO toca wp_crm_clients
+ * (delegado/user_id/email_comercial), nunca escribe nada en Holded ni se ve
+ * afectado por su sincronización (que solo cachea holded_lead_user_id, un
+ * campo aparte — ver includes/holded-clientes-sync.php). v1.20.149.
+ */
+add_action('wp_ajax_crm_equipo_reasignar_cartera', 'crm_equipo_ajax_reasignar_cartera');
+function crm_equipo_ajax_reasignar_cartera() {
+    if (!current_user_can('crm_admin') || !check_ajax_referer('crm_equipo_gestion', 'nonce', false)) {
+        wp_send_json_error(['message' => 'Sin permisos.'], 403);
+    }
+
+    global $wpdb;
+    $client_ids = array_map('intval', (array) ($_POST['client_ids'] ?? []));
+    $client_ids = array_filter($client_ids);
+    $nuevo_id   = (int) ($_POST['nuevo_comercial_id'] ?? 0);
+
+    if (empty($client_ids) || $nuevo_id <= 0) {
+        wp_send_json_error(['message' => 'Selecciona al menos un cliente y el comercial destino.']);
+    }
+
+    $nuevo = get_userdata($nuevo_id);
+    if (!$nuevo || !in_array('comercial', (array) $nuevo->roles, true) || get_user_meta($nuevo_id, 'crm_comercial_ko', true)) {
+        wp_send_json_error(['message' => 'El comercial destino no es válido o está de baja.']);
+    }
+
+    $tabla = $wpdb->prefix . 'crm_clients';
+    $movidos = 0;
+    foreach ($client_ids as $client_id) {
+        $result = $wpdb->update(
+            $tabla,
+            [
+                'delegado'        => $nuevo->display_name,
+                'user_id'         => $nuevo_id,
+                'email_comercial' => $nuevo->user_email,
+            ],
+            ['id' => $client_id]
+        );
+        if ($result !== false) {
+            $movidos++;
+        }
+    }
+
+    if (function_exists('crm_log_action')) {
+        crm_log_action(
+            'cartera_reasignada',
+            $movidos . ' cliente(s) reasignado(s) a ' . $nuevo->display_name . ' (baja de comercial).',
+            null, null, 'info'
+        );
+    }
+
+    wp_send_json_success(['movidos' => $movidos]);
 }
 
 /**

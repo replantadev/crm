@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.148
+Version: 1.20.149
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.148');
+define('CRM_PLUGIN_VERSION', '1.20.149');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -848,7 +848,16 @@ function crm_formulario_alta_cliente()
                     // v1.20.9: incluir tambien visitadores (actuan como comercial).
                     $delegados = get_users(['role__in' => ['comercial', 'visitador']]);
                     foreach ($delegados as $comercial) {
-                        $selected = (isset($client_data['delegado']) && $client_data['delegado'] === $comercial->display_name) ? 'selected' : '';
+                        // v1.20.149: un comercial marcado como KO (baja) ya no debe
+                        // poder recibir asignaciones nuevas — pero si un cliente ya
+                        // le apuntaba (caso raro, no debería pasar porque marcar KO
+                        // exige la cartera a 0 antes), se mantiene visible para no
+                        // esconder a quién estaba asignado de verdad.
+                        $es_actual = isset($client_data['delegado']) && $client_data['delegado'] === $comercial->display_name;
+                        if (in_array('comercial', (array) $comercial->roles, true) && get_user_meta($comercial->ID, 'crm_comercial_ko', true) && !$es_actual) {
+                            continue;
+                        }
+                        $selected = $es_actual ? 'selected' : '';
                         echo "<option value='" . esc_attr($comercial->display_name) . "' $selected>" . esc_html($comercial->display_name) . " (" . esc_html($comercial->user_email) . ")</option>";
                     }
                     ?>

@@ -672,6 +672,17 @@ function crm_inst_panel_render_card(array $v, $con_fecha, $permitir_cierre = tru
                             <input type="checkbox" class="crm-panel-inst-checklist-seguridad">
                             He leído y acepto el <a href="<?php echo esc_url(home_url('/plan-de-seguridad/')); ?>" target="_blank" rel="noopener noreferrer">plan de seguridad y prevención</a>
                         </label>
+                        <?php
+                        // v1.20.145 — reunión con cliente 2026-09-22, punto 4: solo se
+                        // muestra/exige si el sitio tiene configurada una página de
+                        // política de privacidad (Ajustes → Privacidad de WP).
+                        $crm_privacidad_url = get_privacy_policy_url();
+                        if ($crm_privacidad_url !== '') : ?>
+                            <label class="crm-panel-inst-cierre-check">
+                                <input type="checkbox" class="crm-panel-inst-checklist-privacidad">
+                                He leído y acepto la <a href="<?php echo esc_url($crm_privacidad_url); ?>" target="_blank" rel="noopener noreferrer">política de privacidad</a>
+                            </label>
+                        <?php endif; ?>
                         <?php if (!empty($almacenes_holded)) : ?>
                             <label class="crm-panel-inst-cierre-check" style="flex-direction:column; align-items:flex-start; gap:4px;">
                                 Almacén del que sale el material
@@ -1483,14 +1494,16 @@ function crm_inst_panel_extras_js($nonce) {
                 var cklWrap = checklistGuardar.closest('.crm-panel-inst-checklist-form-wrap');
                 var materialesOk = cklWrap.querySelector('.crm-panel-inst-checklist-materiales').checked;
                 var seguridadOk = cklWrap.querySelector('.crm-panel-inst-checklist-seguridad').checked;
+                var cklPrivacidadCheck = cklWrap.querySelector('.crm-panel-inst-checklist-privacidad');
+                var privacidadOk = cklPrivacidadCheck ? cklPrivacidadCheck.checked : true;
                 var cklAlmacenSelect = cklWrap.querySelector('.crm-panel-inst-checklist-almacen');
                 var cklAlmacenId = cklAlmacenSelect ? cklAlmacenSelect.value : '';
                 var cklMsg = cklWrap.querySelector('.crm-panel-inst-checklist-msg');
                 var cklInstalacionId = checklistGuardar.getAttribute('data-instalacion-id');
 
-                if (!materialesOk || !seguridadOk) {
+                if (!materialesOk || !seguridadOk || !privacidadOk) {
                     cklMsg.style.color = '#991b1b';
-                    cklMsg.textContent = 'Marca las dos casillas para poder confirmar.';
+                    cklMsg.textContent = 'Marca todas las casillas para poder confirmar.';
                     return;
                 }
                 if (cklAlmacenSelect && !cklAlmacenId) {
@@ -1509,6 +1522,7 @@ function crm_inst_panel_extras_js($nonce) {
                 cklBody.set('instalacion_id', cklInstalacionId);
                 cklBody.set('materiales_ok', '1');
                 cklBody.set('seguridad_ok', '1');
+                cklBody.set('privacidad_ok', privacidadOk ? '1' : '0');
                 cklBody.set('warehouse_id', cklAlmacenId);
 
                 window.crmOfflineEnviar(Array.from(cklBody.entries()), { tipo: 'checklist', instalacion_id: cklInstalacionId, label: 'Checklist de la instalación #' + cklInstalacionId })

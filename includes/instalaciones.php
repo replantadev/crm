@@ -3231,9 +3231,15 @@ function crm_inst_ajax_confirmar_checklist() {
 	$instalacion_id = (int) ( $_POST['instalacion_id'] ?? 0 );
 	$materiales_ok  = ! empty( $_POST['materiales_ok'] );
 	$seguridad_ok   = ! empty( $_POST['seguridad_ok'] );
+	// v1.20.145 — reunión con cliente 2026-09-22, punto 4: solo se exige si
+	// el sitio tiene configurada una página de política de privacidad
+	// (Ajustes → Privacidad de WP) — si no existe, no se puede exigir
+	// aceptar algo que no está publicado.
+	$privacidad_url = get_privacy_policy_url();
+	$privacidad_ok  = $privacidad_url === '' || ! empty( $_POST['privacidad_ok'] );
 
-	if ( $instalacion_id <= 0 || ! $materiales_ok || ! $seguridad_ok ) {
-		wp_send_json_error( [ 'message' => 'Confirma que tienes todos los materiales y que has leído el plan de seguridad.' ] );
+	if ( $instalacion_id <= 0 || ! $materiales_ok || ! $seguridad_ok || ! $privacidad_ok ) {
+		wp_send_json_error( [ 'message' => 'Confirma todas las casillas: materiales, plan de seguridad' . ( $privacidad_url !== '' ? ' y política de privacidad' : '' ) . '.' ] );
 	}
 
 	if ( ! crm_inst_current_user_can_manage() ) {
@@ -3338,7 +3344,7 @@ function crm_inst_ajax_confirmar_checklist() {
 		'checklist_confirmado_en'  => current_time( 'mysql' ),
 	], $waybill_update ), [ 'id' => $instalacion_id ] );
 
-	crm_inst_log_action( $instalacion_id, 'instalacion', 'checklist_confirmado', 'Instalador confirmó materiales recibidos y plan de seguridad aceptado.' );
+	crm_inst_log_action( $instalacion_id, 'instalacion', 'checklist_confirmado', 'Instalador confirmó materiales recibidos, plan de seguridad' . ( $privacidad_url !== '' ? ' y política de privacidad' : '' ) . ' aceptados.' );
 
 	if ( function_exists( 'crm_notificar_jefes_instalaciones' ) ) {
 		crm_notificar_jefes_instalaciones(

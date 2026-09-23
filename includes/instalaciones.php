@@ -117,6 +117,7 @@ function crm_instalaciones_install_tables() {
   client_id BIGINT(20) UNSIGNED DEFAULT NULL,
   holded_doc_id VARCHAR(100) DEFAULT NULL,
   holded_doc_type VARCHAR(50) DEFAULT NULL,
+  holded_doc_numero VARCHAR(50) DEFAULT NULL,
   holded_project_id VARCHAR(100) DEFAULT NULL,
   tipo_instalacion ENUM('residencial','comercial') DEFAULT NULL,
   subtipo_instalacion SET('fotovoltaica','aerotermia') DEFAULT NULL,
@@ -565,6 +566,55 @@ function crm_inst_resolver_client_id( $instalacion_id ) {
 		) );
 	}
 	return $cache[ $instalacion_id ] ?: null;
+}
+
+/**
+ * Identificador de instalación que ve el equipo (emails, WhatsApp, UI de
+ * admin/instalador/comercial) — v1.20.147, reunión con cliente 2026-09-22
+ * punto 11: pasa a ser el número de presupuesto de Holded en vez del ID
+ * interno autoincremental. Decisión explícita: NO se toca la clave primaria
+ * (`id`) ni ninguna relación de BBDD — esto es puramente de presentación.
+ *
+ * Si la instalación no tiene `holded_doc_numero` cacheado todavía (filas
+ * creadas antes de v1.20.147), se resuelve una vez contra la API de Holded
+ * y se guarda para no repetir la llamada en cada visualización. Si eso
+ * falla (sin Holded, sin `holded_doc_id`, error de red…) cae de vuelta al
+ * ID interno con un prefijo "#" para no dejar el hueco vacío.
+ *
+ * @param int|array $instalacion ID de la instalación, o su fila ya cargada
+ *                                (con al menos id/holded_doc_id/holded_doc_numero).
+ * @return string
+ */
+function crm_inst_id_visible( $instalacion ) {
+	global $wpdb;
+
+	if ( is_array( $instalacion ) ) {
+		$fila = $instalacion;
+	} else {
+		$fila = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, holded_doc_id, holded_doc_numero FROM " . crm_inst_table_instalaciones() . " WHERE id = %d",
+			(int) $instalacion
+		), ARRAY_A );
+	}
+	if ( ! $fila ) {
+		return '#' . (int) $instalacion;
+	}
+
+	if ( ! empty( $fila['holded_doc_numero'] ) ) {
+		return $fila['holded_doc_numero'];
+	}
+
+	// Backfill perezoso — solo si hay un holded_doc_id del que resolverlo.
+	if ( ! empty( $fila['holded_doc_id'] ) && function_exists( 'crm_holded_get_estimate' ) ) {
+		$estimate = crm_holded_get_estimate( $fila['holded_doc_id'] );
+		if ( ! is_wp_error( $estimate ) && ! empty( $estimate['document_number'] ) ) {
+			$numero = sanitize_text_field( (string) $estimate['document_number'] );
+			$wpdb->update( crm_inst_table_instalaciones(), [ 'holded_doc_numero' => $numero ], [ 'id' => (int) $fila['id'] ] );
+			return $numero;
+		}
+	}
+
+	return '#' . (int) $fila['id'];
 }
 
 /**
@@ -1115,7 +1165,7 @@ function crm_inst_crear_desde_presupuesto( $estimate_id, $tipo_instalacion, $sub
 		$estimate_id
 	) );
 	if ( $ya_existe > 0 ) {
-		return new WP_Error( 'crm_inst_ya_existe', 'Ya existe una instalación creada desde este presupuesto (instalación #' . $ya_existe . ').' );
+		return new WP_Error( 'crm_inst_ya_existe', 'Ya existe una instalación creada desde este presupuesto (instalación ' . crm_inst_id_visible( $ya_existe ) . ').' );
 	}
 
 	$estimate = crm_holded_get_estimate( $estimate_id );
@@ -1158,12 +1208,18 @@ function crm_inst_crear_desde_presupuesto( $estimate_id, $tipo_instalacion, $sub
 			'client_id'            => $client_id,
 			'holded_doc_id'        => $estimate_id,
 			'holded_doc_type'      => 'estimate',
+			// v1.20.147 — reunión con cliente 2026-09-22, punto 11: el
+			// identificador que ve el equipo (emails/whats/UI) pasa a ser el
+			// número de presupuesto de Holded, no el ID interno autoincremental
+			// — ver crm_inst_id_visible(). Solo cambia lo MOSTRADO, la clave
+			// primaria interna sigue igual (decisión explícita, menor riesgo).
+			'holded_doc_numero'    => sanitize_text_field( (string) ( $estimate['document_number'] ?? '' ) ) ?: null,
 			'tipo_instalacion'     => $tipo_instalacion,
 			'subtipo_instalacion'  => $subtipo_instalacion !== '' ? $subtipo_instalacion : null,
 			'direccion_instalacion' => implode( ', ', $direccion_partes ),
 			'estado'               => 'borrador',
 		],
-		[ '%d', '%s', '%s', '%s', '%s', '%s', '%s' ]
+		[ '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ]
 	);
 
 	if ( $insert_inst === false ) {
@@ -1221,9 +1277,10 @@ function crm_inst_crear_desde_presupuesto( $estimate_id, $tipo_instalacion, $sub
 	}
 
 	return [
-		'instalacion_id'     => $instalacion_id,
-		'client_id'          => $client_id,
-		'lineas_importadas'  => $lineas_importadas,
+		'instalacion_id'         => $instalacion_id,
+		'instalacion_id_visible' => crm_inst_id_visible( $instalacion_id ),
+		'client_id'              => $client_id,
+		'lineas_importadas'      => $lineas_importadas,
 	];
 }
 
@@ -1783,6 +1840,7 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 		'holded_waybill_error'   => $inst['holded_waybill_error'],
 		'duracion_dias'       => (int) $inst['duracion_dias'],
 		'cierre_previsto'     => $inst['cierre_previsto'],
+		'id_visible'          => crm_inst_id_visible( $inst ),
 	];
 }
 
@@ -2022,7 +2080,7 @@ function crm_inst_aviso_materiales_pendientes_run() {
 			continue;
 		}
 		$fecha_label = date_i18n( 'd/m/Y H:i', strtotime( $r['fecha_cita'] ) );
-		$mensaje = 'Visita el ' . $fecha_label . ' — ' . ( $r['cliente_nombre'] ?: ( 'instalación #' . $r['id'] ) ) . ': quedan ' . $pendientes . ' material(es) sin recibir.';
+		$mensaje = 'Visita el ' . $fecha_label . ' — ' . ( $r['cliente_nombre'] ?: ( 'instalación ' . crm_inst_id_visible( (int) $r['id'] ) ) ) . ': quedan ' . $pendientes . ' material(es) sin recibir.';
 
 		// v1.20.63: el mensaje se ajusta según lo que sepamos del pedido —
 		// sin esto, un pedido ya confirmado con fecha de entrega holgada
@@ -2054,7 +2112,7 @@ function crm_inst_aviso_materiales_pendientes_run() {
 		}
 		crm_inst_aviso_enviar_email_jefes( 'Materiales pendientes antes de una visita', $mensaje, $url );
 		crm_inst_aviso_enviar_whatsapp_jefes(
-			$r['cliente_nombre'] ?: ( 'instalación #' . $r['id'] ),
+			$r['cliente_nombre'] ?: ( 'instalación ' . crm_inst_id_visible( (int) $r['id'] ) ),
 			$r['direccion_instalacion'],
 			$fecha_label,
 			$pendientes,
@@ -2302,7 +2360,7 @@ function crm_inst_aviso_calendario_run() {
 
 	foreach ( $rows as $r ) {
 		$fecha_label    = date_i18n( 'd/m/Y H:i', strtotime( $r['fecha_cita'] ) );
-		$cliente_nombre = $r['cliente_nombre'] ?: ( 'instalación #' . $r['instalacion_id'] );
+		$cliente_nombre = $r['cliente_nombre'] ?: ( 'instalación ' . crm_inst_id_visible( (int) $r['instalacion_id'] ) );
 		$url            = add_query_arg( 'id', $r['instalacion_id'], home_url( '/instalacion/' ) );
 
 		// Cliente — por email. v1.20.137: antes usaba wp_mail() directo, sin
@@ -2328,7 +2386,7 @@ function crm_inst_aviso_calendario_run() {
 			if ( $template_cliente !== '' ) {
 				$resultado_cliente = crm_whatsapp_enviar_plantilla( $r['telefono'], $template_cliente, [ $cliente_nombre, $fecha_label, $r['direccion_instalacion'] ?: '—' ] );
 				if ( is_wp_error( $resultado_cliente ) ) {
-					crm_whatsapp_log_error( $template_cliente, 'Confirmación de visita al cliente #' . $r['instalacion_id'] . ': ' . $resultado_cliente->get_error_message() );
+					crm_whatsapp_log_error( $template_cliente, 'Confirmación de visita al cliente — instalación ' . crm_inst_id_visible( (int) $r['instalacion_id'] ) . ': ' . $resultado_cliente->get_error_message() );
 				}
 			}
 		}
@@ -2594,12 +2652,12 @@ function crm_inst_ajax_marcar_material_montado() {
 			if ( function_exists( 'crm_notificar_jefes_instalaciones' ) ) {
 				crm_notificar_jefes_instalaciones(
 					'instalacion_en_ejecucion',
-					'El instalador ha empezado a montar — instalación de ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.',
+					'El instalador ha empezado a montar — instalación de ' . ( $cliente_nombre ?: crm_inst_id_visible( $instalacion_id ) ) . '.',
 					$url_ficha
 				);
 			}
 			crm_inst_aviso_enviar_whatsapp_en_ejecucion(
-				$cliente_nombre ?: ( 'instalación #' . $instalacion_id ),
+				$cliente_nombre ?: ( 'instalación ' . crm_inst_id_visible( $instalacion_id ) ),
 				wp_get_current_user()->display_name,
 				$url_ficha
 			);
@@ -2717,7 +2775,7 @@ function crm_inst_ajax_declarar_extra() {
 		) );
 		crm_notificar_jefes_instalaciones(
 			'extra_declarada',
-			'Nueva partida extra pendiente: "' . $descripcion . '" — ' . number_format_i18n( $importe, 2 ) . ' € en ' . ( $cliente_nombre ?: ( 'instalación #' . $instalacion_id ) ),
+			'Nueva partida extra pendiente: "' . $descripcion . '" — ' . number_format_i18n( $importe, 2 ) . ' € en ' . ( $cliente_nombre ?: ( 'instalación ' . crm_inst_id_visible( $instalacion_id ) ) ),
 			add_query_arg( 'id', $instalacion_id, home_url( '/instalacion/' ) )
 		);
 	}
@@ -3320,7 +3378,7 @@ function crm_inst_ajax_confirmar_checklist() {
 				$warehouse_id,
 				$items,
 				$contacto['holded_project_id'] ?: '',
-				'Materiales retirados para la instalación #' . $instalacion_id . ' — recogidos por el instalador.'
+				'Materiales retirados para la instalación ' . crm_inst_id_visible( $instalacion_id ) . ' — recogidos por el instalador.'
 			);
 
 			if ( is_wp_error( $resultado ) ) {
@@ -3349,7 +3407,7 @@ function crm_inst_ajax_confirmar_checklist() {
 	if ( function_exists( 'crm_notificar_jefes_instalaciones' ) ) {
 		crm_notificar_jefes_instalaciones(
 			'checklist_confirmado',
-			'El instalador confirmó materiales y seguridad — instalación #' . $instalacion_id . '.',
+			'El instalador confirmó materiales y seguridad — instalación ' . crm_inst_id_visible( $instalacion_id ) . '.',
 			add_query_arg( 'id', $instalacion_id, home_url( '/instalacion/' ) )
 		);
 	}
@@ -3587,8 +3645,8 @@ function crm_inst_ajax_cerrar_instalacion() {
 			$instalacion_id
 		) );
 		$mensaje = $requiere_aprobacion
-			? 'Cierre pendiente de validar: ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) )
-			: 'Instalación finalizada: ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) );
+			? 'Cierre pendiente de validar: ' . ( $cliente_nombre ?: crm_inst_id_visible( $instalacion_id ) )
+			: 'Instalación finalizada: ' . ( $cliente_nombre ?: crm_inst_id_visible( $instalacion_id ) );
 		if ( ! empty( $lineas_sin_montar ) ) {
 			$mensaje .= ' — ⚠ ' . count( $lineas_sin_montar ) . ' material(es) sin instalar, revisar presupuesto en Holded.';
 		}
@@ -3643,7 +3701,7 @@ function crm_inst_ajax_validar_cierre() {
 	crm_inst_log_action( $instalacion_id, 'instalacion', 'cierre_' . $nuevo_estado, 'Cierre ' . $nuevo_estado . ' por el jefe.' );
 
 	if ( ! empty( $inst['cierre_declarado_por'] ) ) {
-		$cliente_nombre_cierre = $inst['cliente_nombre'] ?: ( 'instalación #' . $instalacion_id );
+		$cliente_nombre_cierre = $inst['cliente_nombre'] ?: ( 'instalación ' . crm_inst_id_visible( $instalacion_id ) );
 		$mensaje_cierre = 'Tu cierre de instalación (' . $cliente_nombre_cierre . ') ha sido ' . $nuevo_estado . '.';
 		if ( function_exists( 'crm_notificar' ) ) {
 			crm_notificar( (int) $inst['cierre_declarado_por'], 'cierre_' . $nuevo_estado, $mensaje_cierre, home_url( '/panel-instalador/' ) );
@@ -3696,7 +3754,7 @@ function crm_inst_ajax_notificar_proveedor() {
 
 	$subject = sprintf( 'Nuevo pedido para Ecovolt Renovables S.L. — %s', $data['cliente_nombre'] );
 
-	$body  = '<p>Instalación #' . (int) $data['id'] . ' — ' . esc_html( $data['cliente_nombre'] ) . '</p>';
+	$body  = '<p>Instalación ' . esc_html( $data['id_visible'] ) . ' — ' . esc_html( $data['cliente_nombre'] ) . '</p>';
 	$body .= '<p>' . esc_html( $data['direccion_instalacion'] ) . '</p>';
 	$body .= '<p>Materiales pendientes de recibir:</p><ul>';
 	foreach ( $pendientes as $m ) {
@@ -3750,7 +3808,7 @@ function crm_inst_ajax_notificar_proveedor() {
 			$resultado = crm_holded_crear_pedido_compra(
 				$proveedor_contact_id,
 				$items,
-				'Pedido para la instalación #' . $instalacion_id . ' — ' . $data['cliente_nombre']
+				'Pedido para la instalación ' . $data['id_visible'] . ' — ' . $data['cliente_nombre']
 			);
 
 			if ( is_wp_error( $resultado ) ) {
@@ -3847,7 +3905,7 @@ function crm_inst_shortcode_confirmar_pedido() {
 	ob_start();
 	?>
 	<div id="crm-confirmar-wrap" style="max-width:480px; margin:40px auto; padding:24px; font-family:system-ui,-apple-system,sans-serif; background:#fff; border:1px solid #e5e7eb; border-radius:10px;">
-		<h2 style="margin-top:0; font-size:18px; color:#1f2937;">Confirmar pedido — <?php echo esc_html( $inst['cliente_nombre'] ?: ( 'instalación #' . $inst['id'] ) ); ?></h2>
+		<h2 style="margin-top:0; font-size:18px; color:#1f2937;">Confirmar pedido — <?php echo esc_html( $inst['cliente_nombre'] ?: ( 'instalación ' . crm_inst_id_visible( (int) $inst['id'] ) ) ); ?></h2>
 		<?php if ( empty( $materiales ) ) : ?>
 			<p>No hay materiales pendientes registrados para este pedido.</p>
 		<?php else : ?>
@@ -4023,20 +4081,20 @@ function crm_inst_ajax_asignar_instalador() {
 		crm_notificar(
 			$user_id,
 			'instalacion_asignada',
-			'Te han asignado la instalación de ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.',
+			'Te han asignado la instalación de ' . ( $cliente_nombre ?: crm_inst_id_visible( $instalacion_id ) ) . '.',
 			home_url( '/panel-instalador/' )
 		);
 	}
 	crm_inst_email_instalador(
 		$user_id,
 		'Nueva instalación asignada',
-		'Te han asignado la instalación de ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.',
+		'Te han asignado la instalación de ' . ( $cliente_nombre ?: crm_inst_id_visible( $instalacion_id ) ) . '.',
 		home_url( '/panel-instalador/' )
 	);
 	crm_inst_whatsapp_instalador(
 		$user_id,
 		'crm_whatsapp_template_instalador_asignado',
-		[ $cliente_nombre ?: ( 'instalación #' . $instalacion_id ), home_url( '/panel-instalador/' ) ],
+		[ $cliente_nombre ?: ( 'instalación ' . crm_inst_id_visible( $instalacion_id ) ), home_url( '/panel-instalador/' ) ],
 		'Instalación asignada'
 	);
 
@@ -4055,7 +4113,7 @@ function crm_inst_ajax_asignar_instalador() {
 			[ '%d', '%s', '%d', '%s' ]
 		);
 		$fecha_visita_label = date_i18n( 'd/m/Y H:i', strtotime( $fecha_existente ) );
-		$mensaje_visita = 'Visita programada para ' . $fecha_visita_label . ' — ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.';
+		$mensaje_visita = 'Visita programada para ' . $fecha_visita_label . ' — ' . ( $cliente_nombre ?: crm_inst_id_visible( $instalacion_id ) ) . '.';
 		if ( function_exists( 'crm_notificar' ) ) {
 			crm_notificar( $user_id, 'visita_programada', $mensaje_visita, home_url( '/calendario-instalador/' ) );
 		}
@@ -4063,7 +4121,7 @@ function crm_inst_ajax_asignar_instalador() {
 		crm_inst_whatsapp_instalador(
 			$user_id,
 			'crm_whatsapp_template_instalador_visita',
-			[ $cliente_nombre ?: ( 'instalación #' . $instalacion_id ), $fecha_visita_label, home_url( '/calendario-instalador/' ) ],
+			[ $cliente_nombre ?: ( 'instalación ' . crm_inst_id_visible( $instalacion_id ) ), $fecha_visita_label, home_url( '/calendario-instalador/' ) ],
 			'Visita programada'
 		);
 	}
@@ -4179,7 +4237,7 @@ function crm_inst_ajax_guardar_agenda() {
 		}
 
 		$fecha_visita_label = date_i18n( 'd/m/Y H:i', $timestamp );
-		$mensaje_visita = ( $existing_id > 0 ? 'Visita reprogramada' : 'Visita programada' ) . ' para ' . $fecha_visita_label . ' — ' . ( $cliente_nombre ?: ( '#' . $instalacion_id ) ) . '.';
+		$mensaje_visita = ( $existing_id > 0 ? 'Visita reprogramada' : 'Visita programada' ) . ' para ' . $fecha_visita_label . ' — ' . ( $cliente_nombre ?: crm_inst_id_visible( $instalacion_id ) ) . '.';
 		if ( function_exists( 'crm_notificar' ) ) {
 			crm_notificar( $instalador_id, $existing_id > 0 ? 'visita_reprogramada' : 'visita_programada', $mensaje_visita, home_url( '/calendario-instalador/' ) );
 		}
@@ -4187,7 +4245,7 @@ function crm_inst_ajax_guardar_agenda() {
 		crm_inst_whatsapp_instalador(
 			$instalador_id,
 			'crm_whatsapp_template_instalador_visita',
-			[ $cliente_nombre ?: ( 'instalación #' . $instalacion_id ), $fecha_visita_label, home_url( '/calendario-instalador/' ) ],
+			[ $cliente_nombre ?: ( 'instalación ' . crm_inst_id_visible( $instalacion_id ) ), $fecha_visita_label, home_url( '/calendario-instalador/' ) ],
 			'Visita programada/reprogramada'
 		);
 	}
@@ -5202,6 +5260,7 @@ function crm_inst_shortcode_ficha() {
 					<div class="crm-inst-datos-generales">
 						<div class="crm-inst-datos-lista">
 							<div class="crm-inst-dato-row"><span>Cliente</span><strong><?php echo esc_html( $data['cliente_nombre'] ); ?></strong></div>
+							<div class="crm-inst-dato-row"><span>Presupuesto</span><strong><?php echo esc_html( $data['id_visible'] ); ?></strong></div>
 							<div class="crm-inst-dato-row"><span>Contacto</span><strong>
 								<?php if ( empty( $data['email_cliente'] ) && empty( $data['telefono'] ) ) : ?>
 									<span class="crm-inst-aviso-campo">⚠️ Sin datos de contacto (no vinieron de Holded) — revísalo en la ficha del cliente.</span>
@@ -6347,7 +6406,7 @@ function crm_inst_shortcode_nueva_desde_presupuesto() {
 				}
 				var rows = resp.data.items.map(function (it) {
 					var accion = it.instalacion_id
-						? '<span class="status-badge status-instalacion-creada">Instalación #' + it.instalacion_id + '</span> <a href="' + fichaUrl + '?id=' + it.instalacion_id + '" class="crm-btn">Ver</a>'
+						? '<span class="status-badge status-instalacion-creada">Instalación ' + escapeHtml(it.document_number) + '</span> <a href="' + fichaUrl + '?id=' + it.instalacion_id + '" class="crm-btn">Ver</a>'
 						: '<button type="button" class="crm-btn crm-inst-ver-btn">Ver / crear</button>';
 					return '<tr data-id="' + escapeHtml(it.id) + '">' +
 						'<td>' + escapeHtml(it.document_number) + '</td>' +
@@ -6378,7 +6437,7 @@ function crm_inst_shortcode_nueva_desde_presupuesto() {
 				if (d.instalacion_existente) {
 					openModal(
 						'<p style="color:#92400e;">Ya existe una instalación creada desde este presupuesto.</p>' +
-						'<a href="' + fichaUrl + '?id=' + d.instalacion_existente + '" class="crm-btn">Ver instalación #' + d.instalacion_existente + '</a>'
+						'<a href="' + fichaUrl + '?id=' + d.instalacion_existente + '" class="crm-btn">Ver instalación ' + escapeHtml(d.document_number) + '</a>'
 					);
 					return;
 				}
@@ -6434,8 +6493,8 @@ function crm_inst_shortcode_nueva_desde_presupuesto() {
 						}
 						btn.text('Creada').prop('disabled', true);
 						$('#crm-inst-crear-resultado').html(
-							'<p style="color:#065f46;">Instalación #' + resp.data.instalacion_id + ' creada (cliente #' + resp.data.client_id + ', ' + resp.data.lineas_importadas + ' líneas importadas).</p>' +
-							'<a href="' + fichaUrl + '?id=' + resp.data.instalacion_id + '" class="crm-btn">Ver instalación #' + resp.data.instalacion_id + '</a>'
+							'<p style="color:#065f46;">Instalación ' + escapeHtml(resp.data.instalacion_id_visible) + ' creada (cliente #' + resp.data.client_id + ', ' + resp.data.lineas_importadas + ' líneas importadas).</p>' +
+							'<a href="' + fichaUrl + '?id=' + resp.data.instalacion_id + '" class="crm-btn">Ver instalación ' + escapeHtml(resp.data.instalacion_id_visible) + '</a>'
 						);
 					});
 				});

@@ -261,7 +261,10 @@ function crm_shortcode_mi_agenda($atts = []) {
                 }
                 $eventos_cal[] = [
                     'id'              => 'inst-' . $ri['instalacion_id'],
-                    'title'           => 'Instalación — ' . ($ri['cliente_nombre'] ?: ('#' . $ri['instalacion_id'])),
+                    // v1.20.147: el id interno del evento ('id' arriba) no cambia —
+                    // solo el texto visible pasa a usar crm_inst_id_visible() como
+                    // fallback en vez del ID interno crudo.
+                    'title'           => 'Instalación — ' . ($ri['cliente_nombre'] ?: (function_exists('crm_inst_id_visible') ? crm_inst_id_visible((int) $ri['instalacion_id']) : ('#' . $ri['instalacion_id']))),
                     'start'           => $start,
                     'end'             => $end,
                     'backgroundColor' => '#7c3aed',

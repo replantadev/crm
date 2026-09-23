@@ -304,7 +304,7 @@ function crm_inst_ics_generar(array $visitas) {
         $inicio_utc = (clone $inicio)->setTimezone(new DateTimeZone('UTC'));
         $fin_utc    = (clone $fin)->setTimezone(new DateTimeZone('UTC'));
 
-        $resumen = 'Visita: ' . ($v['cliente_nombre'] ?: ('Instalación #' . $v['instalacion_id']));
+        $resumen = 'Visita: ' . ($v['cliente_nombre'] ?: ('Instalación ' . crm_inst_id_visible((int) $v['instalacion_id'])));
 
         $lineas[] = 'BEGIN:VEVENT';
         $lineas[] = 'UID:crm-inst-' . (int) $v['instalacion_id'] . '@' . $host;

@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.143
+Version: 1.20.144
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.143');
+define('CRM_PLUGIN_VERSION', '1.20.144');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -873,6 +873,21 @@ function crm_formulario_alta_cliente()
                     <input type="checkbox" name="forzar_estado" id="forzar_estado" value="1">
                     Forzar este estado (en vez de calcularlo automáticamente por sector)
                 </label>
+
+                <?php
+                // v1.20.144 — reunión con cliente 2026-09-22, punto 1: marca con
+                // la que se comunica este cliente (logo/remitente de sus emails).
+                // Si no se ha elegido nunca, se muestra la que saldría por
+                // defecto según su sector (renovables=Ecovolt, resto=Energitel)
+                // sin guardarla todavía — solo se persiste si el admin la toca.
+                $marca_actual = function_exists('crm_cliente_resolver_marca') ? crm_cliente_resolver_marca($client_data ?? []) : 'ecovolt';
+                ?>
+                <label for="marca_comunicacion">Marca de comunicación (cliente):</label>
+                <select name="marca_comunicacion" id="marca_comunicacion">
+                    <option value="ecovolt" <?php selected($marca_actual, 'ecovolt'); ?>>Ecovolt</option>
+                    <option value="energitel" <?php selected($marca_actual, 'energitel'); ?>>Energitel</option>
+                </select>
+                <small style="color:#666;">Con qué marca recibe sus emails este cliente (recordatorio de visita, visita programada…).</small>
 
                 <?php
                 $origen_actual = isset($client_data['origen_lead']) ? (string) $client_data['origen_lead'] : 'directo';
@@ -2062,8 +2077,8 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
     }
 
     // v1.20.3: hardening — un comercial NO puede cambiar delegado/email_comercial/
-    // origen_lead/es_cliente_activo de un cliente existente, ni asignárselo a otro
-    // en altas (siempre se le asigna a sí mismo).
+    // origen_lead/es_cliente_activo/marca_comunicacion de un cliente existente,
+    // ni asignárselo a otro en altas (siempre se le asigna a sí mismo).
     $is_admin_save = current_user_can('crm_admin');
     if (!$is_admin_save) {
         $self = wp_get_current_user();
@@ -2073,17 +2088,20 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
             $forced_email_comercial = (string) ($client['email_comercial'] ?? $self->user_email);
             $forced_origen          = (string) ($client['origen_lead'] ?? 'directo');
             $forced_activo          = !empty($client['es_cliente_activo']) ? 1 : 0;
+            $forced_marca           = (string) ($client['marca_comunicacion'] ?? '');
         } else {
             // Alta nueva: asignarse a sí mismo siempre
             $forced_delegado        = (string) $self->display_name;
             $forced_email_comercial = (string) $self->user_email;
             $forced_origen          = sanitize_text_field($_POST['origen_lead'] ?? 'directo');
             $forced_activo          = !empty($_POST['es_cliente_activo']) ? 1 : 0;
+            $forced_marca           = '';
         }
-        $_POST['delegado']          = $forced_delegado;
-        $_POST['email_comercial']   = $forced_email_comercial;
-        $_POST['origen_lead']       = $forced_origen;
-        $_POST['es_cliente_activo'] = $forced_activo;
+        $_POST['delegado']            = $forced_delegado;
+        $_POST['email_comercial']     = $forced_email_comercial;
+        $_POST['origen_lead']         = $forced_origen;
+        $_POST['es_cliente_activo']   = $forced_activo;
+        $_POST['marca_comunicacion']  = $forced_marca;
     }
 
     // v1.20.141 — fix real: este cálculo vivía ANTES del hardening de arriba,
@@ -2095,6 +2113,15 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
     $origenes_validos = ['directo', 'lead_mk', 'contacto_frio', 'referido', 'web'];
     if (!in_array($origen_in, $origenes_validos, true)) {
         $origen_in = $client['origen_lead'] ?? 'directo';
+    }
+
+    // v1.20.144: marca de comunicación (Ecovolt/Energitel) — vacío = "sin
+    // elegir a mano", se calcula por sector al enviar el email (ver
+    // crm_cliente_resolver_marca()). Mismo motivo que origen_lead arriba:
+    // se calcula DESPUÉS del hardening para que sí tenga efecto en un comercial.
+    $marca_in = isset($_POST['marca_comunicacion']) ? sanitize_key($_POST['marca_comunicacion']) : '';
+    if (!in_array($marca_in, ['ecovolt', 'energitel'], true)) {
+        $marca_in = '';
     }
 
     // Lifecycle de leads MK: cuando el comercial asignado guarda la ficha,
@@ -2134,6 +2161,7 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         'usuario_envio_por_sector'  => maybe_serialize($users_envio),
         'origen_lead'               => $origen_in,
         'es_cliente_activo'         => $cliente_activo_in,
+        'marca_comunicacion'        => $marca_in,
         'entrada_vigor_por_sector'  => maybe_serialize($entrada_vigor_out),
         'decision_por_sector'       => maybe_serialize($decision_out),
         'editado_por'               => get_current_user_id(),
@@ -4269,6 +4297,10 @@ function crm_update_clients_table_structure() {
         'holded_lead_etapa'         => "VARCHAR(100) DEFAULT NULL",
         'holded_lead_status'        => "VARCHAR(16) DEFAULT NULL",
         'holded_lead_user_id'       => "VARCHAR(100) DEFAULT NULL",
+        // v1.20.144 — reunión con cliente 2026-09-22, punto 1: marca con la
+        // que se comunica a ESTE cliente (Ecovolt/Energitel) — logo/remitente
+        // de los emails al cliente (recordatorio, visita programada…).
+        'marca_comunicacion' => "VARCHAR(20) NOT NULL DEFAULT ''",
     ];
     
     foreach ($required_columns as $column => $definition) {

@@ -141,6 +141,23 @@ function crm_register_admin_settings() {
         'default'           => CRM_PLUGIN_URL . 'img/ecovolt-logo.jpg',
         'sanitize_callback' => 'esc_url_raw',
     ]);
+    // v1.20.144 — reunión con cliente 2026-09-22, punto 1: 2ª marca para los
+    // emails a cliente (Ecovolt sigue siendo crm_instalador_panel_* de arriba).
+    register_setting('crm_settings', 'crm_marca_energitel_nombre', [
+        'type'              => 'string',
+        'default'           => 'Energitel Consulting',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
+    register_setting('crm_settings', 'crm_marca_energitel_color', [
+        'type'              => 'string',
+        'default'           => '#191919',
+        'sanitize_callback' => function ($v) { return sanitize_hex_color((string) $v) ?: '#191919'; },
+    ]);
+    register_setting('crm_settings', 'crm_marca_energitel_logo_url', [
+        'type'              => 'string',
+        'default'           => CRM_PLUGIN_URL . 'img/energytel-ico32x32.png',
+        'sanitize_callback' => 'esc_url_raw',
+    ]);
     // v1.20.48 — Fase 5: importe máximo que un instalador puede declarar en una
     // sola partida extra sin más trámite que la validación del jefe. Por encima
     // de esto tiene que hablarlo por otro canal (no está pensado como límite
@@ -1214,7 +1231,23 @@ function crm_admin_render_settings() {
                 <th><label for="crm_instalador_panel_logo_url">URL del logo</label></th>
                 <td>
                     <input type="text" id="crm_instalador_panel_logo_url" name="crm_instalador_panel_logo_url" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_instalador_panel_logo_url', CRM_PLUGIN_URL . 'img/ecovolt-logo.jpg')); ?>">
-                    <p class="description">Se usa en la cabecera del panel que ven los instaladores (no en el resto del CRM).</p>
+                    <p class="description">Se usa en la cabecera del panel que ven los instaladores (no en el resto del CRM). También es la marca "Ecovolt" de los emails a clientes (ver Marca Energitel abajo).</p>
+                </td>
+            </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Marca Energitel — emails a clientes (v1.20.144)</h3></th></tr>
+            <tr>
+                <th><label for="crm_marca_energitel_nombre">Nombre de marca</label></th>
+                <td><input type="text" id="crm_marca_energitel_nombre" name="crm_marca_energitel_nombre" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_marca_energitel_nombre', 'Energitel Consulting')); ?>"></td>
+            </tr>
+            <tr>
+                <th><label for="crm_marca_energitel_color">Color de acento</label></th>
+                <td><input type="text" id="crm_marca_energitel_color" name="crm_marca_energitel_color" value="<?php echo esc_attr((string) get_option('crm_marca_energitel_color', '#191919')); ?>" placeholder="#191919"></td>
+            </tr>
+            <tr>
+                <th><label for="crm_marca_energitel_logo_url">URL del logo</label></th>
+                <td>
+                    <input type="text" id="crm_marca_energitel_logo_url" name="crm_marca_energitel_logo_url" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_marca_energitel_logo_url', CRM_PLUGIN_URL . 'img/energytel-ico32x32.png')); ?>">
+                    <p class="description">Se usa en los emails a clientes cuya "Marca de comunicación" (en su ficha) sea Energitel.</p>
                 </td>
             </tr>
             <tr>

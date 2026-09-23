@@ -2286,7 +2286,7 @@ function crm_inst_aviso_calendario_run() {
 	$rows = $wpdb->get_results( $wpdb->prepare(
 		"SELECT a.id AS agenda_id, a.instalacion_id, a.fecha_cita, a.instalador_id,
 		        i.direccion_instalacion,
-		        c.cliente_nombre, c.email_cliente, c.telefono
+		        c.cliente_nombre, c.email_cliente, c.telefono, c.marca_comunicacion, c.intereses
 		 FROM " . crm_inst_table_agenda() . " a
 		 INNER JOIN " . crm_inst_table_instalaciones() . " i ON i.id = a.instalacion_id
 		 LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id
@@ -2306,18 +2306,15 @@ function crm_inst_aviso_calendario_run() {
 		$url            = add_query_arg( 'id', $r['instalacion_id'], home_url( '/instalacion/' ) );
 
 		// Cliente — por email. v1.20.137: antes usaba wp_mail() directo, sin
-		// marca y con el remitente por defecto de WP (admin_email del
-		// sitio) en vez del remitente configurado en CRM → Email — el
-		// usuario lo detectó probando el flujo real. Ahora pasa por
-		// crm_mail_enviar() (canal "instalador", mismo remitente ya
-		// configurado — decisión explícita: no crear un canal "cliente"
-		// aparte) y por crm_mail_plantilla_cliente() para llevar el
-		// logo/marca configurados.
+		// marca ni remitente configurado. v1.20.144: cada cliente se
+		// comunica con su marca propia (Ecovolt/Energitel, elegible en su
+		// ficha) en vez de reusar siempre el canal interno "instalador".
 		if ( ! empty( $r['email_cliente'] ) && is_email( $r['email_cliente'] ) && function_exists( 'crm_mail_enviar' ) ) {
+			$marca = function_exists( 'crm_cliente_resolver_marca' ) ? crm_cliente_resolver_marca( $r ) : 'ecovolt';
 			$body = '<p>Hola' . ( $r['cliente_nombre'] ? ' ' . esc_html( $r['cliente_nombre'] ) : '' ) . ',</p>'
 				. '<p>Te recordamos que <strong>mañana ' . esc_html( $fecha_label ) . '</strong> tienes programada una visita técnica'
 				. ( $r['direccion_instalacion'] ? ' en ' . esc_html( $r['direccion_instalacion'] ) : '' ) . '.</p>';
-			crm_mail_enviar( 'instalador', $r['email_cliente'], 'Recordatorio: mañana tienes visita técnica', crm_mail_plantilla_cliente( $body ) );
+			crm_mail_enviar( 'cliente_' . $marca, $r['email_cliente'], 'Recordatorio: mañana tienes visita técnica', crm_mail_plantilla_cliente( $body, $marca ) );
 		}
 		// v1.20.130 — Fase 8: confirmación de cita por WhatsApp (botones
 		// "Confirmo"/"Necesito cambiar"). La respuesta llega por el webhook
@@ -4131,7 +4128,7 @@ function crm_inst_ajax_guardar_agenda() {
 
 	$fecha_mysql = date( 'Y-m-d H:i:s', $timestamp );
 	$cliente_row = $wpdb->get_row( $wpdb->prepare(
-		"SELECT c.cliente_nombre, c.email_cliente, i.direccion_instalacion
+		"SELECT c.cliente_nombre, c.email_cliente, c.marca_comunicacion, c.intereses, i.direccion_instalacion
 		 FROM " . crm_inst_table_instalaciones() . " i LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id WHERE i.id = %d",
 		$instalacion_id
 	), ARRAY_A );
@@ -4193,11 +4190,12 @@ function crm_inst_ajax_guardar_agenda() {
 	// — el usuario pidió poder avisarle también en el momento de agendar,
 	// como opción (por si prefiere que sea el instalador quien llame).
 	if ( (bool) get_option( 'crm_inst_aviso_cliente_visita_email', false ) && ! empty( $cliente_row['email_cliente'] ) && is_email( $cliente_row['email_cliente'] ) && function_exists( 'crm_mail_enviar' ) ) {
+		$marca = function_exists( 'crm_cliente_resolver_marca' ) ? crm_cliente_resolver_marca( $cliente_row ) : 'ecovolt';
 		$fecha_visita_label_cliente = date_i18n( 'd/m/Y H:i', $timestamp );
 		$body_cliente = '<p>Hola' . ( $cliente_nombre ? ' ' . esc_html( $cliente_nombre ) : '' ) . ',</p>'
 			. '<p>Te confirmamos tu visita técnica para el <strong>' . esc_html( $fecha_visita_label_cliente ) . '</strong>'
 			. ( ! empty( $cliente_row['direccion_instalacion'] ) ? ' en ' . esc_html( $cliente_row['direccion_instalacion'] ) : '' ) . '.</p>';
-		crm_mail_enviar( 'instalador', $cliente_row['email_cliente'], 'Visita técnica programada', crm_mail_plantilla_cliente( $body_cliente ) );
+		crm_mail_enviar( 'cliente_' . $marca, $cliente_row['email_cliente'], 'Visita técnica programada', crm_mail_plantilla_cliente( $body_cliente, $marca ) );
 	}
 
 	wp_send_json_success( [ 'fecha_cita_label' => date_i18n( 'd/m/Y H:i', $timestamp ) ] );

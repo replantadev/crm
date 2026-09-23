@@ -419,7 +419,7 @@ function crm_cliente_render_notificaciones($client_id) {
             <?php foreach ($filas as $f) : ?>
                 <div style="font-size:12.5px;color:#4b5563;padding:6px 0;border-bottom:1px solid #f3f4f6;">
                     <?php echo esc_html($f['details']); ?>
-                    <span style="float:right;color:#6b7280;"><?php echo esc_html(date_i18n('d/m/Y H:i', strtotime($f['created_at']))); ?></span>
+                    <span style="float:right;color:#6b7280;"><?php echo esc_html(!empty($f['user_name']) ? $f['user_name'] : 'Sistema'); ?> · <?php echo esc_html(date_i18n('d/m/Y H:i', strtotime($f['created_at']))); ?></span>
                 </div>
             <?php endforeach; ?>
         <?php endif; ?>
@@ -463,7 +463,7 @@ function crm_cliente_render_notificaciones_comercial($client_id) {
             <?php foreach ($filas as $f) : ?>
                 <div style="font-size:12.5px;padding:6px 0;border-bottom:1px solid #f3f4f6;<?php echo $f['level'] === 'error' ? 'color:#991b1b;' : 'color:#4b5563;'; ?>">
                     <?php echo esc_html($f['details']); ?>
-                    <span style="float:right;color:#6b7280;"><?php echo esc_html(date_i18n('d/m/Y H:i', strtotime($f['created_at']))); ?></span>
+                    <span style="float:right;color:#6b7280;"><?php echo esc_html(!empty($f['user_name']) ? $f['user_name'] : 'Sistema'); ?> · <?php echo esc_html(date_i18n('d/m/Y H:i', strtotime($f['created_at']))); ?></span>
                 </div>
             <?php endforeach; ?>
         <?php endif; ?>

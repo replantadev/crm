@@ -44,6 +44,12 @@ function crm_mail_canales() {
         // generando avisos propios más adelante (mismo slug que el rol
         // 'comercial', para poder reusarlo directamente al conectar cada uno).
         'comercial'  => 'Aviso a comerciales (alta de cuenta, y lo que se conecte del flujo comercial más adelante)',
+        // v1.20.144 — reunión con cliente 2026-09-22, punto 1: cada cliente
+        // se comunica con una marca (Ecovolt o Energitel, elegible en su
+        // ficha) — remitente propio por marca, separado del canal
+        // "instalador" (interno, nunca lo ve el cliente final).
+        'cliente_ecovolt'   => 'Aviso a clientes — marca Ecovolt (recordatorio de visita, visita programada…)',
+        'cliente_energitel' => 'Aviso a clientes — marca Energitel (recordatorio de visita, visita programada…)',
     ];
 }
 
@@ -77,6 +83,8 @@ function crm_mail_eventos_por_canal() {
             // ningún canal ni quedar registrado en Logs).
             'Ficha de cliente actualizada por el admin — botón "Guardar y notificar comercial"',
         ],
+        'cliente_ecovolt'   => ['Recordatorio de visita al día siguiente y visita programada/reprogramada, para clientes con marca Ecovolt'],
+        'cliente_energitel' => ['Recordatorio de visita al día siguiente y visita programada/reprogramada, para clientes con marca Energitel'],
     ];
 }
 
@@ -247,28 +255,71 @@ function crm_mail_enviar($canal, $to, $subject, $body_html, array $extra_headers
 }
 
 /**
- * Envuelve un fragmento de HTML con el logo/marca ya configurados para el
- * panel del instalador (`crm_instalador_panel_brand`/`_logo_url`/`_color`,
- * includes/admin-page.php) — v1.20.137, para que los emails a CLIENTE (hasta
- * ahora sin usar, el primero es el recordatorio de visita) no salgan en
- * texto plano sin marca. Reutiliza la misma marca que ya existía para no
- * añadir un juego de opciones nuevo.
+ * Config de marca (nombre/logo/color) para los emails a CLIENTE.
+ * v1.20.144 — antes solo existía la marca del panel del instalador
+ * (Ecovolt); ahora un cliente puede comunicarse como Ecovolt o Energitel
+ * (`marca_comunicacion` en wp_crm_clients, ver crm_cliente_resolver_marca()).
+ *
+ * @param string $marca 'ecovolt' o 'energitel'.
+ * @return array{nombre:string,logo:string,color:string}
+ */
+function crm_mail_marca_config($marca) {
+    if ($marca === 'energitel') {
+        return [
+            'nombre' => get_option('crm_marca_energitel_nombre', 'Energitel Consulting'),
+            'logo'   => get_option('crm_marca_energitel_logo_url', CRM_PLUGIN_URL . 'img/energytel-ico32x32.png'),
+            'color'  => get_option('crm_marca_energitel_color', '#191919'),
+        ];
+    }
+    // Ecovolt reutiliza la marca ya existente del panel del instalador — no
+    // se duplica en un juego de opciones nuevo.
+    return [
+        'nombre' => get_option('crm_instalador_panel_brand', 'Ecovolt'),
+        'logo'   => get_option('crm_instalador_panel_logo_url', CRM_PLUGIN_URL . 'img/ecovolt-logo.jpg'),
+        'color'  => get_option('crm_instalador_panel_color', '#15803d'),
+    ];
+}
+
+/**
+ * Envuelve un fragmento de HTML con el logo/marca del cliente destinatario
+ * (Ecovolt o Energitel) — v1.20.137, extendido a 2 marcas en v1.20.144.
  *
  * @param string $contenido_html Cuerpo del mensaje (ya en HTML).
+ * @param string $marca          'ecovolt' (por defecto) o 'energitel'.
  * @return string
  */
-function crm_mail_plantilla_cliente($contenido_html) {
-    $marca = get_option('crm_instalador_panel_brand', 'Ecovolt');
-    $logo  = get_option('crm_instalador_panel_logo_url', CRM_PLUGIN_URL . 'img/ecovolt-logo.jpg');
-    $color = get_option('crm_instalador_panel_color', '#15803d');
+function crm_mail_plantilla_cliente($contenido_html, $marca = 'ecovolt') {
+    $marca = $marca === 'energitel' ? 'energitel' : 'ecovolt';
+    $cfg   = crm_mail_marca_config($marca);
 
     return '<div style="max-width:560px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;">'
-        . '<div style="padding:18px 0;border-bottom:3px solid ' . esc_attr($color) . ';text-align:center;">'
-        . ($logo ? '<img src="' . esc_url($logo) . '" alt="' . esc_attr($marca) . '" style="max-height:48px;">' : '<strong style="font-size:18px;">' . esc_html($marca) . '</strong>')
+        . '<div style="padding:18px 0;border-bottom:3px solid ' . esc_attr($cfg['color']) . ';text-align:center;">'
+        . ($cfg['logo'] ? '<img src="' . esc_url($cfg['logo']) . '" alt="' . esc_attr($cfg['nombre']) . '" style="max-height:48px;">' : '<strong style="font-size:18px;">' . esc_html($cfg['nombre']) . '</strong>')
         . '</div>'
         . '<div style="padding:20px 4px;color:#1f2937;font-size:14px;line-height:1.5;">' . $contenido_html . '</div>'
-        . '<div style="padding:12px 4px;border-top:1px solid #e5e7eb;color:#9ca3af;font-size:11.5px;text-align:center;">Aviso automático de ' . esc_html($marca) . '.</div>'
+        . '<div style="padding:12px 4px;border-top:1px solid #e5e7eb;color:#9ca3af;font-size:11.5px;text-align:center;">Aviso automático de ' . esc_html($cfg['nombre']) . '.</div>'
         . '</div>';
+}
+
+/**
+ * Marca efectiva con la que se comunica un cliente concreto. Si no tiene
+ * nada elegido a mano en su ficha (`marca_comunicacion` vacío), se calcula
+ * por su sector: "renovables" → Ecovolt (el producto de Ecovolt), cualquier
+ * otro interés → Energitel (el resto de sectores se venden bajo esa marca).
+ * Nunca se persiste solo por calcularla — solo cuando el admin la elige a
+ * mano en la ficha (crm_handle_ajax_request()).
+ *
+ * @param array $client Fila de wp_crm_clients (necesita 'marca_comunicacion' e 'intereses').
+ * @return string 'ecovolt' o 'energitel'.
+ */
+function crm_cliente_resolver_marca(array $client) {
+    $marca = trim((string) ($client['marca_comunicacion'] ?? ''));
+    if (in_array($marca, ['ecovolt', 'energitel'], true)) {
+        return $marca;
+    }
+    $intereses = maybe_unserialize($client['intereses'] ?? []);
+    $intereses = is_array($intereses) ? $intereses : [];
+    return in_array('renovables', $intereses, true) ? 'ecovolt' : 'energitel';
 }
 
 /**

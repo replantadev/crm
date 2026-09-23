@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.149
+Version: 1.20.150
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.149');
+define('CRM_PLUGIN_VERSION', '1.20.150');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -72,6 +72,7 @@ require_once CRM_PLUGIN_PATH . 'includes/notifications.php';
 // de asignación de arriba: canal nuevo, por usuario, con historial de admin.
 require_once CRM_PLUGIN_PATH . 'includes/notificaciones-inapp.php';
 require_once CRM_PLUGIN_PATH . 'includes/leads-mk-shortcode.php';
+require_once CRM_PLUGIN_PATH . 'includes/leads-leadkit-csv.php';
 // v1.19.0 — Sistema de diseño v2 (iconos, badges, app shell)
 require_once CRM_PLUGIN_PATH . 'includes/icons.php';
 require_once CRM_PLUGIN_PATH . 'includes/ui-helpers.php';
@@ -904,6 +905,9 @@ function crm_formulario_alta_cliente()
                 $origenes = [
                     'directo'        => 'Directo (alta manual)',
                     'lead_mk'        => 'Lead Marketing (campaña Meta/Google)',
+                    // v1.20.150 — reunión con cliente 2026-09-22, punto 7: proveedor
+                    // de leads comprados, importados por CSV de LeadKit.
+                    'placassolares'  => 'Lead comprado (placassolares.es)',
                     'contacto_frio'  => 'Contacto frío',
                     'referido'       => 'Referido / recomendación',
                     'web'            => 'Web / formulario',
@@ -2119,7 +2123,7 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
     // fijar origen_lead a cualquier valor válido del enum pese al comentario
     // que decía que no podía. Movido a después del hardening para que sí surta efecto.
     $origen_in = isset($_POST['origen_lead']) ? sanitize_key($_POST['origen_lead']) : '';
-    $origenes_validos = ['directo', 'lead_mk', 'contacto_frio', 'referido', 'web'];
+    $origenes_validos = ['directo', 'lead_mk', 'placassolares', 'contacto_frio', 'referido', 'web'];
     if (!in_array($origen_in, $origenes_validos, true)) {
         $origen_in = $client['origen_lead'] ?? 'directo';
     }

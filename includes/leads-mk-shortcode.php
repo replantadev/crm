@@ -17,6 +17,33 @@ if (!defined('ABSPATH')) {
 add_shortcode('asignacion_leads_mk', 'crm_shortcode_asignacion_leads_mk');
 
 /**
+ * Orígenes que comparten la misma cola de "Leads de Marketing" — v1.20.150:
+ * hasta ahora solo 'lead_mk' (Google Sheets/Meta), se añade 'placassolares'
+ * (import manual de CSV de LeadKit, ver includes/leads-leadkit-csv.php) para
+ * que ambos aparezcan juntos en la misma pantalla de asignación, sin
+ * duplicar la cola. El origen real (para informes/funnel) se conserva tal
+ * cual en `origen_lead` — esto solo agrupa qué entra en ESTA cola.
+ *
+ * @return string[]
+ */
+function crm_leads_mk_origenes() {
+    return ['lead_mk', 'placassolares'];
+}
+
+/**
+ * Fragmento SQL "origen_lead IN (...)" ya preparado (placeholders %s) listo
+ * para usar con $wpdb->prepare() — evita repetir el mismo IN() a mano en
+ * cada query de la cola.
+ *
+ * @return array{sql:string, args:string[]}
+ */
+function crm_leads_mk_origenes_in_sql() {
+    $origenes = crm_leads_mk_origenes();
+    $placeholders = implode(',', array_fill(0, count($origenes), '%s'));
+    return ['sql' => "origen_lead IN ({$placeholders})", 'args' => $origenes];
+}
+
+/**
  * Calcula el estado de lifecycle para la cola de leads MK.
  */
 function crm_lead_mk_lifecycle(array $row) {
@@ -73,13 +100,14 @@ function crm_render_mis_leads_mk() {
     $table = $wpdb->prefix . 'crm_clients';
     $current = get_current_user_id();
 
+    $origenes = crm_leads_mk_origenes_in_sql();
     $rows = $wpdb->get_results($wpdb->prepare(
         "SELECT id, fecha, cliente_nombre, telefono, email_cliente, lead_meta, estado
          FROM $table
-         WHERE origen_lead='lead_mk' AND user_id = %d
+         WHERE {$origenes['sql']} AND user_id = %d
          ORDER BY id DESC
          LIMIT 200",
-        $current
+        array_merge($origenes['args'], [$current])
     ), ARRAY_A);
 
     ob_start();
@@ -144,12 +172,15 @@ function crm_render_mis_leads_mk() {
 function crm_render_asignacion_leads_mk() {
     global $wpdb;
     $table = $wpdb->prefix . 'crm_clients';
-    $count_pending = (int) $wpdb->get_var(
-        "SELECT COUNT(*) FROM $table WHERE origen_lead='lead_mk' AND (user_id IS NULL OR user_id = 0)"
-    );
-    $count_total = (int) $wpdb->get_var(
-        "SELECT COUNT(*) FROM $table WHERE origen_lead='lead_mk'"
-    );
+    $origenes = crm_leads_mk_origenes_in_sql();
+    $count_pending = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM $table WHERE {$origenes['sql']} AND (user_id IS NULL OR user_id = 0)",
+        $origenes['args']
+    ));
+    $count_total = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM $table WHERE {$origenes['sql']}",
+        $origenes['args']
+    ));
 
     $comerciales = get_users(['role' => 'comercial', 'fields' => ['ID', 'display_name', 'user_email']]);
     $sectores = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
@@ -178,6 +209,12 @@ function crm_render_asignacion_leads_mk() {
             <div class="crm-leads-mk-actions">
                 <button type="button" class="crm-btn crm-leads-mk-sync">Sincronizar ahora</button>
                 <span class="crm-leads-mk-sync-status"></span>
+                <span style="display:inline-block;width:1px;height:20px;background:#e5e7eb;margin:0 8px;vertical-align:middle;"></span>
+                <label class="crm-btn" style="cursor:pointer;">
+                    Importar leads de LeadKit (CSV)
+                    <input type="file" id="crm-leads-mk-leadkit-file" accept=".csv" style="display:none;">
+                </label>
+                <span class="crm-leads-mk-leadkit-status"></span>
             </div>
         </div>
 
@@ -211,6 +248,7 @@ function crm_render_asignacion_leads_mk() {
                         <th>Teléfono</th>
                         <th>Email</th>
                         <th>Campaña</th>
+                        <th>Fuente</th>
                         <th>Lifecycle MK</th>
                         <th>Comercial</th>
                         <th>Asignar a</th>
@@ -219,17 +257,18 @@ function crm_render_asignacion_leads_mk() {
                 </thead>
                 <tbody>
                     <?php
-                    $rows = $wpdb->get_results(
-                        "SELECT id, fecha, cliente_nombre, telefono, email_cliente, lead_meta, user_id, delegado, lead_mk_status, lead_mk_touched_at
+                    $rows = $wpdb->get_results($wpdb->prepare(
+                        "SELECT id, fecha, cliente_nombre, telefono, email_cliente, lead_meta, user_id, delegado, lead_mk_status, lead_mk_touched_at, origen_lead
                          FROM $table
-                         WHERE origen_lead='lead_mk'
+                         WHERE {$origenes['sql']}
                          ORDER BY id DESC
                          LIMIT 500",
-                        ARRAY_A
-                    );
+                        $origenes['args']
+                    ), ARRAY_A);
+                    $origen_labels = ['lead_mk' => 'Meta/Google', 'placassolares' => 'placassolares.es'];
                     if (empty($rows)):
                     ?>
-                        <tr><td colspan="9" class="crm-leads-mk-empty">No hay leads de marketing.</td></tr>
+                        <tr><td colspan="10" class="crm-leads-mk-empty">No hay leads de marketing.</td></tr>
                     <?php else:
                         foreach ($rows as $r):
                             $meta = !empty($r['lead_meta']) ? json_decode($r['lead_meta'], true) : [];
@@ -244,6 +283,7 @@ function crm_render_asignacion_leads_mk() {
                             <td><?php echo esc_html($r['telefono']); ?></td>
                             <td><?php echo esc_html($r['email_cliente']); ?></td>
                             <td class="campana"><?php echo esc_html($campana); ?></td>
+                            <td><?php echo esc_html($origen_labels[$r['origen_lead']] ?? $r['origen_lead']); ?></td>
                             <td><span class="status-badge status-<?php echo esc_attr($mk_status); ?> crm-lead-mk-status"><?php echo esc_html(crm_lead_mk_lifecycle_label($mk_status)); ?></span></td>
                             <td>
                                 <?php if (!empty($r['delegado'])): ?>
@@ -301,9 +341,10 @@ function crm_lead_assign_ajax() {
 
     global $wpdb;
     $table = $wpdb->prefix . 'crm_clients';
+    $origenes = crm_leads_mk_origenes_in_sql();
     $row = $wpdb->get_row($wpdb->prepare(
-        "SELECT * FROM $table WHERE id = %d AND origen_lead = 'lead_mk'",
-        $lead_id
+        "SELECT * FROM $table WHERE id = %d AND {$origenes['sql']}",
+        array_merge([$lead_id], $origenes['args'])
     ), ARRAY_A);
     if (!$row) {
         wp_send_json_error(['message' => 'Lead no encontrado']);
@@ -367,8 +408,17 @@ function crm_lead_to_cold_ajax() {
         wp_send_json_error(['message' => 'lead_id requerido']);
     }
     global $wpdb;
+    $table = $wpdb->prefix . 'crm_clients';
+    $origenes = crm_leads_mk_origenes_in_sql();
+    $existe = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT id FROM $table WHERE id = %d AND {$origenes['sql']}",
+        array_merge([$lead_id], $origenes['args'])
+    ));
+    if (!$existe) {
+        wp_send_json_error(['message' => 'Lead MK no encontrado'], 404);
+    }
     $ok = $wpdb->update(
-        $wpdb->prefix . 'crm_clients',
+        $table,
         [
             'origen_lead' => 'contacto_frio',
             'lead_mk_status' => 'pendiente',
@@ -376,13 +426,10 @@ function crm_lead_to_cold_ajax() {
             'actualizado_en' => current_time('mysql'),
             'actualizado_por' => get_current_user_id(),
         ],
-        ['id' => $lead_id, 'origen_lead' => 'lead_mk']
+        ['id' => $lead_id]
     );
     if ($ok === false) {
         wp_send_json_error(['message' => 'Error BD: ' . $wpdb->last_error]);
-    }
-    if ($ok === 0) {
-        wp_send_json_error(['message' => 'Lead MK no encontrado'], 404);
     }
     if (function_exists('crm_notes_add')) {
         crm_notes_add([
@@ -407,22 +454,20 @@ function crm_lead_delete_ajax() {
         wp_send_json_error(['message' => 'lead_id requerido']);
     }
     global $wpdb;
+    $origenes = crm_leads_mk_origenes_in_sql();
     $client_data = $wpdb->get_row($wpdb->prepare(
-        "SELECT * FROM {$wpdb->prefix}crm_clients WHERE id = %d AND origen_lead = 'lead_mk'",
-        $lead_id
+        "SELECT * FROM {$wpdb->prefix}crm_clients WHERE id = %d AND {$origenes['sql']}",
+        array_merge([$lead_id], $origenes['args'])
     ), ARRAY_A);
     if (!$client_data) {
         wp_send_json_error(['message' => 'Lead MK no encontrado'], 404);
     }
     $ok = $wpdb->delete(
         $wpdb->prefix . 'crm_clients',
-        ['id' => $lead_id, 'origen_lead' => 'lead_mk']
+        ['id' => $lead_id]
     );
     if ($ok === false) {
         wp_send_json_error(['message' => 'Error BD: ' . $wpdb->last_error]);
-    }
-    if ($ok === 0) {
-        wp_send_json_error(['message' => 'Lead MK no encontrado'], 404);
     }
     crm_purge_client_related_data($lead_id, $client_data);
     wp_send_json_success(['message' => 'Lead eliminado']);

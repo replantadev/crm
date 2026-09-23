@@ -73,7 +73,9 @@
                         .addClass('status-' + status)
                         .text(statusLabel);
                     if (delegado) {
-                        const $delegateCell = $row.find('td').eq(6);
+                        // v1.20.150: columna "Comercial" pasó de índice 6 a 7 al
+                        // añadirse la columna "Fuente" delante de "Lifecycle MK".
+                        const $delegateCell = $row.find('td').eq(7);
                         const href = $row.attr('data-ficha') || ('/alta-de-cliente/?client_id=' + leadId);
                         $delegateCell.html('<a class="crm-link" href="' + href + '">' + delegado + '</a>');
                     }
@@ -144,6 +146,43 @@
             })
             .always(function () {
                 $btn.prop('disabled', false).text('Sincronizar ahora');
+            });
+    });
+
+    $(document).on('change', '#crm-leads-mk-leadkit-file', function () {
+        const input = this;
+        const $status = $('.crm-leads-mk-leadkit-status');
+        if (!input.files || !input.files.length) return;
+        const file = input.files[0];
+
+        const fd = new FormData();
+        fd.append('action', 'crm_leadkit_csv_importar');
+        fd.append('nonce', $('.crm-leads-mk').data('nonce'));
+        fd.append('csv', file);
+
+        $status.css('color', '#6b7280').text('Importando ' + file.name + '…');
+        $.ajax({
+            url: (window.crmLeadsMK && window.crmLeadsMK.ajaxUrl) || (window.ajaxurl || '/wp-admin/admin-ajax.php'),
+            method: 'POST',
+            data: fd,
+            processData: false,
+            contentType: false
+        })
+            .done(function (resp) {
+                input.value = '';
+                if (resp && resp.success) {
+                    const d = resp.data || {};
+                    $status.css('color', '#065f46').text(`OK · ${d.inserted || 0} nuevos · ${d.dupes || 0} duplicados · ${d.errors || 0} con error (de ${d.total || 0} filas)`);
+                    if ((d.inserted || 0) > 0) {
+                        setTimeout(function () { location.reload(); }, 1500);
+                    }
+                } else {
+                    $status.css('color', '#991b1b').text('Error: ' + ((resp && resp.data && resp.data.message) || 'desconocido'));
+                }
+            })
+            .fail(function (xhr) {
+                input.value = '';
+                $status.css('color', '#991b1b').text('Error AJAX: ' + (xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message || xhr.statusText));
             });
     });
 

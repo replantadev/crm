@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.138
+Version: 1.20.139
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.138');
+define('CRM_PLUGIN_VERSION', '1.20.139');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -278,6 +278,9 @@ function crm_get_estado_label($estado) {
         'cancelado' => 'Cancelado'
     ];
     
+    if ($estado === '') {
+        return 'Sin estado asignado';
+    }
     return $labels[$estado] ?? ucfirst(str_replace('_', ' ', $estado));
 }
 
@@ -2254,7 +2257,7 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         
         // Detectar cambios en el estado
         if ($client['estado'] !== $estado) {
-            $cambios_realizados[] = "Estado cambiado de '{$client['estado']}' a '{$estado}'";
+            $cambios_realizados[] = "Estado cambiado de '" . crm_get_estado_label($client['estado'] ?? '') . "' a '" . crm_get_estado_label($estado) . "'";
         }
         
         // Detectar si se forzó un estado específico
@@ -2284,7 +2287,7 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         }
         
         if (!empty($cambios_realizados)) {
-            crm_enviar_notificacion_admin_a_comercial($client_id, $data['email_comercial'], $cambios_realizados);
+            crm_enviar_notificacion_admin_a_comercial($client_id, $data['email_comercial'], $cambios_realizados, $estado);
         }
     }
     
@@ -2402,11 +2405,11 @@ function crm_enviar_notificacion_comercial($client_id, $client_data, $action_det
 <head>
     <style>
         body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .header { background: #007cba; color: white; padding: 20px; text-align: center; }
+        .header { background: #191919; color: white; padding: 20px; text-align: center; }
         .content { padding: 20px; background: #f9f9f9; }
-        .detail-box { background: white; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #007cba; }
+        .detail-box { background: white; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #191919; }
         .footer { padding: 15px; text-align: center; color: #666; font-size: 12px; }
-        .btn { display: inline-block; background: #007cba; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 10px 0; }
+        .btn { display: inline-block; background: #191919; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 10px 0; }
     </style>
 </head>
 <body>
@@ -3616,7 +3619,7 @@ function crm_get_email_template($args = []) {
         <style>
             body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
             .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            .header { background: #007cba; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -20px -20px 20px -20px; }
+            .header { background: #191919; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; margin: -20px -20px 20px -20px; }
             .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666; text-align: center; }
         </style>
     </head>
@@ -3643,7 +3646,7 @@ function crm_get_email_template($args = []) {
 /**
  * Envía notificación por email al comercial cuando un admin le envía una ficha
  */
-function crm_enviar_notificacion_admin_a_comercial($client_id, $comercial_email, $cambios_realizados = []) {
+function crm_enviar_notificacion_admin_a_comercial($client_id, $comercial_email, $cambios_realizados = [], $estado_actual = null) {
     if (empty($comercial_email) || !is_email($comercial_email)) {
         crm_debug_log('Email: comercial sin email válido (id=' . (int) $client_id . ').');
         return false;
@@ -3667,7 +3670,12 @@ function crm_enviar_notificacion_admin_a_comercial($client_id, $comercial_email,
     $cliente_email_h = esc_html($cliente['email_cliente'] ?? '');
     $cliente_delegado = esc_html($cliente['delegado'] ?? '');
     $admin_display   = esc_html($admin_user->display_name);
-    $estado_label    = esc_html(crm_get_estado_label($cliente['estado'] ?? ''));
+    // v1.20.139: usar el estado que ya calculó/guardó la llamada (crm_handle_ajax_request)
+    // en vez de fiarnos de esta re-consulta — en producción se ha visto llegar aquí
+    // con 'estado' vacío pese a que el resto de campos (nombre, empresa…) sí estaban
+    // ya al día, así que esta SELECT no es de fiar para ese campo en concreto.
+    $estado_para_mostrar = $estado_actual !== null ? $estado_actual : ($cliente['estado'] ?? '');
+    $estado_label    = esc_html(crm_get_estado_label($estado_para_mostrar));
 
     $subject = sprintf('🔔 Actualización de cliente: %s', $cliente['cliente_nombre'] ?? '');
 
@@ -3691,13 +3699,13 @@ function crm_enviar_notificacion_admin_a_comercial($client_id, $comercial_email,
                 <h3 style='color: #333; margin-top: 0;'>📋 {$cliente_nombre}</h3>
                 <p><strong>Empresa:</strong> {$cliente_empresa}</p>
                 <p><strong>Email:</strong> {$cliente_email_h}</p>
-                <p><strong>Estado actual:</strong> <span style='background: #007cba; color: white; padding: 3px 8px; border-radius: 4px;'>{$estado_label}</span></p>
+                <p><strong>Estado actual:</strong> <span style='background: #191919; color: white; padding: 3px 8px; border-radius: 4px;'>{$estado_label}</span></p>
             </div>
-            
+
             {$cambios_html}
-            
+
             <div style='text-align: center; margin: 30px 0;'>
-                <a href='" . esc_url($cliente_url) . "' style='background: #007cba; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 0 10px;'>📝 Editar Cliente</a>
+                <a href='" . esc_url($cliente_url) . "' style='background: #191919; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 0 10px;'>📝 Editar Cliente</a>
                 <a href='" . esc_url($tabla_url) . "' style='background: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 0 10px;'>📊 Mis Clientes</a>
             </div>
         ",
@@ -3787,7 +3795,7 @@ function crm_enviar_notificacion_comercial_a_admin($client_id, $sectores_enviado
                     continue;
                 }
                 $nombre_archivo = esc_html(basename(parse_url($factura, PHP_URL_PATH)));
-                $sectores_html .= "<li><a href='" . esc_url($factura) . "' style='color: #007cba;'>{$nombre_archivo}</a></li>";
+                $sectores_html .= "<li><a href='" . esc_url($factura) . "' style='color: #191919;'>{$nombre_archivo}</a></li>";
             }
             $sectores_html .= '</ul>';
         }
@@ -3799,7 +3807,7 @@ function crm_enviar_notificacion_comercial_a_admin($client_id, $sectores_enviado
                     continue;
                 }
                 $nombre_archivo = esc_html(basename(parse_url($presupuesto, PHP_URL_PATH)));
-                $sectores_html .= "<li><a href='" . esc_url($presupuesto) . "' style='color: #007cba;'>{$nombre_archivo}</a></li>";
+                $sectores_html .= "<li><a href='" . esc_url($presupuesto) . "' style='color: #191919;'>{$nombre_archivo}</a></li>";
             }
             $sectores_html .= '</ul>';
         }

@@ -347,8 +347,18 @@ function crm_logs_query(array $args = []) {
  *
  * @return string[]
  */
-function crm_notificaciones_action_types() {
-    $tipos = [
+/**
+ * `action_type` de las notificaciones ENTRE ADMIN Y COMERCIAL sobre un
+ * cliente concreto — botón "Guardar y notificar comercial" y el aviso de
+ * presupuesto estancado. Separado de crm_notificaciones_action_types() desde
+ * v1.20.138 para poder darle su propia sección en la ficha del cliente
+ * ("Notificaciones al comercial", reunión con cliente 2026-09-22 punto 5) en
+ * vez de mezclarlo con los avisos de instalación.
+ *
+ * @return string[]
+ */
+function crm_notificaciones_action_types_comercial() {
+    return [
         'presupuesto_estancado_sin_comercial',
         'presupuesto_estancado_avisado',
         'notificacion_comercial_enviada',
@@ -356,6 +366,10 @@ function crm_notificaciones_action_types() {
         'notificacion_admin_enviada',
         'notificacion_admin_error',
     ];
+}
+
+function crm_notificaciones_action_types() {
+    $tipos = crm_notificaciones_action_types_comercial();
     if (function_exists('crm_inst_notificacion_tipos')) {
         foreach (crm_inst_notificacion_tipos() as $t) {
             $tipos[] = 'inst_' . $t[0] . '_' . $t[1];
@@ -380,7 +394,11 @@ function crm_cliente_render_notificaciones($client_id) {
     if ($client_id <= 0) {
         return '';
     }
-    $tipos_validos = crm_notificaciones_action_types();
+    // v1.20.138: los tipos "comercial" tienen su sección propia
+    // (crm_cliente_render_notificaciones_comercial()) — se excluyen aquí
+    // para no mostrarlos duplicados.
+    $tipos_comercial = crm_notificaciones_action_types_comercial();
+    $tipos_validos = array_values(array_diff(crm_notificaciones_action_types(), $tipos_comercial));
     $resultado = crm_logs_query([
         'client_id' => $client_id,
         'months'    => crm_get_log_month_keys(),
@@ -394,12 +412,56 @@ function crm_cliente_render_notificaciones($client_id) {
     ?>
     <div class="crm-section crm-section-notificaciones">
         <h3 style="margin:0 0 6px;">Notificaciones</h3>
-        <p style="color:#6b7280;font-size:13px;margin:0 0 10px;">Avisos enviados a este cliente o sobre él (a un comercial, por ejemplo) — no incluye los de sus instalaciones que no tocan a este cliente directamente.</p>
+        <p style="color:#6b7280;font-size:13px;margin:0 0 10px;">Avisos sobre las instalaciones de este cliente (materiales, visitas, cierres…).</p>
         <?php if (empty($filas)) : ?>
             <p>Todavía no se ha enviado ninguna notificación sobre este cliente.</p>
         <?php else : ?>
             <?php foreach ($filas as $f) : ?>
                 <div style="font-size:12.5px;color:#4b5563;padding:6px 0;border-bottom:1px solid #f3f4f6;">
+                    <?php echo esc_html($f['details']); ?>
+                    <span style="float:right;color:#6b7280;"><?php echo esc_html(date_i18n('d/m/Y H:i', strtotime($f['created_at']))); ?></span>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+
+/**
+ * v1.20.138 — reunión con cliente 2026-09-22, punto 5: sección separada
+ * ("otra tab") para ver, de un vistazo, cómo se está tratando a un cliente
+ * a nivel comercial — cuándo se le avisó al comercial de un cambio en su
+ * ficha, avisos de presupuesto estancado, y si hubo algún error de envío.
+ *
+ * @param int $client_id
+ * @return string
+ */
+function crm_cliente_render_notificaciones_comercial($client_id) {
+    $client_id = (int) $client_id;
+    if ($client_id <= 0) {
+        return '';
+    }
+    $tipos_validos = crm_notificaciones_action_types_comercial();
+    $resultado = crm_logs_query([
+        'client_id' => $client_id,
+        'months'    => crm_get_log_month_keys(),
+        'per_page'  => 100,
+    ]);
+    $filas = array_values(array_filter($resultado['rows'], function ($r) use ($tipos_validos) {
+        return in_array($r['action_type'], $tipos_validos, true);
+    }));
+
+    ob_start();
+    ?>
+    <div class="crm-section crm-section-notificaciones-comercial">
+        <h3 style="margin:0 0 6px;">Notificaciones al comercial</h3>
+        <p style="color:#6b7280;font-size:13px;margin:0 0 10px;">Avisos entre admin y el comercial dueño de este cliente (ficha actualizada, presupuesto estancado…), para saber cómo se le está dando seguimiento.</p>
+        <?php if (empty($filas)) : ?>
+            <p>Todavía no se ha enviado ninguna notificación al/del comercial sobre este cliente.</p>
+        <?php else : ?>
+            <?php foreach ($filas as $f) : ?>
+                <div style="font-size:12.5px;padding:6px 0;border-bottom:1px solid #f3f4f6;<?php echo $f['level'] === 'error' ? 'color:#991b1b;' : 'color:#4b5563;'; ?>">
                     <?php echo esc_html($f['details']); ?>
                     <span style="float:right;color:#6b7280;"><?php echo esc_html(date_i18n('d/m/Y H:i', strtotime($f['created_at']))); ?></span>
                 </div>

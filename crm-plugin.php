@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.137
+Version: 1.20.138
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.137');
+define('CRM_PLUGIN_VERSION', '1.20.138');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -1320,6 +1320,13 @@ function crm_formulario_alta_cliente()
             </div>
         <?php endif; ?>
 
+        <!-- ——— Notificaciones al comercial (v1.20.138) ——— -->
+        <?php if ($client_id && function_exists('crm_cliente_render_notificaciones_comercial')): ?>
+            <div class="crm-section">
+                <?php echo crm_cliente_render_notificaciones_comercial((int) $client_id); ?>
+            </div>
+        <?php endif; ?>
+
         <!-- ——— Notificaciones (v1.20.128) ——— -->
         <?php if ($client_id && function_exists('crm_cliente_render_notificaciones')): ?>
             <div class="crm-section">
@@ -2346,7 +2353,20 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
 }
 
 /**
- * Envía notificación por email al comercial sobre actualizaciones de admin
+ * Envía notificación (email + WhatsApp) al comercial sobre actualizaciones
+ * de admin en la ficha de uno de sus clientes — botón "Guardar y notificar
+ * comercial".
+ *
+ * v1.20.138 — reunión con cliente 2026-09-22, punto 5: el botón guardaba la
+ * ficha correctamente pero la notificación nunca llegaba, sin ningún error
+ * visible. Causa real (misma que ya se corrigió para el recordatorio de
+ * visita al cliente, includes/instalaciones.php): usaba `wp_mail()` directo,
+ * dependiente del envío por defecto del servidor, y no quedaba registrada en
+ * Logs pese a que `notificacion_comercial_enviada`/`_error` ya existían en
+ * la whitelist de crm_notificaciones_action_types() sin que nada las
+ * escribiera nunca. Ahora pasa por crm_mail_enviar('comercial', …) — mismo
+ * canal ya usado para el alta de cuenta de comercial — y añade WhatsApp
+ * (best-effort, sin plantilla configurada no envía nada).
  */
 function crm_enviar_notificacion_comercial($client_id, $client_data, $action_details)
 {
@@ -2433,12 +2453,33 @@ function crm_enviar_notificacion_comercial($client_id, $client_data, $action_det
 </body>
 </html>";
     
-    $headers = [
-        'Content-Type: text/html; charset=UTF-8',
-        'From: ' . get_option('blogname') . ' <' . get_option('admin_email') . '>'
-    ];
+    $enviado = function_exists('crm_mail_enviar')
+        ? crm_mail_enviar('comercial', $comercial->user_email, $subject, $message)
+        : wp_mail($comercial->user_email, $subject, $message, ['Content-Type: text/html; charset=UTF-8']);
 
-    return wp_mail($comercial->user_email, $subject, $message, $headers);
+    if (function_exists('crm_log_action')) {
+        if ($enviado) {
+            crm_log_action('notificacion_comercial_enviada', "Notificación enviada a comercial: {$comercial->user_email} - Cliente: {$cliente_nombre}", $client_id);
+        } else {
+            crm_log_action('notificacion_comercial_error', "Error al enviar notificación a comercial: {$comercial->user_email} - Cliente: {$cliente_nombre}", $client_id, null, 'error');
+        }
+    }
+
+    // WhatsApp — best-effort: sin plantilla aprobada configurada, no hace nada.
+    if (function_exists('crm_whatsapp_configurado') && crm_whatsapp_configurado()) {
+        $template = trim((string) get_option('crm_whatsapp_template_comercial_cliente_actualizado', ''));
+        if ($template !== '' && function_exists('crm_inst_notif_canal_habilitado') && crm_inst_notif_canal_habilitado($comercial_id, 'whatsapp')) {
+            $telefono = get_user_meta($comercial_id, 'crm_whatsapp', true);
+            if (!empty($telefono)) {
+                $resultado_whatsapp = crm_whatsapp_enviar_plantilla($telefono, $template, [$com, $cn]);
+                if (is_wp_error($resultado_whatsapp) && function_exists('crm_whatsapp_log_error')) {
+                    crm_whatsapp_log_error($template, 'Aviso de cliente actualizado al comercial #' . $comercial_id . ': ' . $resultado_whatsapp->get_error_message());
+                }
+            }
+        }
+    }
+
+    return $enviado;
 }
 
 /**

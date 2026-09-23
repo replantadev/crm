@@ -72,6 +72,10 @@ function crm_mail_eventos_por_canal() {
         ],
         'comercial'  => [
             'Alta de cuenta nueva (email para establecer contraseña) — página "Equipo"',
+            // v1.20.138 — botón "Guardar y notificar comercial" en la ficha
+            // de cliente (antes usaba wp_mail() directo, sin pasar por
+            // ningún canal ni quedar registrado en Logs).
+            'Ficha de cliente actualizada por el admin — botón "Guardar y notificar comercial"',
         ],
     ];
 }

@@ -277,6 +277,13 @@ function crm_register_admin_settings() {
         'default'           => '',
         'sanitize_callback' => 'sanitize_text_field',
     ]);
+    // v1.20.138 — reunión con cliente 2026-09-22, punto 5: WhatsApp al
+    // comercial cuando el admin actualiza la ficha de uno de sus clientes.
+    register_setting('crm_settings', 'crm_whatsapp_template_comercial_cliente_actualizado', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
     register_setting('crm_settings', 'crm_whatsapp_webhook_verify_token', [
         'type'              => 'string',
         'default'           => '',
@@ -1396,6 +1403,13 @@ function crm_admin_render_settings() {
                 <td>
                     <input type="text" id="crm_whatsapp_template_confirmacion_visita_cliente" name="crm_whatsapp_template_confirmacion_visita_cliente" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_confirmacion_visita_cliente', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
                     <p class="description">Al cliente, junto con el recordatorio del día antes — debe tener 2 botones de respuesta rápida ("Confirmo la visita" / "Necesito cambiar la fecha") para que el webhook pueda interpretar la respuesta.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_whatsapp_template_comercial_cliente_actualizado">Plantilla — ficha de cliente actualizada (comercial)</label></th>
+                <td>
+                    <input type="text" id="crm_whatsapp_template_comercial_cliente_actualizado" name="crm_whatsapp_template_comercial_cliente_actualizado" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_comercial_cliente_actualizado', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
+                    <p class="description">Al comercial, cuando el admin pulsa "Guardar y notificar comercial" en la ficha de uno de sus clientes. Mientras no haya plantilla aprobada aquí, solo se envía el email (mismo criterio best-effort de siempre).</p>
                 </td>
             </tr>
             <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Presupuesto estancado (v1.20.127)</h3></th></tr>

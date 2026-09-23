@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.140
+Version: 1.20.141
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.140');
+define('CRM_PLUGIN_VERSION', '1.20.141');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -855,8 +855,13 @@ function crm_formulario_alta_cliente()
                 </select>
                 <input type="hidden" name="email_comercial" id="email_comercial" value="<?php echo esc_attr($client_data['email_comercial'] ?? ''); ?>">
 
-                <label for="estado">Estado global:</label>
-                <select name="estado" id="estado">
+                <label for="estado">
+                    Estado global:
+                    <span <?php echo function_exists('crm_icon') ? 'title="El estado global normalmente se calcula solo, a partir del estado de cada sector — este selector está deshabilitado hasta que marques \'Forzar\' abajo. Úsalo solo para corregir un caso puntual; al guardar sin \'Forzar\' marcado, el cálculo automático lo sobrescribirá de nuevo."' : ''; ?>>
+                        <?php echo function_exists('crm_icon') ? crm_icon('warning-circle', 14, 'crm-i--muted') : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                    </span>
+                </label>
+                <select name="estado" id="estado" disabled>
                     <option value="" disabled <?php selected($estado_actual, ''); ?>>Selecciona un estado</option>
                     <?php foreach (crm_get_estados_sector() as $val => $arr): ?>
                         <option value="<?php echo esc_attr($val) ?>" <?php selected($estado_actual, $val) ?>>
@@ -864,6 +869,10 @@ function crm_formulario_alta_cliente()
                         </option>
                     <?php endforeach; ?>
                 </select>
+                <label style="font-weight:normal;font-size:12.5px;color:#666;">
+                    <input type="checkbox" name="forzar_estado" id="forzar_estado" value="1">
+                    Forzar este estado (en vez de calcularlo automáticamente por sector)
+                </label>
 
                 <?php
                 $origen_actual = isset($client_data['origen_lead']) ? (string) $client_data['origen_lead'] : 'directo';
@@ -1711,10 +1720,18 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
     // Procesar facturas, presupuestos y contratos firmados
     $facturas_existentes   = $handle_files('facturas',          $client['facturas'] ?? '');
     $presu_existentes      = $handle_files('presupuesto',       $client['presupuesto'] ?? '');
-    $contratos_existentes  = $handle_files('contratos_firmados', $client['contratos_firmados'] ?? '');
+    // v1.20.141 — contratos_firmados/contratos_generados son solo de admin en la
+    // interfaz (el comercial nunca ve esos campos), pero el backend los procesaba
+    // igual sin comprobar el rol — un POST directo de un comercial podía tocarlos.
+    // Para un comercial, se conserva el valor ya guardado sin más.
+    $contratos_existentes  = current_user_can('crm_admin')
+        ? $handle_files('contratos_firmados', $client['contratos_firmados'] ?? '')
+        : crm_safe_unserialize_array($client['contratos_firmados'] ?? '');
 
-    // contratos generados (whitelist de sectores)
-    $contratos_generados = crm_sanitize_sectores_list((array) ($_POST['contratos_generados'] ?? []));
+    // contratos generados (whitelist de sectores) — solo admin puede tocarlo
+    $contratos_generados = current_user_can('crm_admin')
+        ? crm_sanitize_sectores_list((array) ($_POST['contratos_generados'] ?? []))
+        : crm_sanitize_sectores_list(crm_safe_unserialize_array($client['contratos_generados'] ?? ''));
 
     // ————— Gestión de envío por sector mejorada —————
     $fechas_envio = crm_safe_unserialize_array($client['fecha_envio_por_sector'] ?? '');
@@ -1978,13 +1995,9 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
     // $estimado_out ya se sanitizó arriba (justo después de $env_sectores)
     // para poder validar "factura O estimado" al enviar un sector.
 
-    // v1.18: origen del lead + flag cliente activo. Solo el admin puede modificarlos
-    // libremente; el comercial mantiene el valor previo a través del input hidden.
-    $origen_in = isset($_POST['origen_lead']) ? sanitize_key($_POST['origen_lead']) : '';
-    $origenes_validos = ['directo', 'lead_mk', 'contacto_frio', 'referido', 'web'];
-    if (!in_array($origen_in, $origenes_validos, true)) {
-        $origen_in = $client['origen_lead'] ?? 'directo';
-    }
+    // v1.18: flag cliente activo (el origen del lead se calcula más abajo,
+    // después del hardening v1.20.3 que puede reescribir $_POST['origen_lead']
+    // para un comercial).
     $cliente_activo_in = !empty($_POST['es_cliente_activo']) ? 1 : 0;
     if (!current_user_can('crm_admin')) {
         // Comerciales no pueden tocar el flag de "cliente activo"
@@ -2071,6 +2084,17 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         $_POST['email_comercial']   = $forced_email_comercial;
         $_POST['origen_lead']       = $forced_origen;
         $_POST['es_cliente_activo'] = $forced_activo;
+    }
+
+    // v1.20.141 — fix real: este cálculo vivía ANTES del hardening de arriba,
+    // así que leía el $_POST['origen_lead'] crudo (sin forzar) y ese hardening
+    // nunca tenía efecto real sobre lo que se guardaba — un comercial podía
+    // fijar origen_lead a cualquier valor válido del enum pese al comentario
+    // que decía que no podía. Movido a después del hardening para que sí surta efecto.
+    $origen_in = isset($_POST['origen_lead']) ? sanitize_key($_POST['origen_lead']) : '';
+    $origenes_validos = ['directo', 'lead_mk', 'contacto_frio', 'referido', 'web'];
+    if (!in_array($origen_in, $origenes_validos, true)) {
+        $origen_in = $client['origen_lead'] ?? 'directo';
     }
 
     // Lifecycle de leads MK: cuando el comercial asignado guarda la ficha,

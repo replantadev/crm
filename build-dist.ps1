@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$pluginDir = "c:\Users\programacion2\Local Sites\crm\app\public\wp-content\plugins\crm-plugin"
+$pluginDir = "C:\Users\programacion2\Documents\r-cloud\Replanta\REPOS\clientes\energitel\crm-plugin"
 
 # Detectar versión automáticamente desde el header del plugin para evitar
 # tener que editar este script en cada release.

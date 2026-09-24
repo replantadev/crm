@@ -112,93 +112,126 @@ function crm_funnel_calcular(array $filtros) {
     }
     $where_sql = implode(' AND ', $where);
 
-    $sql = "SELECT id, origen_lead, user_id, lead_mk_status, intereses, estado_por_sector, estado
+    $sql = "SELECT id, cliente_nombre, origen_lead, user_id, lead_mk_status, intereses, estado_por_sector, estado
             FROM $table WHERE $where_sql";
     $rows = empty($args)
         ? $wpdb->get_results($sql, ARRAY_A)
         : $wpdb->get_results($wpdb->prepare($sql, $args), ARRAY_A);
 
-    $total_pool     = count($rows);
-    $asignados      = 0;
-    $trabajados     = 0;
-    $interesados    = 0; // Entraron en la etapa "por sector" (intereses contiene $sector).
-    $cancelados     = 0;
-    $orden_estados  = crm_get_orden_estados(); // borrador..contratos_firmados
-    $conteo_por_estado = array_fill_keys($orden_estados, 0);
+    $total_pool    = count($rows);
+    $orden_estados = crm_get_orden_estados(); // borrador..contratos_firmados (6 valores, índices 0-5)
 
+    // v1.20.153 — a petición del usuario ("que les sirva de verdad"): cada
+    // fila se reduce a UNA "etapa actual" (0=captado sin asignar .. 8=cliente
+    // convertido), en vez de solo sumar booleanos sueltos como antes. De ahí
+    // salen a la vez: (a) los totales acumulados de cada barra ("llegó al
+    // menos hasta aquí", sumando desde su índice hacia atrás) y (b) la lista
+    // de quién está EXACTAMENTE parado en cada etapa ahora mismo — el
+    // drill-down, para poder abrir la ficha de quien lleva tiempo sin
+    // moverse, no solo ver un número.
+    //
     // Orígenes cuyo lifecycle de "asignado/trabajado" tiene sentido de
     // verdad (los que pasan por la cola de leads) — el resto (alta directa
-    // de un comercial, referido, web) nace ya "asignado y trabajado", no
-    // tiene sentido contarlos como pendientes de ese paso.
+    // de un comercial, referido, web) nace ya "asignado y trabajado".
     $origenes_con_cola = ['lead_mk', 'placassolares'];
 
-    foreach ($rows as $r) {
-        $es_origen_cola = in_array($r['origen_lead'], $origenes_con_cola, true);
-        $tiene_comercial = (int) ($r['user_id'] ?? 0) > 0;
+    $etapas_clave = ['captados', 'asignados', 'trabajados', 'interesados', 'enviado', 'presupuesto_generado', 'presupuesto_aceptado', 'contratos_generados', 'contratos_firmados'];
+    $por_etapa = array_fill_keys($etapas_clave, []); // clave => [ ['id'=>,'nombre'=>], ... ] (exactamente en esa etapa, solo casos vivos)
+    $reach_hasta = array_fill(0, count($etapas_clave), 0); // índice numérico => cuántos llegaron (vivos o cancelados) al menos hasta ahí
+    $cancelados_lista = [];
 
-        if (!$es_origen_cola || $tiene_comercial) {
-            $asignados++;
-        }
+    foreach ($rows as $r) {
+        $cliente = ['id' => (int) $r['id'], 'nombre' => $r['cliente_nombre'] ?: ('Cliente #' . $r['id'])];
+        $es_origen_cola  = in_array($r['origen_lead'], $origenes_con_cola, true);
+        $tiene_comercial = (int) ($r['user_id'] ?? 0) > 0;
         $lead_mk_trabajado = sanitize_key((string) ($r['lead_mk_status'] ?? '')) === 'trabajado';
+
+        $idx = 0; // captados
+        if (!$es_origen_cola || $tiene_comercial) {
+            $idx = 1; // asignados
+        }
         if (!$es_origen_cola || $lead_mk_trabajado) {
-            $trabajados++;
+            $idx = 2; // trabajados
         }
 
         $intereses = maybe_unserialize($r['intereses'] ?? '');
         $intereses = is_array($intereses) ? $intereses : [];
-        if (!in_array($sector, $intereses, true)) {
-            continue; // No llegó a la etapa de este sector — no cuenta en las fases de pipeline.
-        }
-        $interesados++;
+        $es_cancelado = $r['estado'] === 'cancelado';
+        $interesado_en_sector = in_array($sector, $intereses, true);
 
-        if ($r['estado'] === 'cancelado') {
-            $cancelados++;
-            continue; // Un cancelado no "llegó" a ningún estado de pipeline por sector.
+        if ($interesado_en_sector) {
+            $eps = maybe_unserialize($r['estado_por_sector'] ?? '');
+            $eps = is_array($eps) ? $eps : [];
+            $estado_sector = sanitize_key((string) ($eps[$sector] ?? 'borrador'));
+            $estado_idx = array_search($estado_sector, $orden_estados, true);
+            if ($estado_idx === false) {
+                $estado_idx = 0; // Estado desconocido/legacy → primer escalón.
+            }
+            // 'interesados' (índice 3 de $etapas_clave) = borrador (índice 0
+            // de $orden_estados); a partir de ahí, 1 a 1.
+            $idx = 3 + $estado_idx;
         }
 
-        $eps = maybe_unserialize($r['estado_por_sector'] ?? '');
-        $eps = is_array($eps) ? $eps : [];
-        $estado_sector = sanitize_key((string) ($eps[$sector] ?? 'borrador'));
-        $idx = array_search($estado_sector, $orden_estados, true);
-        if ($idx === false) {
-            $idx = 0; // Estado desconocido/legacy → tratar como el primer escalón.
-        }
-        // "Llegó al menos hasta aquí": suma 1 a este y a todos los anteriores.
-        for ($i = 0; $i <= $idx; $i++) {
-            $conteo_por_estado[$orden_estados[$i]]++;
+        // v1.20.153 fix: un cancelado SÍ cuenta en las barras acumuladas
+        // hasta el punto al que llegó (por eso $reach_hasta se rellena
+        // siempre, cancelado o no) — lo único que cambia es que no aparece
+        // en el drill-down de "quién está aquí ahora" ($por_etapa), porque
+        // ya no es un caso vivo/accionable, y se apunta aparte en
+        // $cancelados_lista. Antes de este fix, un cancelado desaparecía
+        // también de "Leads captados", lo cual infla artificialmente la
+        // caída de esa primera barra.
+        $reach_hasta[$idx] = ($reach_hasta[$idx] ?? 0) + 1;
+        if ($es_cancelado && $interesado_en_sector) {
+            $cancelados_lista[] = $cliente;
+        } else {
+            $por_etapa[$etapas_clave[$idx]][] = $cliente;
         }
     }
 
     $labels_estado = crm_get_estados_sector();
-    $fases = [
-        ['clave' => 'captados',  'label' => 'Leads captados',  'total' => $total_pool],
-        ['clave' => 'asignados', 'label' => 'Asignados',       'total' => $asignados],
-        ['clave' => 'trabajados','label' => 'Trabajados',      'total' => $trabajados],
-        ['clave' => 'interesados','label' => 'Interesados en ' . (crm_funnel_sectores_label()[$sector] ?? $sector), 'total' => $interesados],
+    $labels_fase = [
+        'captados'    => 'Leads captados',
+        'asignados'   => 'Asignados',
+        'trabajados'  => 'Trabajados',
+        'interesados' => 'Interesados en ' . (crm_funnel_sectores_label()[$sector] ?? $sector),
+        'enviado'              => $labels_estado['enviado']['label'] ?? 'Enviado',
+        'presupuesto_generado' => $labels_estado['presupuesto_generado']['label'] ?? 'Presupuesto Generado',
+        'presupuesto_aceptado' => $labels_estado['presupuesto_aceptado']['label'] ?? 'Presupuesto Aceptado',
+        'contratos_generados'  => $labels_estado['contratos_generados']['label'] ?? 'Contratos Generados',
+        'contratos_firmados'   => 'Cliente convertido',
     ];
-    foreach ($orden_estados as $estado_key) {
-        if ($estado_key === 'borrador') {
-            continue; // Ya cubierto por "Interesados" (borrador = recién entrado al sector).
-        }
-        $fases[] = [
-            'clave' => $estado_key,
-            'label' => $labels_estado[$estado_key]['label'] ?? $estado_key,
-            'total' => $conteo_por_estado[$estado_key],
-        ];
-    }
-    // La última fase (contratos_firmados) es "Cliente convertido" en este sector.
-    $fases[count($fases) - 1]['label'] = 'Cliente convertido';
 
-    $base = $total_pool > 0 ? $total_pool : 1;
-    foreach ($fases as &$f) {
-        $f['pct'] = round(($f['total'] / $base) * 100, 1);
+    // Totales ACUMULADOS ("llegó al menos hasta aquí") = suma de esta etapa
+    // y todas las que vienen después en la secuencia.
+    $fases = [];
+    $total_anterior = null;
+    foreach ($etapas_clave as $i => $clave) {
+        $acumulado = 0;
+        for ($j = $i; $j < count($etapas_clave); $j++) {
+            $acumulado += $reach_hasta[$j];
+        }
+        $clientes_aqui = $por_etapa[$clave];
+        $fases[] = [
+            'clave'       => $clave,
+            'label'       => $labels_fase[$clave],
+            'total'       => $acumulado,
+            'pct'         => round(($acumulado / max($total_pool, 1)) * 100, 1),
+            // % respecto a la etapa anterior — esto es lo que de verdad dice
+            // DÓNDE se pierde gente, a diferencia del % sobre el total.
+            'pct_desde_anterior' => $total_anterior === null ? null : ($total_anterior > 0 ? round(($acumulado / $total_anterior) * 100, 1) : 0.0),
+            // Quién está EXACTAMENTE aquí ahora mismo (no más allá) — el
+            // drill-down: hasta 50, para no mandar listas enormes de golpe.
+            'clientes'    => array_slice($clientes_aqui, 0, 50),
+            'clientes_total' => count($clientes_aqui),
+        ];
+        $total_anterior = $acumulado;
     }
-    unset($f);
 
     return [
-        'fases'      => $fases,
-        'cancelados' => $cancelados,
-        'total_pool' => $total_pool,
+        'fases'            => $fases,
+        'cancelados'       => count($cancelados_lista),
+        'cancelados_lista' => array_slice($cancelados_lista, 0, 50),
+        'total_pool'       => $total_pool,
     ];
 }
 
@@ -226,10 +259,18 @@ function crm_shortcode_funnel_ventas() {
     .crm-funnel-resultado { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 18px; }
     .crm-funnel-fase { display: flex; align-items: center; gap: 12px; margin: 6px 0; }
     .crm-funnel-fase-label { width: 190px; font-size: 13px; color: #374151; flex-shrink: 0; }
-    .crm-funnel-fase-barra-wrap { flex: 1; background: #f3f4f6; border-radius: 6px; overflow: hidden; height: 26px; }
+    .crm-funnel-fase-barra-wrap { flex: 1; background: #f3f4f6; border-radius: 6px; overflow: hidden; height: 26px; cursor: pointer; }
     .crm-funnel-fase-barra { height: 100%; background: linear-gradient(90deg, #191919, #4b5563); display: flex; align-items: center; padding-left: 8px; color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; transition: width .3s ease; }
-    .crm-funnel-fase-num { width: 110px; text-align: right; font-size: 13px; color: #111827; font-weight: 600; flex-shrink: 0; }
-    .crm-funnel-cancelados { margin-top: 10px; padding: 10px 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; font-size: 13px; color: #991b1b; }
+    .crm-funnel-fase-num { width: 130px; text-align: right; font-size: 13px; color: #111827; font-weight: 600; flex-shrink: 0; }
+    .crm-funnel-fase-num small { display: block; font-weight: 400; color: #6b7280; font-size: 11px; }
+    .crm-funnel-conector { margin: 0 0 0 190px; padding: 2px 0 2px 10px; font-size: 11.5px; color: #b91c1c; }
+    .crm-funnel-conector.crm-funnel-conector--ok { color: #065f46; }
+    .crm-funnel-clientes { display: none; margin: 4px 0 10px 190px; padding: 8px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 12.5px; }
+    .crm-funnel-clientes.is-open { display: block; }
+    .crm-funnel-clientes a { color: #191919; text-decoration: none; display: inline-block; margin: 2px 8px 2px 0; }
+    .crm-funnel-clientes a:hover { text-decoration: underline; }
+    .crm-funnel-clientes .crm-funnel-clientes-vacio { color: #9ca3af; }
+    .crm-funnel-cancelados { margin-top: 10px; padding: 10px 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; font-size: 13px; color: #991b1b; cursor: pointer; }
     .crm-funnel-msg { font-size: 13px; color: #6b7280; }
     </style>
 
@@ -309,17 +350,60 @@ function crm_shortcode_funnel_ventas() {
                     if (d.total_pool === 0) {
                         html = '<p class="crm-funnel-msg">No hay clientes que cumplan estos filtros.</p>';
                     } else {
-                        d.fases.forEach(function (f) {
+                        var fichaUrl = <?php echo wp_json_encode(home_url('/editar-cliente/')); ?>;
+                        var listaClientes = function (clientes, total) {
+                            if (!clientes.length) {
+                                return '<span class="crm-funnel-clientes-vacio">Nadie parado exactamente en esta etapa ahora mismo.</span>';
+                            }
+                            var out = clientes.map(function (c) {
+                                return '<a href="' + fichaUrl + '?client_id=' + c.id + '" target="_blank" rel="noopener">' + escapeHtml(c.nombre) + '</a>';
+                            }).join('');
+                            if (total > clientes.length) {
+                                out += '<br><small>… y ' + (total - clientes.length) + ' más (afina los filtros para verlos todos).</small>';
+                            }
+                            return out;
+                        };
+
+                        d.fases.forEach(function (f, i) {
+                            if (i > 0) {
+                                var prev = d.fases[i - 1];
+                                var caida = f.pct_desde_anterior;
+                                var esOk = caida === null || caida >= 70;
+                                html += '<div class="crm-funnel-conector' + (esOk ? ' crm-funnel-conector--ok' : '') + '">' +
+                                    '↓ de "' + prev.label + '" a "' + f.label + '": ' + (caida === null ? '—' : caida + '%') +
+                                    '</div>';
+                            }
                             html += '<div class="crm-funnel-fase">' +
                                 '<div class="crm-funnel-fase-label">' + f.label + '</div>' +
-                                '<div class="crm-funnel-fase-barra-wrap"><div class="crm-funnel-fase-barra" style="width:' + Math.max(f.pct, 2) + '%;">' + (f.pct >= 12 ? f.pct + '%' : '') + '</div></div>' +
-                                '<div class="crm-funnel-fase-num">' + f.total + ' · ' + f.pct + '%</div>' +
-                                '</div>';
+                                '<div class="crm-funnel-fase-barra-wrap" data-fase="' + f.clave + '"><div class="crm-funnel-fase-barra" style="width:' + Math.max(f.pct, 2) + '%;">' + (f.pct >= 12 ? f.pct + '%' : '') + '</div></div>' +
+                                '<div class="crm-funnel-fase-num">' + f.total + ' · ' + f.pct + '%<small>' + f.clientes_total + ' aquí ahora</small></div>' +
+                                '</div>' +
+                                '<div class="crm-funnel-clientes" id="crm-funnel-clientes-' + f.clave + '">' + listaClientes(f.clientes, f.clientes_total) + '</div>';
                         });
-                        html += '<div class="crm-funnel-cancelados">⚠ ' + d.cancelados + ' cliente(s) cancelado(s) entre los interesados en este sector (con estos filtros).</div>';
+                        html += '<div class="crm-funnel-cancelados" id="crm-funnel-cancelados-toggle">⚠ ' + d.cancelados + ' cliente(s) cancelado(s) entre los interesados en este sector (con estos filtros) — pulsa para ver.</div>' +
+                            '<div class="crm-funnel-clientes" id="crm-funnel-clientes-cancelados" style="margin-left:0;">' + listaClientes(d.cancelados_lista, d.cancelados) + '</div>';
                     }
                     resultado.innerHTML = html;
+
+                    resultado.querySelectorAll('.crm-funnel-fase-barra-wrap').forEach(function (el) {
+                        el.addEventListener('click', function () {
+                            var panel = document.getElementById('crm-funnel-clientes-' + el.getAttribute('data-fase'));
+                            if (panel) { panel.classList.toggle('is-open'); }
+                        });
+                    });
+                    var cancToggle = document.getElementById('crm-funnel-cancelados-toggle');
+                    if (cancToggle) {
+                        cancToggle.addEventListener('click', function () {
+                            document.getElementById('crm-funnel-clientes-cancelados').classList.toggle('is-open');
+                        });
+                    }
                 });
+        }
+
+        function escapeHtml(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
         }
 
         document.getElementById('crm-funnel-aplicar-btn').addEventListener('click', cargar);

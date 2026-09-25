@@ -123,7 +123,7 @@ function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
         "SELECT intereses, estado_por_sector, presupuesto, tipo, holded_web,
                 holded_estimate_id, holded_estimate_numero, holded_estimate_total,
                 holded_estimate_moneda, holded_estimate_aprobado,
-                holded_contact_updated_at, holded_last_synced_at
+                holded_contact_updated_at, holded_last_synced_at, codigo_postal, provincia
          FROM {$table} WHERE id = %d",
         $client_id
     ), ARRAY_A);
@@ -206,6 +206,17 @@ function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
     }
     if (empty($client['holded_web']) && !empty($contacto['website'])) {
         $update['holded_web'] = esc_url_raw((string) $contacto['website']);
+    }
+    // v1.20.154: rellena el código postal si Holded trae uno válido y el
+    // cliente todavía no tiene — mismo criterio "solo si estaba vacío" de
+    // arriba, y mismo doble filtro que crm_inst_extract_client_fields_from_holded_contact()
+    // (formato + debe coincidir con la provincia ya guardada, si la hay).
+    if (empty($client['codigo_postal']) && function_exists('crm_validate_codigo_postal')) {
+        $bill_address = is_array($contacto['bill_address'] ?? null) ? $contacto['bill_address'] : [];
+        $cp_holded = trim((string) ($bill_address['postal_code'] ?? ''));
+        if ($cp_holded !== '' && crm_validate_codigo_postal($cp_holded, $client['provincia'] ?? '')) {
+            $update['codigo_postal'] = $cp_holded;
+        }
     }
 
     // v1.20.98: adjuntar el PDF del presupuesto al campo "Presupuestos" del

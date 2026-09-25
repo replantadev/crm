@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.153
+Version: 1.20.154
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.153');
+define('CRM_PLUGIN_VERSION', '1.20.154');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -360,8 +360,34 @@ function crm_validate_poblacion($poblacion, $provincia = null) {
     if (!preg_match('/^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\s\-\'\.]+$/', $poblacion)) {
         return false;
     }
-    
+
     return true;
+}
+
+/**
+ * Valida un código postal español: 5 dígitos, y los 2 primeros deben
+ * coincidir con el código INE de la provincia seleccionada (los CP
+ * españoles siguen ese prefijo por convención, sin excepciones conocidas —
+ * ej. León=24 → todo CP de León empieza por "24"). v1.20.154.
+ *
+ * @param string $cp
+ * @param string $provincia Nombre de provincia (se normaliza igual que en el resto del formulario).
+ * @return bool
+ */
+function crm_validate_codigo_postal($cp, $provincia = null) {
+    if (!preg_match('/^\d{5}$/', (string) $cp)) {
+        return false;
+    }
+    if (empty($provincia)) {
+        return true; // Sin provincia con la que cruzar, solo se exige el formato.
+    }
+    $provincia_norm = crm_normalize_provincia($provincia);
+    foreach (crm_get_provincias_oficiales() as $p) {
+        if ($p['name'] === $provincia_norm) {
+            return substr($cp, 0, 2) === $p['code'];
+        }
+    }
+    return true; // Provincia no reconocida — ya lo habrá rechazado crm_validate_provincia() aparte.
 }
 
 /**
@@ -1035,6 +1061,22 @@ function crm_formulario_alta_cliente()
                         <div id="poblacion-suggestions" class="autocomplete-suggestions"></div>
                         <small class="population-help">Escriba el nombre del municipio</small>
                     </div>
+                </div>
+                <div class="form-group half-width">
+                    <div class="crm-field">
+                        <input type="text"
+                               name="codigo_postal"
+                               id="codigo_postal"
+                               placeholder=" "
+                               value="<?php echo esc_attr($client_data['codigo_postal'] ?? ''); ?>"
+                               required
+                               inputmode="numeric"
+                               pattern="\d{5}"
+                               maxlength="5"
+                               title="5 dígitos, ej. 24001">
+                        <label for="codigo_postal">Código postal</label>
+                    </div>
+                    <small class="cp-help">5 dígitos — debe corresponder a la provincia elegida</small>
                 </div>
                 <div class="form-group half-width">
                     <div class="crm-field">
@@ -1979,6 +2021,16 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         wp_send_json_error(['message' => 'El nombre de la población no es válido. Use solo letras, espacios y guiones. Mínimo 2 caracteres.']);
     }
 
+    // v1.20.154: código postal — obligatorio (decisión explícita del
+    // usuario, "importante para las instalaciones y el CRM en general").
+    $codigo_postal = sanitize_text_field($_POST['codigo_postal'] ?? '');
+    if ($codigo_postal === '') {
+        wp_send_json_error(['message' => 'El código postal es obligatorio.']);
+    }
+    if (!crm_validate_codigo_postal($codigo_postal, $provincia)) {
+        wp_send_json_error(['message' => 'El código postal no es válido, o no corresponde a la provincia seleccionada (los 2 primeros dígitos deben coincidir con la provincia).']);
+    }
+
     // Procesar presupuestos aceptados (combinando comerciales y admin)
     $presupuestos_aceptados_final = [];
     
@@ -2159,6 +2211,7 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         'email_cliente'             => $email_cliente,
         'poblacion'                 => $poblacion,
         'provincia'                 => $provincia, // Usar variable validada
+        'codigo_postal'             => $codigo_postal,
         'tipo'                      => sanitize_text_field($_POST['tipo']),
         'comentarios'               => sanitize_textarea_field($_POST['comentarios']), // Usar función específica para textarea
         'intereses' => maybe_serialize($intereses),
@@ -4315,6 +4368,9 @@ function crm_update_clients_table_structure() {
         // que se comunica a ESTE cliente (Ecovolt/Energitel) — logo/remitente
         // de los emails al cliente (recordatorio, visita programada…).
         'marca_comunicacion' => "VARCHAR(20) NOT NULL DEFAULT ''",
+        // v1.20.154 — código postal, obligatorio a partir de ahora (VARCHAR,
+        // no INT, para no perder ceros a la izquierda tipo "08001").
+        'codigo_postal' => "VARCHAR(5) NOT NULL DEFAULT ''",
     ];
     
     foreach ($required_columns as $column => $definition) {

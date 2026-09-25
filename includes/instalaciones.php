@@ -885,22 +885,30 @@ function crm_inst_safe_provincia( $raw ) {
  *    corromper en silencio el `<select>` de provincia.
  *  - `city` (población) es un campo de texto libre en la ficha, así que se
  *    copia tal cual — no necesita normalizarse contra ningún listado.
+ *  - v1.20.154: `postal_code` se acepta solo si son 5 dígitos Y coinciden
+ *    con la provincia ya resuelta arriba — igual que con la provincia, un
+ *    dato sucio de Holded no debe colar un CP que luego no cuadre con nada
+ *    (mismo criterio defensivo que crm_inst_safe_provincia()).
  *
  * @param array $contact Detalle de contacto de Holded (crm_holded_get_contact()).
- * @return array{nombre:string, empresa:string, direccion:string, poblacion:string, provincia:string, telefono:string, email:string}
+ * @return array{nombre:string, empresa:string, direccion:string, poblacion:string, provincia:string, codigo_postal:string, telefono:string, email:string}
  */
 function crm_inst_extract_client_fields_from_holded_contact( array $contact ) {
 	$bill_address = is_array( $contact['bill_address'] ?? null ) ? $contact['bill_address'] : [];
 	$telefono     = trim( (string) ( $contact['phone'] ?: ( $contact['mobile'] ?? '' ) ) );
+	$provincia    = crm_inst_safe_provincia( $bill_address['province'] ?? '' );
+	$cp_raw       = trim( (string) ( $bill_address['postal_code'] ?? '' ) );
+	$codigo_postal = ( function_exists( 'crm_validate_codigo_postal' ) && crm_validate_codigo_postal( $cp_raw, $provincia ) ) ? $cp_raw : '';
 
 	return [
-		'nombre'    => sanitize_text_field( (string) ( $contact['name'] ?? '' ) ),
-		'empresa'   => sanitize_text_field( (string) ( $contact['trade_name'] ?? '' ) ),
-		'direccion' => sanitize_text_field( (string) ( $bill_address['address'] ?? '' ) ),
-		'poblacion' => sanitize_text_field( (string) ( $bill_address['city'] ?? '' ) ),
-		'provincia' => crm_inst_safe_provincia( $bill_address['province'] ?? '' ),
-		'telefono'  => substr( sanitize_text_field( $telefono ), 0, 15 ),
-		'email'     => sanitize_email( (string) ( $contact['email'] ?? '' ) ),
+		'nombre'        => sanitize_text_field( (string) ( $contact['name'] ?? '' ) ),
+		'empresa'       => sanitize_text_field( (string) ( $contact['trade_name'] ?? '' ) ),
+		'direccion'     => sanitize_text_field( (string) ( $bill_address['address'] ?? '' ) ),
+		'poblacion'     => sanitize_text_field( (string) ( $bill_address['city'] ?? '' ) ),
+		'provincia'     => $provincia,
+		'codigo_postal' => $codigo_postal,
+		'telefono'      => substr( sanitize_text_field( $telefono ), 0, 15 ),
+		'email'         => sanitize_email( (string) ( $contact['email'] ?? '' ) ),
 	];
 }
 
@@ -967,6 +975,7 @@ function crm_inst_match_or_create_client_from_holded_contact( array $contact ) {
 			'email_cliente'            => $campos['email'],
 			'poblacion'                => $campos['poblacion'],
 			'provincia'                => $campos['provincia'] !== '' ? $campos['provincia'] : 'León',
+			'codigo_postal'            => $campos['codigo_postal'],
 			'estado'                   => 'presupuesto_aceptado',
 			'fecha_envio_por_sector'   => maybe_serialize( [] ),
 			'usuario_envio_por_sector' => maybe_serialize( [] ),
@@ -1314,12 +1323,28 @@ function crm_inst_run_geocode( $instalacion_id ) {
 	}
 
 	global $wpdb;
-	$direccion = $wpdb->get_var( $wpdb->prepare(
-		"SELECT direccion_instalacion FROM " . crm_inst_table_instalaciones() . " WHERE id = %d",
+	$fila = $wpdb->get_row( $wpdb->prepare(
+		"SELECT i.direccion_instalacion, c.codigo_postal
+		 FROM " . crm_inst_table_instalaciones() . " i
+		 LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id
+		 WHERE i.id = %d",
 		$instalacion_id
-	) );
+	), ARRAY_A );
+	$direccion = $fila['direccion_instalacion'] ?? '';
 	if ( ! $direccion ) {
 		return;
+	}
+
+	// v1.20.154: Nominatim no admite mezclar el parámetro de texto libre (q=)
+	// con parámetros estructurados como postalcode= (son mutuamente
+	// excluyentes, error en versiones nuevas de la API) — verificado contra
+	// la documentación oficial antes de tocar esto. La forma correcta de
+	// aprovechar el código postal del cliente sin cambiar de modo es
+	// añadirlo dentro del propio texto libre, solo si la dirección no trae
+	// ya uno (evita duplicar/contradecir un CP distinto que alguien haya
+	// escrito a mano en la dirección de la instalación).
+	if ( ! empty( $fila['codigo_postal'] ) && ! preg_match( '/\b\d{5}\b/', $direccion ) ) {
+		$direccion .= ', ' . $fila['codigo_postal'];
 	}
 
 	$resultado = crm_geo_geocode_address( $direccion );

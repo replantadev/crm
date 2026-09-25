@@ -5,10 +5,11 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
     }
 
-    // ————— Validación de provincia y población —————
+    // ————— Validación de provincia, población y código postal —————
     const provinciaSelect = document.getElementById('provincia');
     const poblacionInput = document.getElementById('poblacion');
-    
+    const codigoPostalInput = document.getElementById('codigo_postal');
+
     if (provinciaSelect) {
         provinciaSelect.addEventListener('change', function() {
             validateProvincia(this);
@@ -17,16 +18,29 @@ document.addEventListener("DOMContentLoaded", function () {
                 poblacionInput.value = '';
                 poblacionInput.classList.remove('valid', 'invalid');
             }
+            // v1.20.154: re-validar el CP ya escrito contra la nueva provincia.
+            if (codigoPostalInput && codigoPostalInput.value.trim()) {
+                validateCodigoPostal(codigoPostalInput, this.value);
+            }
         });
     }
-    
+
     if (poblacionInput) {
         poblacionInput.addEventListener('blur', function() {
             validatePoblacion(this, provinciaSelect?.value);
         });
-        
+
         poblacionInput.addEventListener('input', function() {
             // Quitar estado de error mientras escribe
+            this.classList.remove('invalid');
+        });
+    }
+
+    if (codigoPostalInput) {
+        codigoPostalInput.addEventListener('blur', function() {
+            validateCodigoPostal(this, provinciaSelect?.value);
+        });
+        codigoPostalInput.addEventListener('input', function() {
             this.classList.remove('invalid');
         });
     }
@@ -61,6 +75,35 @@ document.addEventListener("DOMContentLoaded", function () {
         const isValidFormat = /^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\s\-'\.]+$/.test(poblacion) && poblacion.length >= 2;
         
         if (isValidFormat) {
+            input.classList.add('valid');
+            input.classList.remove('invalid');
+            return true;
+        } else {
+            input.classList.add('invalid');
+            input.classList.remove('valid');
+            return false;
+        }
+    }
+
+    // v1.20.154: 5 dígitos + los 2 primeros deben coincidir con el código
+    // INE de la provincia elegida (mismo criterio que el servidor,
+    // crm_validate_codigo_postal() en crm-plugin.php — CRM_Municipios ya
+    // conoce ese mapeo nombre→código, solo hacía falta exponerlo).
+    function validateCodigoPostal(input, provincia) {
+        const cp = input.value.trim();
+        if (!cp) {
+            input.classList.remove('valid', 'invalid');
+            return false;
+        }
+        const formatoOk = /^\d{5}$/.test(cp);
+        let coincideProvincia = true;
+        if (formatoOk && provincia && window.CRM_Municipios && window.CRM_Municipios.codeForProvincia) {
+            const code = window.CRM_Municipios.codeForProvincia(provincia);
+            if (code) {
+                coincideProvincia = cp.slice(0, 2) === code;
+            }
+        }
+        if (formatoOk && coincideProvincia) {
             input.classList.add('valid');
             input.classList.remove('invalid');
             return true;
@@ -521,7 +564,8 @@ function showToast(msg, tipo, duration = 4000) {
         [
             { sel: "[name='cliente_nombre']", msg: "El nombre del cliente es obligatorio." },
             { sel: "[name='empresa']", msg: "El nombre de la empresa es obligatorio." },
-            { sel: "[name='direccion']", msg: "La dirección es obligatoria." }
+            { sel: "[name='direccion']", msg: "La dirección es obligatoria." },
+            { sel: "[name='codigo_postal']", msg: "El código postal es obligatorio." }
         ].forEach(({ sel, msg }) => {
             const inp = form.querySelector(sel);
             if (inp && !inp.value.trim()) { valid = false; showError(inp, msg); }
@@ -535,6 +579,14 @@ function showToast(msg, tipo, duration = 4000) {
             showError(email, "El email no es válido.");
         } else if (email) {
             clearError(email);
+        }
+
+        // 2b) v1.20.154: si el CP tiene contenido pero no pasa el formato/
+        // cruce con la provincia, bloquear el envío igual que un vacío.
+        const cpInput = form.querySelector("[name='codigo_postal']");
+        if (cpInput && cpInput.value.trim() && !validateCodigoPostal(cpInput, provinciaSelect?.value)) {
+            valid = false;
+            showError(cpInput, "El código postal no es válido para la provincia elegida.");
         }
 
         // 3) Si NO es admin y NO estamos guardando borrador → exigir factura

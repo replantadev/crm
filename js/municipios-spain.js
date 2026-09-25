@@ -213,6 +213,10 @@
         load: load,
         getProvincias: getProvincias,
         esProvinciaValida: esProvinciaValida,
+        // v1.20.154: ya existía como función interna (la usa buscarMunicipios/
+        // esMunicipioValido) — solo faltaba exponerla para la validación de
+        // código postal (crm-scriptv7.js).
+        codeForProvincia: codeForProvincia,
         buscarMunicipios: buscarMunicipios,
         esMunicipioValido: esMunicipioValido,
         // Compat: algunos consumidores antiguos pedían la lista enum:

@@ -538,7 +538,27 @@ function crm_visita_handle_save() {
     // el módulo de instalaciones (crm_notificar(), includes/notificaciones-inapp.php).
     if (!is_wp_error($res) && function_exists('crm_notificar')) {
         $target_comercial_id = isset($input['comercial_id']) ? (int) $input['comercial_id'] : 0;
-        if ($target_comercial_id > 0 && $target_comercial_id !== $current_id) {
+        $es_delegacion = $target_comercial_id > 0 && $target_comercial_id !== $current_id;
+
+        // v1.20.157 — antes se notificaba en CUALQUIER guardado de una visita
+        // delegada (aunque solo se editara una nota o el lugar, sin tocar
+        // fecha ni comercial), generando WhatsApp/in-app de "reprogramada"
+        // de forma redundante. Ahora en edición solo se notifica si de
+        // verdad cambió el comercial asignado o la fecha/hora (comparadas
+        // como timestamp, no como string, porque el input del formulario y
+        // el valor guardado en BD no siempre comparten formato exacto). En
+        // creación ($id == 0, $existing no existe) siempre se notifica: es
+        // una asignación nueva de verdad.
+        if ($es_delegacion && $id > 0 && isset($existing) && is_array($existing)) {
+            $comercial_antes = (int) ($existing['comercial_id'] ?? 0);
+            $ts_antes   = !empty($existing['fecha_visita']) ? strtotime((string) $existing['fecha_visita']) : false;
+            $ts_despues = !empty($input['fecha_visita']) ? strtotime((string) $input['fecha_visita']) : false;
+            $reasignada   = $target_comercial_id !== $comercial_antes;
+            $reprogramada = $ts_antes !== false && $ts_despues !== false && $ts_antes !== $ts_despues;
+            $es_delegacion = $reasignada || $reprogramada;
+        }
+
+        if ($es_delegacion) {
             global $wpdb;
             $client_id_notif = isset($input['client_id']) ? (int) $input['client_id'] : 0;
             $cliente_nombre  = $client_id_notif > 0 ? $wpdb->get_var($wpdb->prepare(

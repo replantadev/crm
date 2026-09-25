@@ -1933,11 +1933,20 @@ function crm_admin_leads_mk_run_sync_post() {
  * jefes/crm_admin por igual; ahora cada uno elige el suyo aquí. Si alguien
  * nunca las toca, `crm_inst_notif_canal_habilitado()` (includes/instalaciones.php)
  * cae al ajuste global de siempre — nadie deja de recibir avisos de golpe.
+ *
+ * v1.20.158: comercial/visitador ya podían fijar su WhatsApp desde la página
+ * frontend "Equipo" (includes/equipo-gestion.php, gestionada por crm_admin) —
+ * pero un administrator de wp-admin no tenía forma de verlo ni tocarlo desde
+ * Usuarios → Editar usuario, porque este bloque solo se pintaba para
+ * jefe_instalaciones/crm_admin/administrator. Mismo user-meta `crm_whatsapp`
+ * en los dos sitios, así que añadir el rol aquí no crea un dato nuevo, solo
+ * lo hace visible también desde wp-admin.
  */
 add_action('show_user_profile', 'crm_admin_render_whatsapp_profile_field');
 add_action('edit_user_profile', 'crm_admin_render_whatsapp_profile_field');
 function crm_admin_render_whatsapp_profile_field($user) {
-    if (!in_array('jefe_instalaciones', (array) $user->roles, true) && !in_array('crm_admin', (array) $user->roles, true) && !in_array('administrator', (array) $user->roles, true)) {
+    $roles_con_whatsapp = ['jefe_instalaciones', 'crm_admin', 'administrator', 'comercial', 'visitador'];
+    if (!array_intersect($roles_con_whatsapp, (array) $user->roles)) {
         return;
     }
     $whatsapp = (string) get_user_meta($user->ID, 'crm_whatsapp', true);

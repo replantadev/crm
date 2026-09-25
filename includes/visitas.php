@@ -45,6 +45,7 @@ function crm_visitas_install_table() {
         creado_por BIGINT(20) UNSIGNED NOT NULL,
         creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         actualizado_en DATETIME DEFAULT NULL,
+        recordatorio_enviado_en DATETIME DEFAULT NULL,
         PRIMARY KEY (id),
         KEY client_id (client_id),
         KEY comercial_id (comercial_id),
@@ -557,6 +558,19 @@ function crm_visita_handle_save() {
                 ($id > 0 ? 'Visita reprogramada' : 'Nueva visita asignada') . $fecha_label . ($cliente_nombre ? ' — ' . $cliente_nombre : '') . '.',
                 home_url('/mi-agenda/')
             );
+            // v1.20.156 — reunión con cliente 2026-09-25: el sistema de
+            // visitas comerciales solo avisaba in-app — añadido WhatsApp
+            // best-effort (reutiliza crm_inst_whatsapp_instalador(), que
+            // pese al nombre es genérica por user_id/plantilla/canal, mismo
+            // criterio ya aplicado en otros sitios de este plugin).
+            if (function_exists('crm_inst_whatsapp_instalador')) {
+                crm_inst_whatsapp_instalador(
+                    $target_comercial_id,
+                    'crm_whatsapp_template_comercial_visita',
+                    [ $cliente_nombre ?: 'un cliente', $fecha_label !== '' ? trim(str_replace('para ', '', $fecha_label)) : 'sin fecha', home_url('/mi-agenda/') ],
+                    'Visita comercial asignada/reprogramada'
+                );
+            }
         }
     }
 
@@ -1264,4 +1278,88 @@ function crm_inject_proximas_visitas_in_escritorio($content) {
         return $content;
     }
     return do_shortcode('[crm_proximas_visitas]') . $content;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// v1.20.156 — reunión con cliente 2026-09-25: recordatorio el día antes de
+// una visita COMERCIAL (mismo patrón que crm_inst_aviso_calendario_run(),
+// includes/instalaciones.php — cron autorreparable + dedup por fila con
+// `recordatorio_enviado_en`, no un flag global por día).
+// ──────────────────────────────────────────────────────────────────────────────
+
+function crm_visitas_aviso_calendario_schedule_cron() {
+    if (!wp_next_scheduled('crm_visitas_aviso_calendario_cron_hourly')) {
+        wp_schedule_event(time() + 600, 'hourly', 'crm_visitas_aviso_calendario_cron_hourly');
+    }
+}
+add_action('init', function () {
+    if (!wp_doing_cron() && !wp_next_scheduled('crm_visitas_aviso_calendario_cron_hourly')) {
+        crm_visitas_aviso_calendario_schedule_cron();
+    }
+}, 20);
+
+add_action('crm_visitas_aviso_calendario_cron_hourly', 'crm_visitas_aviso_calendario_run');
+/**
+ * Busca visitas comerciales de mañana sin recordatorio enviado todavía, y
+ * avisa al comercial/visitador asignado (in-app + WhatsApp best-effort).
+ */
+function crm_visitas_aviso_calendario_run() {
+    $hoy = current_time('Y-m-d');
+    if (get_option('crm_visitas_aviso_calendario_last_run', '') === $hoy) {
+        return;
+    }
+    $hora_config = (int) get_option('crm_visitas_aviso_calendario_hora', 9);
+    if ((int) current_time('G') !== $hora_config) {
+        return;
+    }
+    update_option('crm_visitas_aviso_calendario_last_run', $hoy, false);
+
+    global $wpdb;
+    $manana        = date('Y-m-d', strtotime('+1 day', current_time('timestamp')));
+    $manana_inicio = $manana . ' 00:00:00';
+    $manana_fin    = $manana . ' 23:59:59';
+
+    $rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT v.id, v.comercial_id, v.fecha_visita, v.lugar, c.cliente_nombre
+         FROM " . crm_visitas_table() . " v
+         LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = v.client_id
+         WHERE v.recordatorio_enviado_en IS NULL
+           AND v.fecha_visita BETWEEN %s AND %s
+           AND v.estado = 'programada'",
+        $manana_inicio, $manana_fin
+    ), ARRAY_A);
+
+    if (empty($rows)) {
+        return;
+    }
+
+    $avisadas = 0;
+    foreach ($rows as $r) {
+        $fecha_label    = date_i18n('d/m/Y H:i', strtotime($r['fecha_visita']));
+        $cliente_nombre = $r['cliente_nombre'] ?: 'un cliente';
+        $url            = home_url('/mi-agenda/');
+        $comercial_id   = (int) $r['comercial_id'];
+
+        if ($comercial_id > 0) {
+            $mensaje = 'Recordatorio: mañana ' . $fecha_label . ' tienes visita con ' . $cliente_nombre . (!empty($r['lugar']) ? ' en ' . $r['lugar'] : '') . '.';
+            if (function_exists('crm_notificar')) {
+                crm_notificar($comercial_id, 'visita_recordatorio', $mensaje, $url);
+            }
+            if (function_exists('crm_inst_whatsapp_instalador')) {
+                crm_inst_whatsapp_instalador(
+                    $comercial_id,
+                    'crm_whatsapp_template_comercial_visita',
+                    [$cliente_nombre, $fecha_label, $url],
+                    'Recordatorio de visita comercial'
+                );
+            }
+        }
+
+        $wpdb->update(crm_visitas_table(), ['recordatorio_enviado_en' => current_time('mysql')], ['id' => (int) $r['id']]);
+        $avisadas++;
+    }
+
+    if (function_exists('crm_log_action')) {
+        crm_log_action('visitas_recordatorio_calendario', $avisadas . ' recordatorio(s) de visita comercial enviado(s) para mañana ' . $manana . '.', null, 0, 'info');
+    }
 }

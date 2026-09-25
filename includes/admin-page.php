@@ -266,6 +266,22 @@ function crm_register_admin_settings() {
         'default'           => '',
         'sanitize_callback' => 'sanitize_text_field',
     ]);
+    // v1.20.156 — reunión con cliente 2026-09-25: visitas COMERCIALES
+    // (módulo aparte del de instalaciones) — WhatsApp al asignar/reprogramar
+    // + recordatorio el día antes, mismo patrón que arriba.
+    register_setting('crm_settings', 'crm_whatsapp_template_comercial_visita', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
+    register_setting('crm_settings', 'crm_visitas_aviso_calendario_hora', [
+        'type'              => 'integer',
+        'default'           => 9,
+        'sanitize_callback' => function ($v) {
+            $n = (int) $v;
+            return ( $n >= 0 && $n <= 23 ) ? $n : 9;
+        },
+    ]);
     // v1.20.127 — Fase 7 · presupuesto estancado.
     register_setting('crm_settings', 'crm_ventas_aviso_estancados_dias', [
         'type'              => 'integer',
@@ -1406,6 +1422,26 @@ function crm_admin_render_settings() {
                 <td>
                     <label><input type="checkbox" id="crm_inst_aviso_cliente_visita_email" name="crm_inst_aviso_cliente_visita_email" value="1" <?php checked(get_option('crm_inst_aviso_cliente_visita_email', false)); ?>> Enviar un email al cliente en el momento de programar/reprogramar la visita (v1.20.130)</label>
                     <p class="description">Desmarcado (por defecto): el cliente se entera de la visita solo con el recordatorio del día antes. Marcado, recibe también un email inmediato al agendar/reprogramar.</p>
+                </td>
+            </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Visitas comerciales — WhatsApp (v1.20.156)</h3></th></tr>
+            <tr>
+                <th><label for="crm_whatsapp_template_comercial_visita">Plantilla — visita comercial</label></th>
+                <td>
+                    <input type="text" id="crm_whatsapp_template_comercial_visita" name="crm_whatsapp_template_comercial_visita" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_comercial_visita', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
+                    <p class="description">Al comercial/visitador (si activó WhatsApp en Equipo), cuando se le asigna/reprograma una visita comercial, y en el recordatorio del día antes. Módulo de "visitas" (comerciales a clientes), distinto del de instalaciones.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_visitas_aviso_calendario_hora">Hora del recordatorio</label></th>
+                <td>
+                    <select id="crm_visitas_aviso_calendario_hora" name="crm_visitas_aviso_calendario_hora">
+                        <?php $hora_vis_actual = (int) get_option('crm_visitas_aviso_calendario_hora', 9); ?>
+                        <?php for ($h = 0; $h <= 23; $h++) : ?>
+                            <option value="<?php echo esc_attr($h); ?>" <?php selected($hora_vis_actual, $h); ?>><?php echo esc_html(sprintf('%02d:00', $h)); ?></option>
+                        <?php endfor; ?>
+                    </select>
+                    <p class="description">A esta hora del día ANTERIOR a cada visita comercial agendada, se avisa al comercial/visitador asignado (in-app + WhatsApp).</p>
                 </td>
             </tr>
             <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Confirmación de cita por WhatsApp (Fase 8, v1.20.130)</h3></th></tr>

@@ -64,6 +64,10 @@ function crm_equipo_listar_usuarios($rol) {
             'nombre'   => $u->display_name,
             'email'    => $u->user_email,
             'whatsapp' => (string) get_user_meta($u->ID, 'crm_whatsapp', true),
+            // v1.20.156 — interruptor personal de WhatsApp (mismo user-meta
+            // que ya usan instaladores/jefes, crm_inst_notif_canal_habilitado())
+            // — hasta ahora ningún comercial tenía forma de activarlo.
+            'whatsapp_activo' => (string) get_user_meta($u->ID, 'crm_notif_canal_whatsapp', true) === '1',
         ];
         // v1.20.149 — reunión con cliente 2026-09-22, punto 8: "KO" (baja) de
         // un comercial — solo tiene sentido para ese rol, nunca instaladores.
@@ -182,6 +186,10 @@ function crm_equipo_gestion_widget() {
                                     <input type="email" class="crm-equipo-edit-email" value="<?php echo esc_attr($u['email']); ?>">
                                     <label>WhatsApp</label>
                                     <input type="text" class="crm-equipo-edit-whatsapp" value="<?php echo esc_attr($u['whatsapp']); ?>" placeholder="+34600000000">
+                                    <label style="font-weight:400;">
+                                        <input type="checkbox" class="crm-equipo-edit-whatsapp-activo" <?php checked(!empty($u['whatsapp_activo'])); ?>>
+                                        Avisar por WhatsApp (visitas, cliente actualizado…)
+                                    </label>
                                     <p style="margin:10px 0 0;">
                                         <button type="button" class="crm-btn crm-equipo-guardar-btn" data-user-id="<?php echo esc_attr($u['id']); ?>">Guardar</button>
                                         <span class="crm-equipo-form-msg"></span>
@@ -372,6 +380,7 @@ function crm_equipo_gestion_widget() {
                 var nombre = wrap.querySelector('.crm-equipo-edit-nombre').value.trim();
                 var email  = wrap.querySelector('.crm-equipo-edit-email').value.trim();
                 var wa     = wrap.querySelector('.crm-equipo-edit-whatsapp').value.trim();
+                var waActivo = wrap.querySelector('.crm-equipo-edit-whatsapp-activo').checked;
                 var msg    = wrap.querySelector('.crm-equipo-form-msg');
                 if (!nombre || !email) {
                     msg.style.color = '#991b1b';
@@ -388,6 +397,7 @@ function crm_equipo_gestion_widget() {
                 body.set('nombre', nombre);
                 body.set('email', email);
                 body.set('whatsapp', wa);
+                body.set('whatsapp_activo', waActivo ? '1' : '0');
                 fetch(ajaxurl, { method: 'POST', body: body })
                     .then(function (r) { return r.json(); })
                     .then(function (resp) {
@@ -577,6 +587,11 @@ function crm_equipo_ajax_editar_usuario() {
     }
 
     update_user_meta($user_id, 'crm_whatsapp', $whatsapp);
+    // v1.20.156 — mismo interruptor que ya usan instaladores/jefes
+    // (crm_inst_notif_canal_habilitado()) — hasta ahora ningún comercial
+    // tenía forma de activarlo (no tienen "Mi perfil" propio como el
+    // instalador, así que se gestiona aquí, desde Equipo).
+    update_user_meta($user_id, 'crm_notif_canal_whatsapp', !empty($_POST['whatsapp_activo']) ? '1' : '0');
 
     if (function_exists('crm_log_action')) {
         crm_log_action('equipo_editar', 'Ficha editada: ' . $nombre . ' (' . $email . ')', null, null, 'info');

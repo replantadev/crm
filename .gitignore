@@ -45,3 +45,9 @@ backup-*/
 # Bundle source de municipios (se descarga al construir)
 tools/ine-municipios.xlsx
 
+# Documentos de planificación/memoria locales — NUNCA al repo público
+# (notas de negocio sensibles; ver feedback_instalaciones_workflow.md).
+PLAN_instalaciones.md
+MEMORIA_project_instalaciones_plan.md
+MEMORIA_feedback_instalaciones_workflow.md
+

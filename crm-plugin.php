@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.154
+Version: 1.20.155
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.154');
+define('CRM_PLUGIN_VERSION', '1.20.155');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -2526,6 +2526,23 @@ function crm_enviar_notificacion_comercial($client_id, $client_data, $action_det
     $cd  = esc_html($client_data['delegado'] ?? '');
     $com = esc_html($comercial->display_name);
     $adm = esc_html($admin_user->display_name);
+    // v1.20.155 — a petición del usuario: que se sepa de un vistazo QUÉ
+    // cliente es (empresa) y DÓNDE (ubicación), no solo su nombre.
+    $emp = esc_html($client_data['empresa'] ?? '');
+    $ubicacion_partes = array_filter([$client_data['poblacion'] ?? '', $client_data['provincia'] ?? '']);
+    $ubi = esc_html(implode(', ', $ubicacion_partes) ?: '—');
+
+    // v1.20.155 — el usuario pidió también "los valores de la actualización,
+    // los relevantes": un resumen corto de QUÉ cambió, para la plantilla de
+    // WhatsApp (el email ya muestra $action_details completo más abajo).
+    // Se excluyen "Cliente actualizado"/"Email"/"Teléfono" porque ya van
+    // aparte como campos propios — serían ruido repetido.
+    $cambios_relevantes = array_values(array_filter((array) $action_details, function ($d) {
+        return !preg_match('/^(Cliente actualizado|Email|Teléfono):/u', (string) $d);
+    }));
+    $resumen_cambios = !empty($cambios_relevantes)
+        ? esc_html(mb_substr(implode('; ', $cambios_relevantes), 0, 300))
+        : 'Sin cambios de estado relevantes.';
 
     // Construir el mensaje
     $subject = sprintf('🔔 Actualización de Cliente: %s', $cliente_nombre);
@@ -2554,6 +2571,8 @@ function crm_enviar_notificacion_comercial($client_id, $client_data, $action_det
         
         <div class='detail-box'>
             <h3>👤 Cliente: {$cn}</h3>
+            <p><strong>🏢 Empresa:</strong> {$emp}</p>
+            <p><strong>📍 Ubicación:</strong> {$ubi}</p>
             <p><strong>📧 Email:</strong> {$ce}</p>
             <p><strong>📞 Teléfono:</strong> {$ct}</p>
             <p><strong>🏢 Delegado:</strong> {$cd}</p>
@@ -2604,7 +2623,7 @@ function crm_enviar_notificacion_comercial($client_id, $client_data, $action_det
         if ($template !== '' && function_exists('crm_inst_notif_canal_habilitado') && crm_inst_notif_canal_habilitado($comercial_id, 'whatsapp')) {
             $telefono = get_user_meta($comercial_id, 'crm_whatsapp', true);
             if (!empty($telefono)) {
-                $resultado_whatsapp = crm_whatsapp_enviar_plantilla($telefono, $template, [$com, $cn]);
+                $resultado_whatsapp = crm_whatsapp_enviar_plantilla($telefono, $template, [$com, $cn, $emp ?: '—', $ubi, $resumen_cambios]);
                 if (is_wp_error($resultado_whatsapp) && function_exists('crm_whatsapp_log_error')) {
                     crm_whatsapp_log_error($template, 'Aviso de cliente actualizado al comercial #' . $comercial_id . ': ' . $resultado_whatsapp->get_error_message());
                 }

@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.158
+Version: 1.20.159
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.158');
+define('CRM_PLUGIN_VERSION', '1.20.159');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -124,6 +124,12 @@ require_once CRM_PLUGIN_PATH . 'includes/flujos-page.php';
 // silencio). El envío de prueba SÍ funcionaba porque admin-ajax.php cuenta
 // como contexto admin para is_admin().
 require_once CRM_PLUGIN_PATH . 'includes/mail-settings.php';
+// v1.20.159 — Guía de avisos: qué manda el CRM por email y WhatsApp, en
+// lenguaje llano, leído de los catálogos que ya mantienen mail-settings.php
+// y whatsapp-api.php. Mismo motivo que los dos requires de arriba: registra
+// el shortcode [crm_guia_avisos] del frontend, así que no puede vivir dentro
+// de `if (is_admin())`.
+require_once CRM_PLUGIN_PATH . 'includes/guia-avisos.php';
 
 // Página de administración WP (menú "CRM"). Solo en wp-admin.
 if (is_admin()) {

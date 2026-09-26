@@ -147,6 +147,12 @@ function crm_required_pages() {
             'title'   => 'Funnel de ventas',
             'content' => '[crm_funnel_ventas]',
         ],
+        [
+            // v1.20.159 — qué avisa el CRM por email y WhatsApp, en lenguaje llano.
+            'slug'    => 'guia-avisos',
+            'title'   => 'Guía de avisos',
+            'content' => '[crm_guia_avisos]',
+        ],
     ];
     return apply_filters('crm_required_pages', $pages);
 }

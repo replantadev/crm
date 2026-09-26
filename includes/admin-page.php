@@ -41,6 +41,7 @@ function crm_register_admin_menu() {
     add_submenu_page('crm-dashboard', 'Actualizaciones', 'Actualizaciones', $cap, 'crm-updates', 'crm_admin_render_updates');
     add_submenu_page('crm-dashboard', 'Leads MK', 'Leads MK', $cap, 'crm-leads-mk', 'crm_admin_render_leads_mk');
     add_submenu_page('crm-dashboard', 'Flujos', 'Flujos', $cap, 'crm-flujos', 'crm_flujos_render_admin');
+    add_submenu_page('crm-dashboard', 'Guía de avisos', 'Guía de avisos', $cap, 'crm-guia-avisos', 'crm_guia_avisos_render_admin');
     add_submenu_page('crm-dashboard', 'Ajustes', 'Ajustes', $cap, 'crm-settings', 'crm_admin_render_settings');
 }
 
@@ -357,6 +358,7 @@ function crm_admin_render_nav() {
         'crm-updates'   => 'Actualizaciones',
         'crm-leads-mk'  => 'Leads MK',
         'crm-flujos'    => 'Flujos',
+        'crm-guia-avisos' => 'Guía de avisos',
         'crm-notificaciones' => 'Notificaciones',
         'crm-email'     => 'Email',
         'crm-settings'  => 'Ajustes',

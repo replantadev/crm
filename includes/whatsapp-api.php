@@ -129,6 +129,34 @@ function crm_whatsapp_enviar_plantilla($telefono, $template_name, array $paramet
 }
 
 /**
+ * v1.20.159 — catálogo único de plantillas de WhatsApp: opción → etiqueta
+ * (qué es y quién lo recibe). Antes esta lista vivía duplicada 3 veces
+ * (aquí, en $nombres_validos de crm_whatsapp_ajax_test_envio(), y de forma
+ * implícita en crm_whatsapp_test_parametros()) — al añadir una plantilla
+ * nueva (v1.20.155/156) se actualizó el envío real y los Ajustes de
+ * wp-admin, pero se olvidó esta copia, así que ni la vista de
+ * /panel-de-control/ ni el botón "Enviar prueba" la mostraban. Con una sola
+ * función, añadir una plantilla nueva es tocar un único sitio.
+ *
+ * @return array<string,string> opción de wp_options => etiqueta
+ */
+function crm_whatsapp_catalogo() {
+    return [
+        'crm_whatsapp_template_aviso_materiales'              => 'Aviso de materiales pendientes (a jefes/crm_admin)',
+        'crm_whatsapp_template_validar_extra'                 => 'Validar partida extra (al cliente)',
+        'crm_whatsapp_template_en_ejecucion'                  => 'Instalación en marcha (cierre parcial, a jefes/crm_admin)',
+        'crm_whatsapp_template_recordatorio_visita'           => 'Recordatorio de visita (a jefes/crm_admin)',
+        'crm_whatsapp_template_instalador_asignado'           => 'Instalación asignada (a instalador)',
+        'crm_whatsapp_template_instalador_visita'             => 'Visita programada/reprogramada (a instalador)',
+        'crm_whatsapp_template_instalador_extra_resuelta'     => 'Partida extra resuelta (a instalador)',
+        'crm_whatsapp_template_instalador_cierre_resuelto'    => 'Cierre resuelto (a instalador)',
+        'crm_whatsapp_template_confirmacion_visita_cliente'   => 'Confirmación de cita (al cliente, con botones)',
+        'crm_whatsapp_template_comercial_cliente_actualizado' => 'Ficha de cliente actualizada (al comercial)',
+        'crm_whatsapp_template_comercial_visita'              => 'Visita comercial asignada/reprogramada (al comercial o visitador)',
+    ];
+}
+
+/**
  * v1.20.113 — vista de WhatsApp para el FRONTEND (`/panel-de-control/`).
  * Nació como un formulario editable completo (Phone Number ID + token +
  * plantillas), para tapar el mismo hueco ya corregido para email
@@ -149,17 +177,7 @@ function crm_whatsapp_settings_render() {
 
     $credenciales    = crm_whatsapp_get_credenciales();
     $phone_visible   = $credenciales['phone_number_id'] !== '' ? '•••' . substr($credenciales['phone_number_id'], -4) : '—';
-    $plantillas      = [
-        'crm_whatsapp_template_aviso_materiales'            => 'Aviso de materiales pendientes',
-        'crm_whatsapp_template_validar_extra'               => 'Validar partida extra (al cliente)',
-        'crm_whatsapp_template_en_ejecucion'                => 'Instalación en marcha (cierre parcial)',
-        'crm_whatsapp_template_recordatorio_visita'         => 'Recordatorio de visita (a jefes)',
-        'crm_whatsapp_template_instalador_asignado'         => 'Instalación asignada (a instalador)',
-        'crm_whatsapp_template_instalador_visita'           => 'Visita programada/reprogramada (a instalador)',
-        'crm_whatsapp_template_instalador_extra_resuelta'   => 'Partida extra resuelta (a instalador)',
-        'crm_whatsapp_template_instalador_cierre_resuelto'  => 'Cierre resuelto (a instalador)',
-        'crm_whatsapp_template_confirmacion_visita_cliente' => 'Confirmación de cita (al cliente, con botones)',
-    ];
+    $plantillas      = crm_whatsapp_catalogo();
     ?>
     <div class="crm-mail-canal" style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
         <h4 style="margin:0 0 4px;">WhatsApp Business</h4>
@@ -271,6 +289,10 @@ function crm_whatsapp_test_parametros($opcion_plantilla) {
             return ['Cliente de prueba', 'aprobado', home_url('/')];
         case 'crm_whatsapp_template_confirmacion_visita_cliente':
             return ['Cliente de prueba', 'mañana 10:00', 'C/ Ejemplo 1, Madrid'];
+        case 'crm_whatsapp_template_comercial_cliente_actualizado':
+            return ['Comercial de prueba', 'Cliente de prueba', 'Empresa de ejemplo S.L.', 'Madrid', 'cambió el teléfono'];
+        case 'crm_whatsapp_template_comercial_visita':
+            return ['Cliente de prueba', 'mañana 10:00', home_url('/mi-agenda/')];
         default:
             return [];
     }
@@ -288,17 +310,7 @@ function crm_whatsapp_ajax_test_envio() {
 
     $to        = sanitize_text_field((string) ($_POST['to'] ?? ''));
     $plantilla = sanitize_key((string) ($_POST['plantilla'] ?? ''));
-    $nombres_validos = [
-        'crm_whatsapp_template_aviso_materiales',
-        'crm_whatsapp_template_validar_extra',
-        'crm_whatsapp_template_en_ejecucion',
-        'crm_whatsapp_template_recordatorio_visita',
-        'crm_whatsapp_template_instalador_asignado',
-        'crm_whatsapp_template_instalador_visita',
-        'crm_whatsapp_template_instalador_extra_resuelta',
-        'crm_whatsapp_template_instalador_cierre_resuelto',
-        'crm_whatsapp_template_confirmacion_visita_cliente',
-    ];
+    $nombres_validos = array_keys(crm_whatsapp_catalogo());
     if (!in_array($plantilla, $nombres_validos, true)) {
         wp_send_json_error(['message' => 'Plantilla no válida.']);
     }

@@ -117,6 +117,36 @@ function crm_register_admin_settings() {
         'default'           => false,
         'sanitize_callback' => function ($v) { return !empty($v); },
     ]);
+    // v1.20.161 — importación de leads del formulario web de Ecovolt.
+    register_setting('crm_settings', 'crm_ecovolt_leads_base_url', [
+        'type'              => 'string',
+        'default'           => CRM_ECOVOLT_LEADS_DEFAULT_URL,
+        'sanitize_callback' => function ($v) {
+            $v = trim((string) $v);
+            return $v === '' ? CRM_ECOVOLT_LEADS_DEFAULT_URL : esc_url_raw($v);
+        },
+    ]);
+    register_setting('crm_settings', 'crm_ecovolt_leads_usuario', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
+    // Application Password: deja el campo en blanco al guardar para
+    // conservar la actual (nunca se imprime de vuelta) — mismo patrón que
+    // crm_holded_api_key.
+    register_setting('crm_settings', 'crm_ecovolt_leads_app_password', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => function ($v) {
+            $v = trim((string) $v);
+            return $v === '' ? get_option('crm_ecovolt_leads_app_password', '') : $v;
+        },
+    ]);
+    register_setting('crm_settings', 'crm_ecovolt_leads_sync_enabled', [
+        'type'              => 'boolean',
+        'default'           => false,
+        'sanitize_callback' => function ($v) { return !empty($v); },
+    ]);
     // v1.20.99 — la API de Holded no expone ningún endpoint para resolver el
     // ID de un comercial a su nombre (verificado: no hay /users ni /team),
     // así que se mantiene aquí a mano: una línea "id=Nombre" por comercial.
@@ -1236,6 +1266,39 @@ function crm_admin_render_settings() {
                     <p class="description">La API de Holded no permite consultar el nombre de un comercial a partir de su ID — una línea <code>id=Nombre</code> por comercial (el ID aparece sin traducir en la ficha de cliente si falta aquí). Se rellena a mano, cambia poco.</p>
                 </td>
             </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Leads del formulario web de Ecovolt (v1.20.161)</h3></th></tr>
+            <tr>
+                <th><label for="crm_ecovolt_leads_base_url">Endpoint de leads</label></th>
+                <td>
+                    <input type="text" id="crm_ecovolt_leads_base_url" name="crm_ecovolt_leads_base_url" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_ecovolt_leads_base_url', CRM_ECOVOLT_LEADS_DEFAULT_URL)); ?>" placeholder="<?php echo esc_attr(CRM_ECOVOLT_LEADS_DEFAULT_URL); ?>">
+                    <p class="description">Normalmente no hace falta tocarlo — solo si Ecovolt cambia de dominio o hay un entorno de pruebas aparte.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_ecovolt_leads_usuario">Usuario técnico</label></th>
+                <td>
+                    <input type="text" id="crm_ecovolt_leads_usuario" name="crm_ecovolt_leads_usuario" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_ecovolt_leads_usuario', '')); ?>" placeholder="usuario con el rol Lector de leads Ecovolt">
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_ecovolt_leads_app_password">Contraseña de aplicación</label></th>
+                <td>
+                    <input type="password" id="crm_ecovolt_leads_app_password" name="crm_ecovolt_leads_app_password" class="regular-text" value="" autocomplete="off" placeholder="<?php echo (trim((string) get_option('crm_ecovolt_leads_app_password', '')) !== '') ? '•••••••••••••••• (guardada, deja en blanco para no cambiarla)' : 'xxxx xxxx xxxx xxxx xxxx xxxx'; ?>">
+                    <p class="description">Se genera en el perfil de ese usuario técnico en el WordPress de Ecovolt (Application Passwords), nunca es la contraseña normal de la cuenta.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_ecovolt_leads_sync_enabled">Activar sincronización</label></th>
+                <td>
+                    <label><input type="checkbox" id="crm_ecovolt_leads_sync_enabled" name="crm_ecovolt_leads_sync_enabled" value="1" <?php checked(get_option('crm_ecovolt_leads_sync_enabled', false)); ?>> Cada hora, los leads nuevos del formulario web de Ecovolt entran en la cola de Leads MK.</label>
+                    <p class="description">
+                        Cursor actual: <code><?php echo (int) get_option('crm_ecovolt_leads_after_id', 0); ?></code>
+                        &nbsp;
+                        <button type="button" class="button" id="crm-ecovolt-leads-sync-ahora-btn">Sincronizar ahora</button>
+                        <span id="crm-ecovolt-leads-sync-msg"></span>
+                    </p>
+                </td>
+            </tr>
             <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Panel del instalador (v1.20.41)</h3></th></tr>
             <tr>
                 <th><label for="crm_instalador_panel_brand">Nombre de marca</label></th>
@@ -1575,6 +1638,29 @@ function crm_admin_render_settings() {
                 } else {
                     msg.css('color', '#065f46').text(texto);
                 }
+            }).fail(function () {
+                btn.prop('disabled', false).text('Sincronizar ahora');
+                msg.css('color', '#991b1b').text('Error de conexión.');
+            });
+        });
+
+        // v1.20.161 — leads del formulario web de Ecovolt, botón "Sincronizar ahora".
+        $('#crm-ecovolt-leads-sync-ahora-btn').on('click', function () {
+            var btn = $(this).prop('disabled', true).text('Sincronizando…');
+            var msg = $('#crm-ecovolt-leads-sync-msg');
+            msg.css('color', '#6b7280').text('');
+            $.post(ajaxurl, {
+                action: 'crm_ecovolt_leads_sync_ahora',
+                nonce: '<?php echo wp_create_nonce('crm_admin_actions'); ?>'
+            }, function (resp) {
+                btn.prop('disabled', false).text('Sincronizar ahora');
+                if (!resp.success) {
+                    msg.css('color', '#991b1b').text((resp.data && resp.data.message) ? resp.data.message : 'Error.');
+                    return;
+                }
+                var d = resp.data;
+                var texto = d.procesados + ' procesados, ' + d.importados + ' importados, ' + d.ya_existian + ' ya existían, ' + d.errores + ' errores.';
+                msg.css('color', d.ok ? '#065f46' : '#991b1b').text(d.ok ? texto : (texto + ' — ' + d.mensaje));
             }).fail(function () {
                 btn.prop('disabled', false).text('Sincronizar ahora');
                 msg.css('color', '#991b1b').text('Error de conexión.');

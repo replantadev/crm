@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.160
+Version: 1.20.161
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.160');
+define('CRM_PLUGIN_VERSION', '1.20.161');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -91,6 +91,10 @@ require_once CRM_PLUGIN_PATH . 'includes/holded-api.php';
 // v1.20.95 — Sincronización periódica de clientes desde Holded (todos los
 // contactos de la cuenta de Ecovolt, interés renovables).
 require_once CRM_PLUGIN_PATH . 'includes/holded-clientes-sync.php';
+// v1.20.161 — Importación incremental de leads del formulario web de
+// Ecovolt (endpoint autenticado, ver docs/CRM-LEADS-INTEGRATION.md del
+// proyecto Ecovolt). Reutiliza el modelo de "Leads MK" ya existente.
+require_once CRM_PLUGIN_PATH . 'includes/ecovolt-leads-sync.php';
 // v1.20.96 — Menú "Ventas": presupuestos de Holded + resumen por mes.
 require_once CRM_PLUGIN_PATH . 'includes/ventas.php';
 // v1.20.109 — Alta/edición de comerciales e instaladores desde el frontend

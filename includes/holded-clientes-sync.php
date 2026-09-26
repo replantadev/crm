@@ -378,8 +378,8 @@ add_filter('crm_roadmap_fases', function ($fases) {
     $fases[] = [
         'fase'    => 'Fase 2bis',
         'titulo'  => 'Sincronización periódica de clientes desde Holded (contactos + oportunidades de venta)',
-        'estado'  => 'en_pruebas',
-        'detalle' => 'Cron horario (activable en Ajustes) que crea/actualiza cada contacto type=client de Holded como cliente, con su último presupuesto, estado real, tipo (empresa/persona) y su oportunidad de venta (cantidad, probabilidad, etapa, comercial). Construido y con varios ajustes de fondo tras revisar un caso real (v1.20.98/99), pero sin una ronda de prueba formal contra la cuenta de producción todavía.',
+        'estado'  => 'hecho',
+        'detalle' => 'Cron horario (activable en Ajustes) que crea/actualiza cada contacto type=client de Holded como cliente, con su último presupuesto, estado real, tipo (empresa/persona) y su oportunidad de venta (cantidad, probabilidad, etapa, comercial). Confirmado por el usuario contra la cuenta real: el botón "Sincronizar ahora" (Ajustes → Sincronización de clientes desde Holded) rellenó bien los códigos postales de clientes existentes (v1.20.154) al probarlo en vivo.',
     ];
     return $fases;
 });

@@ -754,9 +754,9 @@ function crm_equipo_ajax_reasignar_cartera() {
 add_filter('crm_roadmap_fases', function ($fases) {
     $fases[] = [
         'fase'    => 'Equipo',
-        'titulo'  => 'Alta y edición de comerciales/instaladores desde el frontend',
-        'estado'  => 'en_pruebas',
-        'detalle' => 'Antes, dar de alta un comercial o instalador exigía entrar a wp-admin → Usuarios, bloqueado para crm_admin. Ahora se puede crear (nombre, email, WhatsApp) y editar la ficha de cada uno directamente desde la página "Equipo". El email de alta ("pon tu contraseña") se envía por el canal de email del propio rol (v1.20.110, ver Notificaciones), no por el wp_mail() genérico. Pendiente el paso manual de añadir el shortcode [crm_equipo_gestion] a esa página, y de probar el alta real.',
+        'titulo'  => 'Alta, edición y baja de comerciales/instaladores desde el frontend',
+        'estado'  => 'hecho',
+        'detalle' => 'Antes, dar de alta un comercial o instalador exigía entrar a wp-admin → Usuarios, bloqueado para crm_admin. Ahora se crea (nombre, email, WhatsApp) y edita la ficha de cada uno directamente desde la página "Equipo", en uso real durante toda esta ronda de trabajo. El email de alta ("pon tu contraseña") se envía por el canal de email del propio rol (v1.20.110, ver Notificaciones). v1.20.149 (reunión 2026-09-22, punto 8): dar de baja a un comercial (KO) sin eliminar su cuenta ni su historial, bloqueado mientras tenga cartera de clientes sin reasignar — con panel para repartirla antes de la baja. v1.20.156: casilla para que cada comercial/visitador active su propio aviso por WhatsApp (antes solo lo tenían jefes/instalador); v1.20.158: su número de WhatsApp también visible desde wp-admin → Usuarios, como vía de respaldo.',
     ];
     return $fases;
 });

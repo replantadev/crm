@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.159
+Version: 1.20.160
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.159');
+define('CRM_PLUGIN_VERSION', '1.20.160');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -3744,6 +3744,70 @@ add_filter('crm_roadmap_fases', function ($fases) {
         'titulo'  => 'Listado y borrado en lote de clientes desde wp-admin → CRM → Clientes',
         'estado'  => 'en_pruebas',
         'detalle' => 'Pedido por el usuario para limpiar clientes de ejemplo antes de una prueba real con el equipo. El borrado ahora es de verdad completo (antes dejaba huérfanas las instalaciones del cliente y las filas del log de actividad) — cascada nueva vía crm_inst_borrar_instalacion_completa() e integrada en crm_purge_client_related_data(). Sin marcador de "cliente de prueba" en el esquema, la selección en la pantalla es manual. De paso se corrigió el botón de borrar roto (desde que se creó) de la vista frontend "Todos los clientes". Construido, sin prueba real todavía.',
+    ];
+    return $fases;
+});
+
+/**
+ * Roadmap de la reunión con cliente 2026-09-22 (11 puntos) — ver
+ * includes/flujos-page.php. Cada punto que ya tiene su propia fase en otro
+ * archivo (Notificaciones/mail-settings.php, Equipo/equipo-gestion.php,
+ * Ventas·funnel/funnel-ventas.php) no se repite aquí.
+ */
+add_filter('crm_roadmap_fases', function ($fases) {
+    $fases[] = [
+        'fase'    => 'Reunión 2026-09-22 · #1',
+        'titulo'  => 'Marca de comunicación por cliente (Ecovolt / Energitel)',
+        'estado'  => 'hecho',
+        'detalle' => 'v1.20.137: el email de recordatorio de visita ya sale con la marca y el remitente correctos (antes salía sin marca, con el remitente por defecto de WordPress). v1.20.144: selector Ecovolt/Energitel en la ficha de cliente, 2 canales de email separados por marca (ver fase "Notificaciones"), y quién envió cada notificación queda visible en la ficha.',
+    ];
+    $fases[] = [
+        'fase'    => 'Reunión 2026-09-22 · #2',
+        'titulo'  => 'Agenda de visita: hora rápida, duración y cierre previsto',
+        'estado'  => 'hecho',
+        'detalle' => 'v1.20.143: hora rápida (7h/8h/otra) en vez de escribir la hora a mano, duración estimada (1-2 días) y "cierre previsto" automático (+2 días laborables desde la visita, editable a mano si hace falta).',
+    ];
+    $fases[] = [
+        'fase'    => 'Reunión 2026-09-22 · #3',
+        'titulo'  => 'Material sin instalar, destacado al cerrar',
+        'estado'  => 'hecho',
+        'detalle' => 'v1.20.146: si al cerrar la instalación queda material de Holded sin marcar como montado, se destaca en el log, avisa a jefes, y queda un aviso permanente en la ficha — para que no se olvide ajustar el presupuesto en Holded.',
+    ];
+    $fases[] = [
+        'fase'    => 'Reunión 2026-09-22 · #4',
+        'titulo'  => 'Política de privacidad',
+        'estado'  => 'hecho',
+        'detalle' => 'v1.20.145: casilla de aceptación en el checklist de seguridad del instalador. v1.20.148: creación automática de la página real de Política de Privacidad si no existía. PENDIENTE (fuera del CRM, no es código): rellenar los placeholders [CIF]/[DIRECCIÓN FISCAL]/[EMAIL DE CONTACTO] de esa página y pasar el texto por una revisión legal.',
+    ];
+    $fases[] = [
+        'fase'    => 'Reunión 2026-09-22 · #7',
+        'titulo'  => 'Origen de leads + importación de LeadKit (CSV)',
+        'estado'  => 'hecho',
+        'detalle' => 'v1.20.150: botón "Importar leads de LeadKit (CSV)" en Leads de Marketing, nuevo origen "placassolares.es" compartiendo la misma cola de asignación que "lead_mk".',
+    ];
+    $fases[] = [
+        'fase'    => 'Reunión 2026-09-22 · #9',
+        'titulo'  => 'Albarán de salida sin número real de Holded',
+        'estado'  => 'bloqueado',
+        'detalle' => 'Verificado contra la API real de Holded (endpoint de albaranes): solo existen 3 albaranes previos, de clientes ajenos a Ecovolt, ninguno con el patrón de descripción que genera este plugin — el caso reportado no es reproducible todavía porque el equipo no ha llevado una instalación real con material enganchado a Holded hasta el checklist de cierre. Aparcado a petición del usuario hasta que exista un caso real que revisar (necesita el ID de una instalación real).',
+    ];
+    $fases[] = [
+        'fase'    => 'Reunión 2026-09-22 · #10',
+        'titulo'  => 'Orden de la tabla de clientes en wp-admin',
+        'estado'  => 'hecho',
+        'detalle' => 'v1.20.142: wp-admin → Clientes ordenaba por la columna ID en vez de por la fecha real de alta — corregido.',
+    ];
+    $fases[] = [
+        'fase'    => 'Reunión 2026-09-22 · #11',
+        'titulo'  => 'Identificador visible de instalación = nº de presupuesto de Holded',
+        'estado'  => 'hecho',
+        'detalle' => 'v1.20.147: emails, WhatsApp y pantallas muestran el número de presupuesto de Holded en vez del ID interno autoincremental — cambio puramente de visualización, la clave interna y las relaciones en base de datos no se tocan.',
+    ];
+    $fases[] = [
+        'fase'    => 'Reunión 2026-09-22 · CP',
+        'titulo'  => 'Código postal en la ficha de cliente (sincronizado con Holded)',
+        'estado'  => 'hecho',
+        'detalle' => 'v1.20.154, a petición del usuario tras hablarlo con Aurora ("de forma segura, robusta y escalable"): campo obligatorio con validación de formato y de que el prefijo coincide con la provincia (7 casos de prueba a mano antes de desplegar). Se rellena solo desde Holded al crear o sincronizar un cliente (solo si estaba vacío), y se usa para afinar la geocodificación. Confirmado por el usuario: el botón "Sincronizar ahora" rellenó bien los códigos postales de clientes ya existentes.',
     ];
     return $fases;
 });

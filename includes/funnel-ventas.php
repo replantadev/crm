@@ -441,8 +441,8 @@ add_filter('crm_roadmap_fases', function ($fases) {
     $fases[] = [
         'fase'    => 'Ventas',
         'titulo'  => 'Funnel de ventas por sector (leads → cliente convertido)',
-        'estado'  => 'en_pruebas',
-        'detalle' => 'Reunión con cliente 2026-09-22, punto 6. Shortcode [crm_funnel_ventas] (frontend, crm_admin) — pendiente de añadirlo al contenido de alguna página (no se reescribe automáticamente una página existente, mismo criterio que el resto de shortcodes del CRM). Cuenta todos los clientes (no solo leads de marketing), filtrable por sector/origen/comercial/fecha de alta. Simplificación consciente: "cancelado" es un estado global del cliente, no existe un cancelado por sector en el modelo de datos actual.',
+        'estado'  => 'hecho',
+        'detalle' => 'Reunión con cliente 2026-09-22, punto 6. Shortcode [crm_funnel_ventas], página /ventas-funnel/ autocreada y en el menú "Ventas" (v1.20.152). Cuenta todos los clientes (no solo leads de marketing), filtrable por sector/origen/comercial/fecha de alta. v1.20.153, a petición del usuario tras verlo "un poco simple": % de caída entre etapas + drill-down (clic en una barra abre la lista de clientes en esa etapa). Bug real encontrado y corregido con un script de prueba antes de desplegar: los clientes cancelados quedaban excluidos de TODAS las barras acumuladas, deflactando incluso "Leads captados". Confirmado por el usuario: "esa primera versión ya es sólida".',
     ];
     return $fases;
 });

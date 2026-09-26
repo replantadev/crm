@@ -593,9 +593,9 @@ function crm_mail_render_admin_page() {
 add_filter('crm_roadmap_fases', function ($fases) {
     $fases[] = [
         'fase'    => 'Notificaciones',
-        'titulo'  => 'Canales de email propios para avisos a proveedores, instaladores y comerciales (remitente + SMTP)',
-        'estado'  => 'en_pruebas',
-        'detalle' => 'El usuario reportó que ningún email de aviso llegaba — causa: todo el envío del plugin dependía del wp_mail() por defecto del servidor, sin ninguna configuración SMTP. Ahora hay 3 canales configurables (wp-admin → CRM → Email, y /panel-de-control/), con botón de prueba, lista de qué evento dispara cada canal, y tabla de últimos envíos — todo en el mismo sitio. Confirmado por el usuario: el envío de prueba de cada canal SÍ llega con SMTP configurado. Bug real corregido en v1.20.106: esta sección nunca se veía en /panel-de-control/ (el archivo solo se cargaba dentro de wp-admin). v1.20.110: se añadió el canal "comercial" (de momento solo el alta de cuenta; el usuario ya avisó de que el flujo comercial generará más avisos propios). Pendiente de confirmar los envíos reales conectados (notificar proveedor, instalador asignado/visita programada, alta de cuenta comercial/instalador).',
+        'titulo'  => 'Canales de email propios para avisos a proveedores, instaladores, comerciales y clientes (remitente + SMTP)',
+        'estado'  => 'hecho',
+        'detalle' => 'El usuario reportó que ningún email de aviso llegaba — causa: todo el envío del plugin dependía del wp_mail() por defecto del servidor, sin ninguna configuración SMTP. Ahora hay 5 canales configurables (wp-admin → CRM → Email, y /panel-de-control/), con botón de prueba, lista de qué evento dispara cada canal, y tabla de últimos envíos. v1.20.110 añadió el canal "comercial"; v1.20.144 añadió "cliente_ecovolt"/"cliente_energitel" (remitente por marca, reunión 2026-09-22 punto 1). El botón "Guardar y notificar comercial" usaba wp_mail() directo sin pasar por ningún canal ni quedar registrado — corregido y confirmado funcionando en v1.20.138-140, y enriquecido con empresa/ubicación/resumen de cambios en v1.20.155. v1.20.159: nueva página "Guía de avisos" (wp-admin y /guia-avisos/) que explica en lenguaje llano, para crm_admin, qué manda el CRM por email y por WhatsApp — leída de este mismo catálogo, no un documento aparte.',
     ];
     return $fases;
 });

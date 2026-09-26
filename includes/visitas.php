@@ -1383,3 +1383,16 @@ function crm_visitas_aviso_calendario_run() {
         crm_log_action('visitas_recordatorio_calendario', $avisadas . ' recordatorio(s) de visita comercial enviado(s) para mañana ' . $manana . '.', null, 0, 'info');
     }
 }
+
+/**
+ * Roadmap de las visitas comerciales (v1.20.156-158) — ver includes/flujos-page.php.
+ */
+add_filter('crm_roadmap_fases', function ($fases) {
+    $fases[] = [
+        'fase'    => 'Visitas comerciales · WhatsApp',
+        'titulo'  => 'Aviso al asignar/reprogramar + recordatorio el día antes',
+        'estado'  => 'en_pruebas',
+        'detalle' => 'Preguntado por el usuario 2026-09-25: el módulo de visitas comerciales (distinto del de instalaciones) solo avisaba in-app, nunca por WhatsApp. Hallazgo bloqueante resuelto primero: ningún comercial tenía forma de activar el canal WhatsApp (no tiene "Mi perfil" como el instalador) — añadida casilla en la página Equipo (v1.20.156) y el mismo campo también en wp-admin → Usuarios (v1.20.158, respaldo). Construido: WhatsApp best-effort al asignar/reprogramar (reutiliza crm_inst_whatsapp_instalador()) y cron propio de recordatorio el día antes, con dedup por fila (recordatorio_enviado_en) igual que el de instalaciones. v1.20.157: corregido un caso real de posible spam — antes se reenviaba el aviso de "reprogramada" en cualquier guardado de una visita delegada, aunque solo se editara una nota; ahora solo si cambia de verdad el comercial asignado o la fecha/hora. Pendiente: dar de alta la plantilla "comercial_visita" en Meta y confirmar el primer envío real.',
+    ];
+    return $fases;
+});

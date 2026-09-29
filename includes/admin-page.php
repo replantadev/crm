@@ -2147,8 +2147,18 @@ function crm_admin_render_roles_profile_field($user) {
     </table>
     <?php
 }
-add_action('personal_options_update', 'crm_admin_guardar_roles_profile_field');
-add_action('edit_user_profile_update', 'crm_admin_guardar_roles_profile_field');
+// v1.20.165: FIX real — enganchado antes en personal_options_update/
+// edit_user_profile_update, que WordPress dispara ANTES de llamar a
+// edit_user($user_id) (wp-admin/user-edit.php ejecuta esos hooks primero, y
+// solo después llama a edit_user(), que aplica el rol del desplegable nativo
+// vía wp_insert_user() -> $user->set_role(), machacando cualquier rol que
+// este bloque hubiera añadido). Por eso el segundo rol marcado desaparecía
+// al guardar. `profile_update` sí se dispara DESPUÉS de que edit_user()
+// termine de aplicar el desplegable (edit_user() lo llama tras
+// wp_insert_user(), cuando $update es true) — enganchando ahí, este bloque
+// tiene siempre la última palabra sobre los roles, gane lo que gane el
+// desplegable.
+add_action('profile_update', 'crm_admin_guardar_roles_profile_field');
 function crm_admin_guardar_roles_profile_field($user_id) {
     if (!current_user_can('promote_users') || !current_user_can('edit_user', $user_id)) {
         return;

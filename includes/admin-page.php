@@ -2089,3 +2089,90 @@ function crm_admin_guardar_whatsapp_profile_field($user_id) {
     }
 }
 
+/**
+ * v1.20.163: varios roles del CRM a la vez desde wp-admin, sin el plugin
+ * Members. El desplegable nativo "Rol" de WordPress solo permite UNO — el
+ * usuario necesita, por ejemplo, comercial + visitador en la misma cuenta
+ * (crm_user_primary_role() en includes/roles.php ya sabe priorizar entre
+ * varios roles a la vez, así que el CRM ya estaba preparado para esto; solo
+ * faltaba la forma de asignarlos desde wp-admin).
+ *
+ * Estos checkboxes son independientes del desplegable nativo (que se deja
+ * intacto, sin ocultar, para no depender de una estructura HTML de wp-admin
+ * que podría cambiar entre versiones) — se procesan en
+ * personal_options_update/edit_user_profile_update, que WordPress dispara al
+ * FINAL de wp-admin/includes/user.php, después de aplicar el rol del
+ * desplegable vía wp_insert_user(). Por eso el resultado final de los roles
+ * es siempre exactamente lo marcado aquí, gane lo que gane el desplegable.
+ *
+ * No incluye "administrator": cambiar ese rol vía checkbox casual es
+ * demasiado sensible — para eso sigue estando el desplegable nativo.
+ */
+function crm_roles_gestionables_multiples() {
+    return [
+        'crm_admin'          => 'Admin CRM',
+        'jefe_instalaciones' => 'Jefe de instalaciones',
+        'comercial'          => 'Comercial',
+        'visitador'          => 'Visitador',
+        'instalador'         => 'Instalador',
+    ];
+}
+add_action('show_user_profile', 'crm_admin_render_roles_profile_field');
+add_action('edit_user_profile', 'crm_admin_render_roles_profile_field');
+function crm_admin_render_roles_profile_field($user) {
+    if (!current_user_can('promote_users')) {
+        return;
+    }
+    $roles_actuales = (array) $user->roles;
+    ?>
+    <h2>CRM — Roles (varios a la vez)</h2>
+    <table class="form-table">
+        <tr>
+            <th>Roles del CRM</th>
+            <td>
+                <input type="hidden" name="crm_multi_roles_presente" value="1">
+                <?php foreach (crm_roles_gestionables_multiples() as $slug => $etiqueta) : ?>
+                    <label style="display:block;margin-bottom:4px;">
+                        <input type="checkbox" name="crm_multi_roles[]" value="<?php echo esc_attr($slug); ?>" <?php checked(in_array($slug, $roles_actuales, true)); ?>>
+                        <?php echo esc_html($etiqueta); ?>
+                    </label>
+                <?php endforeach; ?>
+                <p class="description">
+                    Marca los que correspondan — se puede más de uno a la vez (por ejemplo Comercial + Visitador).
+                    Esto sustituye al desplegable "Rol" de arriba para los roles del CRM: al guardar, el resultado final
+                    es siempre lo marcado aquí. Dejarlo todo sin marcar quita todos los roles del CRM a este usuario.
+                </p>
+            </td>
+        </tr>
+    </table>
+    <?php
+}
+add_action('personal_options_update', 'crm_admin_guardar_roles_profile_field');
+add_action('edit_user_profile_update', 'crm_admin_guardar_roles_profile_field');
+function crm_admin_guardar_roles_profile_field($user_id) {
+    if (!current_user_can('promote_users') || !current_user_can('edit_user', $user_id)) {
+        return;
+    }
+    // Sin este marcador, el formulario que se envió no era el de este bloque
+    // (p.ej. otro guardado programático) — no tocar los roles para no
+    // vaciarlos por accidente. Con checkboxes, "nada marcado" y "el bloque
+    // no estaba" se ven igual en $_POST si no se distinguen con este campo.
+    if (!isset($_POST['crm_multi_roles_presente'])) {
+        return;
+    }
+    $gestionables = array_keys(crm_roles_gestionables_multiples());
+    $marcados = isset($_POST['crm_multi_roles']) ? array_map('sanitize_key', (array) $_POST['crm_multi_roles']) : [];
+    $marcados = array_intersect($marcados, $gestionables);
+
+    $user = new WP_User($user_id);
+    foreach ($gestionables as $rol) {
+        $tiene = in_array($rol, (array) $user->roles, true);
+        $debe_tener = in_array($rol, $marcados, true);
+        if ($debe_tener && !$tiene) {
+            $user->add_role($rol);
+        } elseif (!$debe_tener && $tiene) {
+            $user->remove_role($rol);
+        }
+    }
+}
+

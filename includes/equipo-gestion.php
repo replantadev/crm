@@ -212,6 +212,41 @@ function crm_equipo_gestion_widget() {
                 </div>
             <?php endforeach; ?>
         </div>
+
+        <?php
+        // v1.20.163: reunión con cliente 2026-09-29 — María José ya tenía sus
+        // clientes en Holded (85 oportunidades, comercial ID confirmado
+        // contra la API real) pero nunca se le habían asignado en el CRM
+        // (user_id vacío) — no existía ninguna forma de "reclamar" esos
+        // clientes, solo la reasignación entre comerciales YA asignados (ver
+        // panel de cartera arriba, pensado para la baja de un comercial).
+        $comerciales_activos = crm_equipo_comerciales_activos();
+        ?>
+        <div class="crm-equipo-card" style="max-width:none;">
+            <h4>Reclamar clientes de Holded sin comercial asignado</h4>
+            <p class="crm-equipo-hint">
+                Para clientes que ya vienen de Holded con un comercial asignado ahí, pero que en el CRM todavía no
+                tienen ninguno (columna "user_id" vacía). Pide el ID interno de comercial de Holded — no hay forma de
+                verlo por nombre desde aquí; ábrelo en Holded (cualquier oportunidad suya → "Asignado a") si no lo
+                tienes a mano. Solo toca clientes SIN comercial en el CRM — nunca mueve uno que ya tenga.
+            </p>
+            <div class="crm-equipo-form">
+                <label>ID de comercial en Holded</label>
+                <input type="text" class="crm-equipo-holded-id" placeholder="ej. 6a3575970e631f452b05dac8">
+                <label>Asignar a</label>
+                <select class="crm-equipo-holded-destino">
+                    <option value="">Elige un comercial…</option>
+                    <?php foreach ($comerciales_activos as $c) : ?>
+                        <option value="<?php echo esc_attr($c['id']); ?>"><?php echo esc_html($c['nombre']); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <p style="margin:12px 0 0;">
+                    <button type="button" class="crm-btn crm-equipo-holded-comprobar-btn">Comprobar cuántos hay</button>
+                </p>
+                <div class="crm-equipo-holded-resultado" style="display:none;margin-top:10px;padding:10px;background:#f9fafb;border-radius:8px;font-size:13px;"></div>
+                <span class="crm-equipo-form-msg"></span>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -418,6 +453,102 @@ function crm_equipo_gestion_widget() {
                     });
             }
         });
+
+        // v1.20.163 — reclamar clientes de Holded sin comercial asignado.
+        // Dos pasos a propósito (comprobar -> confirmar): antes de tocar
+        // nada se ve cuántos clientes y cuáles son, para no reasignar de
+        // golpe algo por un ID mal escrito.
+        var holdedCard = document.querySelector('.crm-equipo-holded-comprobar-btn');
+        if (holdedCard) {
+            var holdedForm      = holdedCard.closest('.crm-equipo-form');
+            var holdedIdInput   = holdedForm.querySelector('.crm-equipo-holded-id');
+            var holdedDestino   = holdedForm.querySelector('.crm-equipo-holded-destino');
+            var holdedResultado = holdedForm.querySelector('.crm-equipo-holded-resultado');
+            var holdedMsg       = holdedForm.querySelector('.crm-equipo-form-msg');
+
+            function holdedComprobar() {
+                var holdedId = holdedIdInput.value.trim();
+                if (!holdedId) {
+                    holdedMsg.style.color = '#991b1b';
+                    holdedMsg.textContent = 'Escribe el ID de comercial de Holded.';
+                    return;
+                }
+                holdedCard.disabled = true;
+                holdedMsg.style.color = '#6b7280';
+                holdedMsg.textContent = 'Comprobando…';
+                holdedResultado.style.display = 'none';
+                var body = new URLSearchParams();
+                body.set('action', 'crm_equipo_holded_id_preview');
+                body.set('nonce', nonce);
+                body.set('holded_user_id', holdedId);
+                fetch(ajaxurl, { method: 'POST', body: body })
+                    .then(function (r) { return r.json(); })
+                    .then(function (resp) {
+                        holdedCard.disabled = false;
+                        holdedMsg.textContent = '';
+                        if (!resp.success) {
+                            holdedMsg.style.color = '#991b1b';
+                            holdedMsg.textContent = (resp.data && resp.data.message) ? resp.data.message : 'Error.';
+                            return;
+                        }
+                        var d = resp.data;
+                        if (d.total === 0) {
+                            holdedResultado.style.display = 'block';
+                            holdedResultado.innerHTML = 'No hay ningún cliente sin comercial con ese ID de Holded.';
+                            return;
+                        }
+                        var lista = d.ejemplos.map(function (n) { return '<li>' + n + '</li>'; }).join('');
+                        holdedResultado.style.display = 'block';
+                        holdedResultado.innerHTML =
+                            '<strong>' + d.total + ' cliente(s) sin comercial</strong> con ese ID, por ejemplo:' +
+                            '<ul style="margin:6px 0 10px;padding-left:20px;">' + lista + '</ul>' +
+                            '<button type="button" class="crm-btn crm-equipo-holded-confirmar-btn">Asignar estos ' + d.total + ' a ' +
+                            (holdedDestino.options[holdedDestino.selectedIndex] ? holdedDestino.options[holdedDestino.selectedIndex].text : '') +
+                            '</button>';
+                        var confirmarBtn = holdedResultado.querySelector('.crm-equipo-holded-confirmar-btn');
+                        confirmarBtn.addEventListener('click', function () {
+                            var destinoId = holdedDestino.value;
+                            if (!destinoId) {
+                                holdedMsg.style.color = '#991b1b';
+                                holdedMsg.textContent = 'Elige a qué comercial se lo asignas.';
+                                return;
+                            }
+                            confirmarBtn.disabled = true;
+                            confirmarBtn.textContent = 'Asignando…';
+                            var body2 = new URLSearchParams();
+                            body2.set('action', 'crm_equipo_holded_id_asignar');
+                            body2.set('nonce', nonce);
+                            body2.set('holded_user_id', holdedId);
+                            body2.set('comercial_id', destinoId);
+                            fetch(ajaxurl, { method: 'POST', body: body2 })
+                                .then(function (r) { return r.json(); })
+                                .then(function (resp2) {
+                                    if (!resp2.success) {
+                                        holdedMsg.style.color = '#991b1b';
+                                        holdedMsg.textContent = (resp2.data && resp2.data.message) ? resp2.data.message : 'Error.';
+                                        confirmarBtn.disabled = false;
+                                        confirmarBtn.textContent = 'Reintentar';
+                                        return;
+                                    }
+                                    holdedResultado.innerHTML = '<strong style="color:#065f46;">' + resp2.data.asignados + ' cliente(s) asignado(s).</strong>';
+                                    setTimeout(function () { location.reload(); }, 1200);
+                                })
+                                .catch(function () {
+                                    confirmarBtn.disabled = false;
+                                    confirmarBtn.textContent = 'Reintentar';
+                                    holdedMsg.style.color = '#991b1b';
+                                    holdedMsg.textContent = 'Error de conexión.';
+                                });
+                        });
+                    })
+                    .catch(function () {
+                        holdedCard.disabled = false;
+                        holdedMsg.style.color = '#991b1b';
+                        holdedMsg.textContent = 'Error de conexión.';
+                    });
+            }
+            holdedCard.addEventListener('click', holdedComprobar);
+        }
     })();
     </script>
     <?php
@@ -746,6 +877,99 @@ function crm_equipo_ajax_reasignar_cartera() {
     }
 
     wp_send_json_success(['movidos' => $movidos]);
+}
+
+/**
+ * v1.20.163 — cuántos clientes SIN comercial en el CRM (`user_id` vacío)
+ * tienen este ID de comercial de Holded cacheado (`holded_lead_user_id`,
+ * ver includes/holded-clientes-sync.php) — solo lectura, para el botón
+ * "Comprobar cuántos hay" antes de asignar nada.
+ */
+add_action('wp_ajax_crm_equipo_holded_id_preview', 'crm_equipo_ajax_holded_id_preview');
+function crm_equipo_ajax_holded_id_preview() {
+    if (!current_user_can('crm_admin') || !check_ajax_referer('crm_equipo_gestion', 'nonce', false)) {
+        wp_send_json_error(['message' => 'Sin permisos.'], 403);
+    }
+
+    global $wpdb;
+    $holded_user_id = sanitize_text_field((string) ($_POST['holded_user_id'] ?? ''));
+    if ($holded_user_id === '') {
+        wp_send_json_error(['message' => 'Falta el ID de comercial de Holded.']);
+    }
+
+    $tabla = $wpdb->prefix . 'crm_clients';
+    $total = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM $tabla WHERE holded_lead_user_id = %s AND (user_id IS NULL OR user_id = 0)",
+        $holded_user_id
+    ));
+    $ejemplos = $wpdb->get_col($wpdb->prepare(
+        "SELECT cliente_nombre FROM $tabla WHERE holded_lead_user_id = %s AND (user_id IS NULL OR user_id = 0) ORDER BY id DESC LIMIT 5",
+        $holded_user_id
+    ));
+
+    wp_send_json_success([
+        'total'    => $total,
+        'ejemplos' => array_map('esc_html', $ejemplos),
+    ]);
+}
+
+/**
+ * v1.20.163 — asigna a un comercial del CRM todos los clientes SIN comercial
+ * que tengan este ID de Holded cacheado. Deliberadamente solo toca clientes
+ * con user_id vacío — nunca mueve uno que ya tenga comercial (para eso está
+ * el panel de reasignación de cartera, pensado para bajas). Un one-off
+ * manual, no automático: no se conecta a la sincronización periódica de
+ * Holded (decisión explícita del usuario 2026-09-29).
+ */
+add_action('wp_ajax_crm_equipo_holded_id_asignar', 'crm_equipo_ajax_holded_id_asignar');
+function crm_equipo_ajax_holded_id_asignar() {
+    if (!current_user_can('crm_admin') || !check_ajax_referer('crm_equipo_gestion', 'nonce', false)) {
+        wp_send_json_error(['message' => 'Sin permisos.'], 403);
+    }
+
+    global $wpdb;
+    $holded_user_id = sanitize_text_field((string) ($_POST['holded_user_id'] ?? ''));
+    $comercial_id   = (int) ($_POST['comercial_id'] ?? 0);
+    if ($holded_user_id === '' || $comercial_id <= 0) {
+        wp_send_json_error(['message' => 'Falta el ID de Holded o el comercial destino.']);
+    }
+
+    $comercial = get_userdata($comercial_id);
+    if (!$comercial || !in_array('comercial', (array) $comercial->roles, true) || get_user_meta($comercial_id, 'crm_comercial_ko', true)) {
+        wp_send_json_error(['message' => 'El comercial destino no es válido o está de baja.']);
+    }
+
+    $tabla = $wpdb->prefix . 'crm_clients';
+    $ids = $wpdb->get_col($wpdb->prepare(
+        "SELECT id FROM $tabla WHERE holded_lead_user_id = %s AND (user_id IS NULL OR user_id = 0)",
+        $holded_user_id
+    ));
+
+    $asignados = 0;
+    foreach ($ids as $client_id) {
+        $result = $wpdb->update(
+            $tabla,
+            [
+                'delegado'        => $comercial->display_name,
+                'user_id'         => $comercial_id,
+                'email_comercial' => $comercial->user_email,
+            ],
+            ['id' => (int) $client_id]
+        );
+        if ($result !== false) {
+            $asignados++;
+        }
+    }
+
+    if (function_exists('crm_log_action')) {
+        crm_log_action(
+            'cartera_reclamada_holded',
+            sprintf('%d cliente(s) sin comercial (Holded id %s) asignado(s) a %s.', $asignados, $holded_user_id, $comercial->display_name),
+            null, null, 'info'
+        );
+    }
+
+    wp_send_json_success(['asignados' => $asignados]);
 }
 
 /**

@@ -567,7 +567,16 @@ body.crm-app-mode .crm-form-container {
 .crm-field select,
 .crm-field textarea {
     width: 100%;
-    padding: 18px 12px 6px;
+    box-sizing: border-box;
+    /* v1.20.162: altura fija (antes intrínseca, solo por padding) — un
+       <select> nativo no siempre reserva el mismo alto que un <input> para
+       el mismo padding/line-height, y el valor elegido podía quedar
+       recortado por arriba o por abajo según el navegador. Con alto y
+       line-height explícitos el texto SIEMPRE cabe entero. De paso se
+       reduce el padding (antes 18px/6px) para que quepa más apretado. */
+    height: 44px;
+    line-height: 18px;
+    padding: 16px 12px 4px;
     border: 1px solid var(--crm-n-300);
     border-radius: var(--crm-r-sm);
     background: var(--crm-n-0);
@@ -576,7 +585,26 @@ body.crm-app-mode .crm-form-container {
     color: var(--crm-n-900);
     transition: border-color .12s, box-shadow .12s;
 }
-.crm-field textarea { min-height: 80px; padding-top: 22px; }
+.crm-field select {
+    /* v1.20.162: esta regla nunca reseteaba `appearance` — en Windows/Firefox
+       el <select> conservaba su chrome nativo por debajo del padding
+       personalizado, y el texto elegido quedaba recortado contra ese chrome
+       (el bug real de "provincia"/"tipo de cliente" cortándose). Con
+       appearance:none el navegador deja de dibujar su propio combo y el
+       texto usa el mismo box model que un input — se sustituye la flecha
+       nativa por una propia para no perder el indicador de "desplegable".
+       (mismo icono que ya usaba .form-select en crm-styles.css) */
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    cursor: pointer;
+    padding-right: 30px;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 16px;
+}
+.crm-field textarea { height: auto; min-height: 80px; padding-top: 20px; line-height: 1.4; }
 .crm-field input:focus,
 .crm-field select:focus,
 .crm-field textarea:focus {
@@ -587,13 +615,17 @@ body.crm-app-mode .crm-form-container {
 .crm-field label {
     position: absolute;
     left: 12px;
-    top: 14px;
+    top: 12px;
     font-size: 13px;
     color: var(--crm-n-500);
     pointer-events: none;
     transition: top .12s, font-size .12s, color .12s;
     background: transparent;
     padding: 0 4px;
+    max-width: calc(100% - 20px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .crm-field input:focus + label,
 .crm-field select:focus + label,
@@ -602,8 +634,8 @@ body.crm-app-mode .crm-form-container {
 .crm-field textarea:not(:placeholder-shown) + label,
 .crm-field select.has-value + label,
 .crm-field.is-filled label {
-    top: 2px;
-    font-size: 10.5px;
+    top: 1px;
+    font-size: 10px;
     color: var(--crm-brand);
     font-weight: 600;
     text-transform: uppercase;

@@ -307,7 +307,10 @@ input[type="tel"].invalid {
 .phone-help, .population-help {
     font-size: 14px;
     color: #64748b;
-    margin-top: 8px;
+    /* v1.20.162: el padre (.form-group) ya separa este texto del campo con
+       su propio gap:8px — este margin-top se sumaba encima, dejando un
+       hueco doble (~16px) entre campos. */
+    margin-top: 2px;
     display: block;
     font-style: italic;
 }
@@ -458,7 +461,9 @@ input[type="tel"].invalid {
 
 .province-help, .population-help {
     display: block;
-    margin-top: 8px;
+    /* v1.20.162: mismo motivo que .phone-help arriba — evitar el hueco
+       doble con el gap del .form-group padre. */
+    margin-top: 2px;
     font-size: 13px;
     color: rgba(15, 23, 42, 0.6);
     line-height: 1.4;
@@ -830,7 +835,7 @@ li.recientes {
 .datos-container {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
+    gap: 8px; /* v1.20.162: reducido de 10px — menos aire entre filas de campos */
 }
 
 /* Campos de ancho completo */
@@ -1830,7 +1835,7 @@ button.aceptar-presupuesto {
 .datos-container {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
+    gap: 8px; /* v1.20.162: reducido de 10px — menos aire entre filas de campos */
 }
 
 /* Campos de ancho completo */
@@ -1863,7 +1868,7 @@ button.aceptar-presupuesto {
 
 /* Espaciado entre elementos */
 .form-group:not(:last-child) {
-    margin-bottom: 10px;
+    margin-bottom: 6px; /* v1.20.162: reducido de 10px */
 }
 
 /* Responsividad para pantallas pequeñas */

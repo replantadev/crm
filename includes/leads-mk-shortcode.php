@@ -24,10 +24,15 @@ add_shortcode('asignacion_leads_mk', 'crm_shortcode_asignacion_leads_mk');
  * duplicar la cola. El origen real (para informes/funnel) se conserva tal
  * cual en `origen_lead` — esto solo agrupa qué entra en ESTA cola.
  *
+ * v1.20.169: el propio CSV de LeadKit trae leads de más de un proveedor
+ * mezclados (columna "Fuente": Placassolares.es, Aerotermia.es, Luz.es) —
+ * se añaden 'aerotermia'/'luz' para que también entren en esta cola en vez
+ * de quedar invisibles con un origen que nadie lista.
+ *
  * @return string[]
  */
 function crm_leads_mk_origenes() {
-    return ['lead_mk', 'placassolares'];
+    return ['lead_mk', 'placassolares', 'aerotermia', 'luz'];
 }
 
 /**
@@ -265,7 +270,7 @@ function crm_render_asignacion_leads_mk() {
                          LIMIT 500",
                         $origenes['args']
                     ), ARRAY_A);
-                    $origen_labels = ['lead_mk' => 'Meta/Google', 'placassolares' => 'placassolares.es'];
+                    $origen_labels = ['lead_mk' => 'Meta/Google', 'placassolares' => 'placassolares.es', 'aerotermia' => 'aerotermia.es', 'luz' => 'luz.es'];
                     if (empty($rows)):
                     ?>
                         <tr><td colspan="10" class="crm-leads-mk-empty">No hay leads de marketing.</td></tr>

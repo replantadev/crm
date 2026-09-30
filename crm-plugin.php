@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.168
+Version: 1.20.169
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.168');
+define('CRM_PLUGIN_VERSION', '1.20.169');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -948,6 +948,11 @@ function crm_formulario_alta_cliente()
                     // v1.20.150 — reunión con cliente 2026-09-22, punto 7: proveedor
                     // de leads comprados, importados por CSV de LeadKit.
                     'placassolares'  => 'Lead comprado (placassolares.es)',
+                    // v1.20.169 — el CSV de LeadKit trae leads de más de un
+                    // proveedor mezclados (columna "Fuente") — antes todos
+                    // entraban como 'placassolares' aunque fueran de otro.
+                    'aerotermia'     => 'Lead comprado (aerotermia.es)',
+                    'luz'            => 'Lead comprado (luz.es)',
                     'contacto_frio'  => 'Contacto frío',
                     'referido'       => 'Referido / recomendación',
                     'web'            => 'Web / formulario',
@@ -2262,7 +2267,7 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
     // fijar origen_lead a cualquier valor válido del enum pese al comentario
     // que decía que no podía. Movido a después del hardening para que sí surta efecto.
     $origen_in = isset($_POST['origen_lead']) ? sanitize_key($_POST['origen_lead']) : '';
-    $origenes_validos = ['directo', 'lead_mk', 'placassolares', 'contacto_frio', 'referido', 'web'];
+    $origenes_validos = ['directo', 'lead_mk', 'placassolares', 'aerotermia', 'luz', 'contacto_frio', 'referido', 'web'];
     if (!in_array($origen_in, $origenes_validos, true)) {
         $origen_in = $client['origen_lead'] ?? 'directo';
     }

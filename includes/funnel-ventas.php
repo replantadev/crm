@@ -60,6 +60,10 @@ function crm_funnel_origenes_label() {
         'directo'        => 'Directo (alta manual)',
         'lead_mk'        => 'Lead Marketing (Meta/Google)',
         'placassolares'  => 'Lead comprado (placassolares.es)',
+        // v1.20.169 — ver crm-plugin.php (mismo motivo: el CSV de LeadKit
+        // trae leads de más de un proveedor mezclados).
+        'aerotermia'     => 'Lead comprado (aerotermia.es)',
+        'luz'            => 'Lead comprado (luz.es)',
         'contacto_frio'  => 'Contacto frío',
         'referido'       => 'Referido / recomendación',
         'web'            => 'Web / formulario',
@@ -133,7 +137,7 @@ function crm_funnel_calcular(array $filtros) {
     // Orígenes cuyo lifecycle de "asignado/trabajado" tiene sentido de
     // verdad (los que pasan por la cola de leads) — el resto (alta directa
     // de un comercial, referido, web) nace ya "asignado y trabajado".
-    $origenes_con_cola = ['lead_mk', 'placassolares'];
+    $origenes_con_cola = ['lead_mk', 'placassolares', 'aerotermia', 'luz'];
 
     $etapas_clave = ['captados', 'asignados', 'trabajados', 'interesados', 'enviado', 'presupuesto_generado', 'presupuesto_aceptado', 'contratos_generados', 'contratos_firmados'];
     $por_etapa = array_fill_keys($etapas_clave, []); // clave => [ ['id'=>,'nombre'=>], ... ] (exactamente en esa etapa, solo casos vivos)

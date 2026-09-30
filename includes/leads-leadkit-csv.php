@@ -36,13 +36,12 @@
  * memoria, que sí respeta los saltos de línea dentro de un campo
  * entrecomillado (CSV válido, no un error del exportador).
  *
- * Todos los leads entran como origen_lead='placassolares' (el proveedor,
- * ver crm-plugin.php) pero comparten cola con 'lead_mk' — ver
- * crm_leads_mk_origenes() en includes/leads-mk-shortcode.php. La columna
- * real "Fuente" del CSV (algunos leads son de Aerotermia.es o Luz.es, no
- * solo Placassolares.es) se guarda en lead_meta.respuestas mezclada con el
- * resto de columnas variables — origen_lead no se diferencia por ahora,
- * pendiente de decidir con el usuario si conviene más adelante.
+ * v1.20.169 — el CSV mezcla leads de más de un proveedor real en la
+ * columna "Fuente" (Placassolares.es, Aerotermia.es, Luz.es — a petición
+ * del usuario tras detectarlo en un CSV real). crm_leadkit_csv_origen_desde_fuente()
+ * traduce esa columna a origen_lead='placassolares'/'aerotermia'/'luz'
+ * (ver crm-plugin.php para las etiquetas); todos comparten cola con
+ * 'lead_mk' — ver crm_leads_mk_origenes() en includes/leads-mk-shortcode.php.
  *
  * @package CRM_Energitel
  */
@@ -148,9 +147,47 @@ function crm_leadkit_csv_parsear($contenido) {
 }
 
 /**
+ * origen_lead posibles para un lead importado de CSV de LeadKit — uno por
+ * cada proveedor real visto en la columna "Fuente" (v1.20.169). Única
+ * fuente de verdad de esta lista: la usan tanto el dedupe
+ * (crm_leadkit_csv_ya_existe()) como el mapeo Fuente→origen_lead
+ * (crm_leadkit_csv_origen_desde_fuente()), para que nunca queden
+ * desincronizadas entre sí.
+ *
+ * @return string[]
+ */
+function crm_leadkit_csv_origenes_posibles() {
+    return ['placassolares', 'aerotermia', 'luz'];
+}
+
+/**
+ * Traduce el valor real de la columna "Fuente" del CSV a un origen_lead del
+ * CRM. 'placassolares' es el valor por defecto si la Fuente no se reconoce
+ * (incluida una vacía) — mismo criterio de siempre: mejor un dato por
+ * defecto razonable que descartar el lead por una columna nueva que LeadKit
+ * añada más adelante.
+ *
+ * @param string $fuente_raw Valor tal cual de la columna "Fuente" (p.ej. "Placassolares.es").
+ * @return string
+ */
+function crm_leadkit_csv_origen_desde_fuente($fuente_raw) {
+    $f = function_exists('mb_strtolower') ? mb_strtolower(trim((string) $fuente_raw), 'UTF-8') : strtolower(trim((string) $fuente_raw));
+    if (strpos($f, 'aerotermia') !== false) {
+        return 'aerotermia';
+    }
+    if (strpos($f, 'luz.es') !== false || $f === 'luz') {
+        return 'luz';
+    }
+    return 'placassolares';
+}
+
+/**
  * Comprueba si ya existe un lead importado con este ID de LeadKit (dedupe).
  * Búsqueda por texto sobre el JSON de lead_meta — sin depender de funciones
- * JSON de MySQL que puede que el hosting no tenga.
+ * JSON de MySQL que puede que el hosting no tenga. Busca entre TODOS los
+ * orígenes posibles de un lead de LeadKit (v1.20.169: antes solo miraba
+ * 'placassolares' — con varias Fuentes posibles, un lead guardado como
+ * 'aerotermia' habría pasado el dedupe como si nunca se hubiera importado).
  *
  * @param string $leadkit_id
  * @return bool
@@ -158,16 +195,21 @@ function crm_leadkit_csv_parsear($contenido) {
 function crm_leadkit_csv_ya_existe($leadkit_id) {
     global $wpdb;
     $table = $wpdb->prefix . 'crm_clients';
+    $origenes = crm_leadkit_csv_origenes_posibles();
+    $placeholders = implode(',', array_fill(0, count($origenes), '%s'));
+    $args = array_merge($origenes, ['%"leadkit_id":"' . $wpdb->esc_like($leadkit_id) . '"%']);
     $encontrado = (int) $wpdb->get_var($wpdb->prepare(
-        "SELECT id FROM $table WHERE origen_lead = 'placassolares' AND lead_meta LIKE %s LIMIT 1",
-        '%"leadkit_id":"' . $wpdb->esc_like($leadkit_id) . '"%'
+        "SELECT id FROM $table WHERE origen_lead IN ($placeholders) AND lead_meta LIKE %s LIMIT 1",
+        $args
     ));
     return $encontrado > 0;
 }
 
 /**
- * Inserta una fila del CSV como lead nuevo (origen_lead='placassolares',
- * sin comercial asignado — entra en la misma cola que los leads MK).
+ * Inserta una fila del CSV como lead nuevo (origen_lead según la Fuente
+ * real del CSV — placassolares/aerotermia/luz, ver
+ * crm_leadkit_csv_origen_desde_fuente()), sin comercial asignado — entra en
+ * la misma cola que los leads MK.
  *
  * @param array $fila Fila ya parseada por crm_leadkit_csv_parsear().
  * @return string 'ok'|'dup'|'err'
@@ -235,6 +277,15 @@ function crm_leadkit_csv_insertar_fila(array $fila) {
         $tipo = 'Empresa';
     }
 
+    // v1.20.169 — a petición del usuario: el CSV trae leads de más de un
+    // proveedor mezclados en la columna "Fuente" (que hasta ahora se
+    // guardaba solo dentro de lead_meta.respuestas, sin diferenciarlos).
+    // "Fuente" es una columna variable (no fija), así que se lee de
+    // _variables igual que cualquier otra — su valor real no cambia por
+    // reconocerlo aquí, solo decide a qué origen_lead se asigna el cliente.
+    $fuente_raw  = (string) ($fila['_variables']['Fuente'] ?? '');
+    $origen_lead = crm_leadkit_csv_origen_desde_fuente($fuente_raw);
+
     $lead_meta = [
         'leadkit_id'    => $leadkit_id,
         'estado_leadkit'=> (string) ($fila['estado'] ?? ''),
@@ -268,7 +319,7 @@ function crm_leadkit_csv_insertar_fila(array $fila) {
         'usuario_envio_por_sector'  => '',
         'creado_por'                => 0,
         'creado_en'                 => current_time('mysql'),
-        'origen_lead'               => 'placassolares',
+        'origen_lead'               => $origen_lead,
         'es_cliente_activo'         => 0,
         'lead_meta'                 => wp_json_encode($lead_meta),
     ];
@@ -284,7 +335,7 @@ function crm_leadkit_csv_insertar_fila(array $fila) {
         crm_notes_add([
             'client_id'  => $client_id,
             'tipo'       => 'sistema',
-            'texto'      => 'Lead importado desde CSV de LeadKit (id ' . $leadkit_id . ').',
+            'texto'      => 'Lead importado desde CSV de LeadKit (id ' . $leadkit_id . ', fuente ' . ($fuente_raw ?: 'sin especificar') . ').',
             'autor_id'   => get_current_user_id(),
         ]);
     }

@@ -173,6 +173,17 @@
                 if (resp && resp.success) {
                     const d = resp.data || {};
                     $status.css('color', '#065f46').text(`OK · ${d.inserted || 0} nuevos · ${d.reparados || 0} reparados · ${d.dupes || 0} duplicados · ${d.errors || 0} con error (de ${d.total || 0} filas)`);
+                    // v1.20.171 — Fuentes del CSV que no encajan con ningún
+                    // proveedor conocido (placassolares/aerotermia/luz): se
+                    // avisa con un alert() para que no pase desapercibido
+                    // (el texto de $status se pierde en cuanto la página
+                    // recarga) — decide una persona si merece darla de alta.
+                    const fd = d.fuentes_desconocidas || {};
+                    const fuentesNuevas = Object.keys(fd);
+                    if (fuentesNuevas.length > 0) {
+                        const detalle = fuentesNuevas.map(function (f) { return `- ${f} (${fd[f]} lead(s))`; }).join('\n');
+                        alert('Este CSV trae Fuentes que el CRM no reconoce todavía — se han importado igual, asignadas a "placassolares" por defecto:\n\n' + detalle + '\n\nSi es un proveedor nuevo real (no un caso puntual), pide que se añada como origen propio.');
+                    }
                     if ((d.inserted || 0) > 0 || (d.reparados || 0) > 0) {
                         setTimeout(function () { location.reload(); }, 1500);
                     }

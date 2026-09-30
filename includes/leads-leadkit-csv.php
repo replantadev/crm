@@ -162,23 +162,40 @@ function crm_leadkit_csv_origenes_posibles() {
 
 /**
  * Traduce el valor real de la columna "Fuente" del CSV a un origen_lead del
- * CRM. 'placassolares' es el valor por defecto si la Fuente no se reconoce
- * (incluida una vacía) — mismo criterio de siempre: mejor un dato por
- * defecto razonable que descartar el lead por una columna nueva que LeadKit
- * añada más adelante.
+ * CRM — devuelve null si no coincide con ninguno de los proveedores
+ * conocidos (en vez de adivinar), para que el llamador decida qué hacer con
+ * una Fuente nueva en vez de asignarla en silencio a un proveedor que no es
+ * (v1.20.171 — a petición del usuario: reconocer un proveedor nuevo de
+ * verdad "sería lo apropiado", pero decidirlo solo, sin que nadie lo vea,
+ * puede meter ruido de una fuente puntual/typo tan fácil como un proveedor
+ * real recurrente. Avisar y que decida una persona es el término medio).
+ *
+ * Para dar de alta un proveedor nuevo DE VERDAD (confirmado, no puntual):
+ * 1) Añadir aquí el patrón que lo identifica.
+ * 2) crm_leadkit_csv_origenes_posibles() — añadir el slug.
+ * 3) crm-plugin.php — $origenes (desplegable de la ficha) y $origenes_validos
+ *    (validación server-side).
+ * 4) includes/funnel-ventas.php — crm_funnel_origenes_label() y $origenes_con_cola.
+ * 5) includes/leads-mk-shortcode.php — crm_leads_mk_origenes() y $origen_labels.
  *
  * @param string $fuente_raw Valor tal cual de la columna "Fuente" (p.ej. "Placassolares.es").
- * @return string
+ * @return string|null Slug de origen_lead, o null si no se reconoce.
  */
 function crm_leadkit_csv_origen_desde_fuente($fuente_raw) {
     $f = function_exists('mb_strtolower') ? mb_strtolower(trim((string) $fuente_raw), 'UTF-8') : strtolower(trim((string) $fuente_raw));
+    if ($f === '') {
+        return null;
+    }
+    if (strpos($f, 'placassolares') !== false) {
+        return 'placassolares';
+    }
     if (strpos($f, 'aerotermia') !== false) {
         return 'aerotermia';
     }
     if (strpos($f, 'luz.es') !== false || $f === 'luz') {
         return 'luz';
     }
-    return 'placassolares';
+    return null;
 }
 
 /**
@@ -263,10 +280,19 @@ function crm_leadkit_csv_extraer_campos(array $fila) {
     // "Fuente" es una columna variable (no fija), así que se lee de
     // _variables igual que cualquier otra — su valor real no cambia por
     // reconocerlo aquí, solo decide a qué origen_lead se asigna el cliente.
-    $fuente_raw  = (string) ($fila['_variables']['Fuente'] ?? '');
-    $origen_lead = crm_leadkit_csv_origen_desde_fuente($fuente_raw);
+    //
+    // v1.20.171 — si no se reconoce (proveedor nuevo, typo, o un valor
+    // puntual), NO se asigna en silencio a 'placassolares' sin que nadie se
+    // entere: se guarda ahí igual (hace falta algún origen_lead válido para
+    // que el lead no quede invisible), pero se marca fuente_reconocida=false
+    // para que crm_leadkit_csv_ajax_importar() lo agregue y lo avise en el
+    // resultado — decide una persona si merece darlo de alta de verdad.
+    $fuente_raw       = (string) ($fila['_variables']['Fuente'] ?? '');
+    $origen_detectado = crm_leadkit_csv_origen_desde_fuente($fuente_raw);
+    $fuente_reconocida = $origen_detectado !== null;
+    $origen_lead = $fuente_reconocida ? $origen_detectado : 'placassolares';
 
-    return compact('telefono', 'email', 'provincia', 'codigo_postal', 'direccion', 'poblacion', 'comentarios', 'tipo', 'origen_lead', 'fuente_raw');
+    return compact('telefono', 'email', 'provincia', 'codigo_postal', 'direccion', 'poblacion', 'comentarios', 'tipo', 'origen_lead', 'fuente_raw', 'fuente_reconocida');
 }
 
 /**
@@ -334,8 +360,14 @@ function crm_leadkit_csv_reparar_fila($client_id, array $campos) {
  * la misma cola que los leads MK. Si el lead YA existe (mismo ID de
  * LeadKit), no se duplica: se intenta reparar con crm_leadkit_csv_reparar_fila().
  *
+ * v1.20.171: devuelve un array en vez de un string suelto para poder
+ * arrastrar también si la Fuente del CSV se reconoció o no — así
+ * crm_leadkit_csv_ajax_importar() puede avisar de Fuentes nuevas/puntuales
+ * sin tener que volver a calcular los campos por su cuenta.
+ *
  * @param array $fila Fila ya parseada por crm_leadkit_csv_parsear().
- * @return string 'ok'|'reparado'|'dup'|'err'
+ * @return array{resultado:string, fuente_raw:string, fuente_reconocida:bool}
+ *         resultado: 'ok'|'reparado'|'dup'|'err'.
  */
 function crm_leadkit_csv_insertar_fila(array $fila) {
     global $wpdb;
@@ -344,14 +376,16 @@ function crm_leadkit_csv_insertar_fila(array $fila) {
     $leadkit_id = (string) ($fila['id'] ?? '');
     $nombre     = (string) ($fila['nombre'] ?? '');
     if ($leadkit_id === '' || $nombre === '') {
-        return 'err';
+        return ['resultado' => 'err', 'fuente_raw' => '', 'fuente_reconocida' => true];
     }
 
     $campos = crm_leadkit_csv_extraer_campos($fila);
+    $meta_resultado = ['fuente_raw' => $campos['fuente_raw'], 'fuente_reconocida' => $campos['fuente_reconocida']];
 
     $client_id_existente = crm_leadkit_csv_buscar_client_id($leadkit_id);
     if ($client_id_existente > 0) {
-        return crm_leadkit_csv_reparar_fila($client_id_existente, $campos) ? 'reparado' : 'dup';
+        $reparado = crm_leadkit_csv_reparar_fila($client_id_existente, $campos);
+        return ['resultado' => $reparado ? 'reparado' : 'dup'] + $meta_resultado;
     }
 
     // La fecha ya viene sin las comillas literales (ver crm_leadkit_csv_parsear()).
@@ -404,19 +438,23 @@ function crm_leadkit_csv_insertar_fila(array $fila) {
     $ok = $wpdb->insert($table, $insert);
     if ($ok === false) {
         error_log('CRM LeadKit CSV insert error: ' . $wpdb->last_error);
-        return 'err';
+        return ['resultado' => 'err'] + $meta_resultado;
     }
     $client_id = (int) $wpdb->insert_id;
 
     if (function_exists('crm_notes_add')) {
+        $texto = 'Lead importado desde CSV de LeadKit (id ' . $leadkit_id . ', fuente ' . ($campos['fuente_raw'] ?: 'sin especificar') . ').';
+        if (!$campos['fuente_reconocida']) {
+            $texto .= ' ⚠ Fuente no reconocida — asignado a "placassolares" por defecto, revisar si es un proveedor nuevo.';
+        }
         crm_notes_add([
             'client_id'  => $client_id,
             'tipo'       => 'sistema',
-            'texto'      => 'Lead importado desde CSV de LeadKit (id ' . $leadkit_id . ', fuente ' . ($campos['fuente_raw'] ?: 'sin especificar') . ').',
+            'texto'      => $texto,
             'autor_id'   => get_current_user_id(),
         ]);
     }
-    return 'ok';
+    return ['resultado' => 'ok'] + $meta_resultado;
 }
 
 /**
@@ -446,36 +484,52 @@ function crm_leadkit_csv_ajax_importar() {
         wp_send_json_error(['message' => 'El CSV está vacío o no tiene el formato esperado (cabeceras + filas).']);
     }
 
-    $inserted = 0;
+    $inserted  = 0;
     $reparados = 0;
-    $dupes    = 0;
-    $errors   = 0;
+    $dupes     = 0;
+    $errors    = 0;
+    // v1.20.171 — Fuentes del CSV que no encajan con ningún proveedor
+    // conocido: se cuentan aparte (agrupadas por el texto real de la
+    // Fuente) para avisar en el resultado, sin necesidad de rebuscar en el
+    // log o en cada ficha una por una.
+    $fuentes_desconocidas = [];
     foreach ($filas as $fila) {
-        $resultado = crm_leadkit_csv_insertar_fila($fila);
-        if ($resultado === 'ok') {
+        $r = crm_leadkit_csv_insertar_fila($fila);
+        if ($r['resultado'] === 'ok') {
             $inserted++;
-        } elseif ($resultado === 'reparado') {
+        } elseif ($r['resultado'] === 'reparado') {
             $reparados++;
-        } elseif ($resultado === 'dup') {
+        } elseif ($r['resultado'] === 'dup') {
             $dupes++;
         } else {
             $errors++;
         }
+        if (!$r['fuente_reconocida']) {
+            $clave = $r['fuente_raw'] !== '' ? $r['fuente_raw'] : '(sin especificar)';
+            $fuentes_desconocidas[$clave] = ($fuentes_desconocidas[$clave] ?? 0) + 1;
+        }
     }
 
     if (function_exists('crm_log_action')) {
+        $detalle_fuentes = !empty($fuentes_desconocidas)
+            ? ' Fuentes no reconocidas (asignadas a "placassolares" por defecto): ' . implode(', ', array_map(
+                function ($fuente, $n) { return $fuente . ' (' . $n . ')'; },
+                array_keys($fuentes_desconocidas), $fuentes_desconocidas
+            )) . '.'
+            : '';
         crm_log_action(
             'leadkit_csv_importado',
-            sprintf('Importado CSV de LeadKit: %d nuevos, %d reparados, %d duplicados, %d con error (de %d filas).', $inserted, $reparados, $dupes, $errors, count($filas)),
-            null, null, 'info'
+            sprintf('Importado CSV de LeadKit: %d nuevos, %d reparados, %d duplicados, %d con error (de %d filas).', $inserted, $reparados, $dupes, $errors, count($filas)) . $detalle_fuentes,
+            null, null, empty($fuentes_desconocidas) ? 'info' : 'notice'
         );
     }
 
     wp_send_json_success([
-        'inserted'  => $inserted,
-        'reparados' => $reparados,
-        'dupes'     => $dupes,
-        'errors'    => $errors,
-        'total'     => count($filas),
+        'inserted'             => $inserted,
+        'reparados'            => $reparados,
+        'dupes'                => $dupes,
+        'errors'               => $errors,
+        'total'                => count($filas),
+        'fuentes_desconocidas' => $fuentes_desconocidas,
     ]);
 }

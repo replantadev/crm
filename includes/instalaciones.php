@@ -5844,6 +5844,17 @@ function crm_inst_shortcode_ficha() {
 									<span id="crm-inst-generar-acta-msg"></span>
 								<?php endif; ?>
 							</p>
+							<?php if ( ! empty( $data['cierre']['fotos'] ) || ! empty( $data['cierre']['acta_pdf_url'] ) ) :
+								$zip_url = add_query_arg( [
+									'action'         => 'crm_inst_descargar_zip',
+									'instalacion_id' => $data['id'],
+									'nonce'          => $nonce,
+								], $ajax_url );
+							?>
+								<p>
+									<a href="<?php echo esc_url( $zip_url ); ?>" class="crm-btn" style="background:#374151;">Descargar toda la documentación (ZIP)</a>
+								</p>
+							<?php endif; ?>
 						<?php endif; ?>
 					<?php endif; ?>
 				</div>

@@ -1802,6 +1802,13 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 		"SELECT id, ruta, categoria, subido_por, subido_en FROM " . crm_inst_table_documentos() . " WHERE instalacion_id = %d AND tipo = 'foto' ORDER BY id ASC",
 		$instalacion_id
 	), ARRAY_A );
+
+	// v1.20.167 — acta de entrega en PDF (includes/acta-entrega.php): la más
+	// reciente, por si alguna vez se regenera a mano.
+	$acta_doc = $wpdb->get_row( $wpdb->prepare(
+		"SELECT ruta, subido_en FROM " . crm_inst_table_documentos() . " WHERE instalacion_id = %d AND tipo = 'acta' ORDER BY id DESC LIMIT 1",
+		$instalacion_id
+	), ARRAY_A );
 	$cierre_declarado_por_user = $inst['cierre_declarado_por'] ? get_userdata( (int) $inst['cierre_declarado_por'] ) : null;
 	$cierre_validado_por_user  = $inst['cierre_validado_por'] ? get_userdata( (int) $inst['cierre_validado_por'] ) : null;
 
@@ -1854,6 +1861,8 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 			'validado_por_nombre'  => $cierre_validado_por_user ? $cierre_validado_por_user->display_name : '',
 			'validado_en'          => $inst['cierre_validado_en'],
 			'fotos'                => $fotos_cierre,
+			'acta_pdf_url'         => $acta_doc['ruta'] ?? '',
+			'acta_generada_en'     => $acta_doc['subido_en'] ?? '',
 		],
 		'checklist_confirmado_en' => $inst['checklist_confirmado_en'],
 		'holded_invoice_id'   => $inst['holded_invoice_id'],
@@ -3655,6 +3664,17 @@ function crm_inst_ajax_cerrar_instalacion() {
 	}
 	$wpdb->update( crm_inst_table_instalaciones(), $update, [ 'id' => $instalacion_id ] );
 
+	// v1.20.167 — el cierre solo queda definitivo aquí si no requiere
+	// aprobación del jefe (ver crm_inst_ajax_validar_cierre() para el otro
+	// caso). Best-effort a propósito: un fallo generando el PDF no debe
+	// impedir que la instalación se cierre de verdad.
+	if ( ! $requiere_aprobacion && function_exists( 'crm_inst_generar_acta_entrega' ) ) {
+		$acta_resultado = crm_inst_generar_acta_entrega( $instalacion_id );
+		if ( is_wp_error( $acta_resultado ) ) {
+			crm_inst_log_action( $instalacion_id, 'instalacion', 'acta_error', 'No se pudo generar el acta de entrega: ' . $acta_resultado->get_error_message() );
+		}
+	}
+
 	crm_inst_log_action(
 		$instalacion_id,
 		'instalacion',
@@ -3722,6 +3742,15 @@ function crm_inst_ajax_validar_cierre() {
 		$update['fecha_cierre'] = current_time( 'mysql' );
 	}
 	$wpdb->update( crm_inst_table_instalaciones(), $update, [ 'id' => $instalacion_id ] );
+
+	// v1.20.167 — mismo criterio best-effort que en crm_inst_ajax_cerrar_instalacion():
+	// aquí es donde queda definitivo el cierre cuando SÍ requiere aprobación.
+	if ( $nuevo_estado === 'aprobado' && function_exists( 'crm_inst_generar_acta_entrega' ) ) {
+		$acta_resultado = crm_inst_generar_acta_entrega( $instalacion_id );
+		if ( is_wp_error( $acta_resultado ) ) {
+			crm_inst_log_action( $instalacion_id, 'instalacion', 'acta_error', 'No se pudo generar el acta de entrega: ' . $acta_resultado->get_error_message() );
+		}
+	}
 
 	crm_inst_log_action( $instalacion_id, 'instalacion', 'cierre_' . $nuevo_estado, 'Cierre ' . $nuevo_estado . ' por el jefe.' );
 
@@ -5801,6 +5830,21 @@ function crm_inst_shortcode_ficha() {
 						<?php if ( $data['cierre']['validado_por_nombre'] ) : ?>
 							<p class="crm-inst-field-info">Validado por <?php echo esc_html( $data['cierre']['validado_por_nombre'] ); ?><?php echo $data['cierre']['validado_en'] ? ' el ' . esc_html( date_i18n( 'd/m/Y H:i', strtotime( $data['cierre']['validado_en'] ) ) ) : ''; ?>.</p>
 						<?php endif; ?>
+						<?php if ( $data['cierre']['estado'] === 'aprobado' ) : ?>
+							<p class="crm-inst-field-info">
+								Acta de entrega:
+								<?php if ( ! empty( $data['cierre']['acta_pdf_url'] ) ) : ?>
+									<a href="<?php echo esc_url( $data['cierre']['acta_pdf_url'] ); ?>" target="_blank" rel="noopener noreferrer" class="crm-btn">Descargar PDF</a>
+									<span style="color:#6b7280;">generada el <?php echo esc_html( $data['cierre']['acta_generada_en'] ? date_i18n( 'd/m/Y H:i', strtotime( $data['cierre']['acta_generada_en'] ) ) : '—' ); ?></span>
+								<?php else : ?>
+									<span class="crm-inst-extra-badge crm-inst-extra-badge-neutro">No se generó</span>
+								<?php endif; ?>
+								<?php if ( current_user_can( 'crm_inst_close' ) ) : ?>
+									<button type="button" class="crm-btn" id="crm-inst-generar-acta-btn" data-instalacion-id="<?php echo esc_attr( $data['id'] ); ?>" style="background:#6b7280;"><?php echo ! empty( $data['cierre']['acta_pdf_url'] ) ? 'Regenerar' : 'Generar'; ?> acta</button>
+									<span id="crm-inst-generar-acta-msg"></span>
+								<?php endif; ?>
+							</p>
+						<?php endif; ?>
 					<?php endif; ?>
 				</div>
 
@@ -6309,6 +6353,26 @@ function crm_inst_shortcode_ficha() {
 					return;
 				}
 				location.reload();
+			});
+		});
+
+		// v1.20.167 — botón "Generar/Regenerar acta" (acta de entrega en PDF).
+		$('#crm-inst-generar-acta-btn').on('click', function () {
+			var btn = $(this).prop('disabled', true);
+			var msg = $('#crm-inst-generar-acta-msg').css('color', '#6b7280').text('Generando…');
+			$.post(ajaxurl, {
+				action: 'crm_inst_generar_acta', nonce: nonce,
+				instalacion_id: btn.data('instalacion-id')
+			}, function (resp) {
+				if (!resp.success) {
+					btn.prop('disabled', false);
+					msg.css('color', '#991b1b').text((resp.data && resp.data.message) ? resp.data.message : 'Error.');
+					return;
+				}
+				location.reload();
+			}).fail(function () {
+				btn.prop('disabled', false);
+				msg.css('color', '#991b1b').text('Error de conexión.');
 			});
 		});
 

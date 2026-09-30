@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.165
+Version: 1.20.166
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.165');
+define('CRM_PLUGIN_VERSION', '1.20.166');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -971,6 +971,79 @@ function crm_formulario_alta_cliente()
         <input type="hidden" name="es_cliente_activo" value="<?php echo !empty($client_data['es_cliente_activo']) ? '1' : '0'; ?>">
         <?php endif; ?>
 
+        <?php
+        // v1.20.166: dirección/población/provincia/CP que Holded aporta y no
+        // coinciden con lo que ya hay aquí — nunca se pisan solos, el
+        // usuario elige cuál de los dos vale.
+        $holded_discrepancias = [];
+        if ($client_id && !empty($client_data['holded_discrepancias'])) {
+            $decoded = json_decode((string) $client_data['holded_discrepancias'], true);
+            $holded_discrepancias = is_array($decoded) ? $decoded : [];
+        }
+        if (!empty($holded_discrepancias)) :
+            $etiquetas_campo = [
+                'direccion'     => 'Dirección',
+                'poblacion'     => 'Población',
+                'provincia'     => 'Provincia',
+                'codigo_postal' => 'Código postal',
+            ];
+        ?>
+        <div class="crm-holded-discrepancias" style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;margin-bottom:20px;">
+            <strong style="color:#92400e;">Holded tiene datos distintos a los de esta ficha:</strong>
+            <ul style="margin:8px 0 0;padding-left:20px;">
+                <?php foreach ($holded_discrepancias as $campo => $info) :
+                    if (!isset($etiquetas_campo[$campo])) { continue; }
+                ?>
+                    <li style="margin-bottom:6px;" data-campo="<?php echo esc_attr($campo); ?>">
+                        <strong><?php echo esc_html($etiquetas_campo[$campo]); ?>:</strong>
+                        Holded dice "<?php echo esc_html($info['valor_holded'] ?? ''); ?>"
+                        (aquí: "<?php echo esc_html($client_data[$campo] ?? ''); ?>")
+                        <button type="button" class="crm-btn crm-holded-discrepancia-aplicar" data-campo="<?php echo esc_attr($campo); ?>" data-valor="<?php echo esc_attr($info['valor_holded'] ?? ''); ?>">Usar el de Holded</button>
+                        <button type="button" class="crm-btn crm-holded-discrepancia-descartar" data-campo="<?php echo esc_attr($campo); ?>" style="background:#6b7280;">Descartar</button>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+        </div>
+        <script>
+        (function () {
+            var clientId = <?php echo (int) $client_id; ?>;
+            var nonce = <?php echo wp_json_encode(wp_create_nonce('crm_alta_cliente_nonce')); ?>;
+            document.querySelectorAll('.crm-holded-discrepancia-aplicar, .crm-holded-discrepancia-descartar').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var campo = btn.getAttribute('data-campo');
+                    var accion = btn.classList.contains('crm-holded-discrepancia-aplicar') ? 'aplicar' : 'descartar';
+                    var li = btn.closest('li');
+                    btn.disabled = true;
+                    var body = new URLSearchParams();
+                    body.set('action', 'crm_holded_discrepancia_resolver');
+                    body.set('nonce', nonce);
+                    body.set('client_id', clientId);
+                    body.set('campo', campo);
+                    body.set('accion', accion);
+                    fetch(<?php echo wp_json_encode(admin_url('admin-ajax.php')); ?>, { method: 'POST', body: body })
+                        .then(function (r) { return r.json(); })
+                        .then(function (resp) {
+                            if (!resp.success) {
+                                btn.disabled = false;
+                                alert((resp.data && resp.data.message) ? resp.data.message : 'No se pudo aplicar.');
+                                return;
+                            }
+                            if (accion === 'aplicar') {
+                                var campoInput = document.getElementById(campo);
+                                if (campoInput) { campoInput.value = resp.data.valor; }
+                            }
+                            if (li) { li.remove(); }
+                        })
+                        .catch(function () {
+                            btn.disabled = false;
+                            alert('Error de conexión.');
+                        });
+                });
+            });
+        })();
+        </script>
+        <?php endif; ?>
+
         <!-- Datos del Cliente -->
         <div class="crm-section datos">
             <h3>Datos del Cliente</h3>
@@ -1023,7 +1096,7 @@ function crm_formulario_alta_cliente()
                 </div>
                 <div class="form-group half-width">
                     <div class="crm-field">
-                        <select name="provincia" id="provincia" required class="form-select<?php echo !empty($client_data['provincia']) ? ' has-value' : ''; ?>">
+                        <select name="provincia" id="provincia" class="form-select<?php echo !empty($client_data['provincia']) ? ' has-value' : ''; ?>">
                             <option value="" disabled <?php echo !isset($client_data['provincia']) || empty($client_data['provincia']) ? 'selected' : ''; ?>>Seleccionar provincia</option>
                         <?php
                         // Fuente única de verdad: includes/data.php (52 provincias INE
@@ -1079,14 +1152,13 @@ function crm_formulario_alta_cliente()
                                id="codigo_postal"
                                placeholder=" "
                                value="<?php echo esc_attr($client_data['codigo_postal'] ?? ''); ?>"
-                               required
                                inputmode="numeric"
                                pattern="\d{5}"
                                maxlength="5"
                                title="5 dígitos, ej. 24001">
                         <label for="codigo_postal">Código postal</label>
                     </div>
-                    <small class="cp-help">5 dígitos — debe corresponder a la provincia elegida</small>
+                    <small class="cp-help">Opcional si todavía no se conoce — 5 dígitos, debe corresponder a la provincia elegida</small>
                 </div>
                 <div class="form-group half-width">
                     <div class="crm-field">
@@ -2031,13 +2103,14 @@ function crm_handle_ajax_request($estado_inicial, $enviar_notificacion = false)
         wp_send_json_error(['message' => 'El nombre de la población no es válido. Use solo letras, espacios y guiones. Mínimo 2 caracteres.']);
     }
 
-    // v1.20.154: código postal — obligatorio (decisión explícita del
-    // usuario, "importante para las instalaciones y el CRM en general").
+    // v1.20.166: reunión 2026-09-30 — el código postal (y la provincia, ver
+    // el `required` ya quitado del <select>) pasan de obligatorios a
+    // opcionales: un lead recién captado puede no tener todavía ni siquiera
+    // dirección. Mismo criterio que el resto de campos de este formulario
+    // (teléfono, email, provincia, población): si viene vacío no se exige
+    // nada; si viene relleno, se valida el formato igual que siempre.
     $codigo_postal = sanitize_text_field($_POST['codigo_postal'] ?? '');
-    if ($codigo_postal === '') {
-        wp_send_json_error(['message' => 'El código postal es obligatorio.']);
-    }
-    if (!crm_validate_codigo_postal($codigo_postal, $provincia)) {
+    if ($codigo_postal !== '' && !crm_validate_codigo_postal($codigo_postal, $provincia)) {
         wp_send_json_error(['message' => 'El código postal no es válido, o no corresponde a la provincia seleccionada (los 2 primeros dígitos deben coincidir con la provincia).']);
     }
 
@@ -4461,9 +4534,13 @@ function crm_update_clients_table_structure() {
         // que se comunica a ESTE cliente (Ecovolt/Energitel) — logo/remitente
         // de los emails al cliente (recordatorio, visita programada…).
         'marca_comunicacion' => "VARCHAR(20) NOT NULL DEFAULT ''",
-        // v1.20.154 — código postal, obligatorio a partir de ahora (VARCHAR,
-        // no INT, para no perder ceros a la izquierda tipo "08001").
+        // v1.20.154 — código postal (VARCHAR, no INT, para no perder ceros a
+        // la izquierda tipo "08001"). v1.20.166: deja de ser obligatorio.
         'codigo_postal' => "VARCHAR(5) NOT NULL DEFAULT ''",
+        // v1.20.166 — dirección/población/provincia/CP que Holded aporta y
+        // no coinciden con lo que ya hay en la ficha (JSON, ver
+        // crm_holded_reconciliar_direccion() en holded-clientes-sync.php).
+        'holded_discrepancias' => "TEXT DEFAULT NULL",
     ];
     
     foreach ($required_columns as $column => $definition) {

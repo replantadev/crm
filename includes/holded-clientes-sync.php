@@ -109,6 +109,166 @@ function crm_holded_get_ultimo_presupuesto_contacto($holded_contact_id) {
  *         (v1.20.101 — antes un fallo quedaba solo en el log de acciones, sin que nadie lo viera al
  *         pulsar "Sincronizar ahora").
  */
+/**
+ * Compara dirección/población/provincia/código postal del cliente en el CRM
+ * contra el `bill_address` del contacto de Holded — reunión con cliente
+ * 2026-09-30: hasta ahora solo el CP se rellenaba si estaba vacío (v1.20.154)
+ * y ningún campo se comparaba si ya tenía valor. Ahora:
+ *  - Campo vacío en el CRM + Holded trae algo -> se rellena solo, sin preguntar
+ *    (no hay nada que decidir si no había dato previo).
+ *  - Campo YA con un valor + Holded trae uno DISTINTO -> nunca se pisa; queda
+ *    anotado en `holded_discrepancias` (columna JSON) para que la ficha lo
+ *    muestre con un botón "usar este" — decide el usuario, no la sincro.
+ *  - Si ya coinciden, o si una discrepancia pendiente de antes ya no aplica
+ *    (el valor de Holded cambió otra vez, o el del CRM ahora coincide), se
+ *    limpia sola de `holded_discrepancias`.
+ *
+ * @param array $client   Fila actual (direccion, poblacion, provincia,
+ *                        codigo_postal, holded_discrepancias).
+ * @param array $contacto Contacto de Holded (bill_address).
+ * @return array{update:array<string,string>, discrepancias:?array}
+ *         `discrepancias` es null si no hace falta tocar esa columna;
+ *         si no, el array final a guardar (posiblemente vacío -> NULL en BD).
+ */
+function crm_holded_reconciliar_direccion(array $client, array $contacto) {
+    $bill_address = is_array($contacto['bill_address'] ?? null) ? $contacto['bill_address'] : [];
+
+    $valores_holded = [
+        'direccion'     => trim((string) ($bill_address['address'] ?? '')),
+        'poblacion'     => trim((string) ($bill_address['city'] ?? '')),
+        'provincia'     => function_exists('crm_inst_safe_provincia') ? crm_inst_safe_provincia($bill_address['province'] ?? '') : '',
+        'codigo_postal' => trim((string) ($bill_address['postal_code'] ?? '')),
+    ];
+    // El CP de Holded solo cuenta si tiene un formato válido para la
+    // provincia de referencia (la que ya hay en el CRM, o si no la que trae
+    // el propio Holded) — mismo criterio que
+    // crm_inst_extract_client_fields_from_holded_contact() al crear.
+    if ($valores_holded['codigo_postal'] !== '' && function_exists('crm_validate_codigo_postal')) {
+        $provincia_actual = trim((string) ($client['provincia'] ?? ''));
+        $provincia_referencia = $provincia_actual !== '' ? $provincia_actual : $valores_holded['provincia'];
+        if (!crm_validate_codigo_postal($valores_holded['codigo_postal'], $provincia_referencia)) {
+            $valores_holded['codigo_postal'] = '';
+        }
+    }
+
+    $pendientes = [];
+    if (!empty($client['holded_discrepancias'])) {
+        $decoded = json_decode((string) $client['holded_discrepancias'], true);
+        if (is_array($decoded)) {
+            $pendientes = $decoded;
+        }
+    }
+
+    $update = [];
+    $cambio_en_pendientes = false;
+
+    foreach ($valores_holded as $campo => $valor_holded) {
+        if ($valor_holded === '') {
+            continue; // Holded no aporta nada para este campo — nada que decidir.
+        }
+        $valor_actual = trim((string) ($client[$campo] ?? ''));
+
+        if ($valor_actual === '') {
+            $update[$campo] = $valor_holded;
+            if (isset($pendientes[$campo])) {
+                unset($pendientes[$campo]);
+                $cambio_en_pendientes = true;
+            }
+            continue;
+        }
+
+        if ($valor_actual === $valor_holded) {
+            if (isset($pendientes[$campo])) {
+                unset($pendientes[$campo]); // Se resolvió sola (ya coinciden).
+                $cambio_en_pendientes = true;
+            }
+            continue;
+        }
+
+        // Valores distintos y los dos con contenido -> discrepancia real.
+        if (!isset($pendientes[$campo]) || $pendientes[$campo]['valor_holded'] !== $valor_holded) {
+            $pendientes[$campo] = [
+                'valor_holded' => $valor_holded,
+                'detectado_en' => current_time('mysql'),
+            ];
+            $cambio_en_pendientes = true;
+        }
+    }
+
+    return [
+        'update'        => $update,
+        'discrepancias' => $cambio_en_pendientes ? $pendientes : null,
+    ];
+}
+
+/**
+ * AJAX: botones "Usar el de Holded"/"Descartar" de la ficha de cliente
+ * (aviso de holded_discrepancias). No restringido a crm_admin — un
+ * comercial edita sus propios clientes, igual que el resto del formulario
+ * de alta/edición (permiso real: crm_user_can_access_client()).
+ */
+add_action('wp_ajax_crm_holded_discrepancia_resolver', 'crm_ajax_holded_discrepancia_resolver');
+function crm_ajax_holded_discrepancia_resolver() {
+    if (!is_user_logged_in() || !check_ajax_referer('crm_alta_cliente_nonce', 'nonce', false)) {
+        wp_send_json_error(['message' => 'No autorizado.'], 403);
+    }
+
+    $client_id = (int) ($_POST['client_id'] ?? 0);
+    $campo     = sanitize_key((string) ($_POST['campo'] ?? ''));
+    $accion    = sanitize_key((string) ($_POST['accion'] ?? ''));
+
+    $campos_validos = ['direccion', 'poblacion', 'provincia', 'codigo_postal'];
+    if ($client_id <= 0 || !in_array($campo, $campos_validos, true) || !in_array($accion, ['aplicar', 'descartar'], true)) {
+        wp_send_json_error(['message' => 'Datos incompletos.']);
+    }
+    if (!function_exists('crm_user_can_access_client') || !crm_user_can_access_client($client_id)) {
+        wp_send_json_error(['message' => 'Sin permisos sobre este cliente.'], 403);
+    }
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'crm_clients';
+    $row = $wpdb->get_row($wpdb->prepare("SELECT holded_discrepancias, provincia FROM {$table} WHERE id = %d", $client_id), ARRAY_A);
+    if (!$row) {
+        wp_send_json_error(['message' => 'Cliente no encontrado.']);
+    }
+
+    $pendientes = [];
+    if (!empty($row['holded_discrepancias'])) {
+        $decoded = json_decode((string) $row['holded_discrepancias'], true);
+        $pendientes = is_array($decoded) ? $decoded : [];
+    }
+    if (!isset($pendientes[$campo])) {
+        wp_send_json_error(['message' => 'Esa discrepancia ya no está pendiente (puede que se resolviera en otra pestaña).']);
+    }
+
+    $valor_holded = (string) $pendientes[$campo]['valor_holded'];
+    $update = [];
+
+    if ($accion === 'aplicar') {
+        // Re-validar el CP contra la provincia actual (pudo cambiar mientras
+        // el aviso estaba pendiente) antes de escribirlo de verdad.
+        if ($campo === 'codigo_postal' && function_exists('crm_validate_codigo_postal') && !crm_validate_codigo_postal($valor_holded, $row['provincia'] ?? '')) {
+            wp_send_json_error(['message' => 'Ese código postal ya no es válido para la provincia actual del cliente.']);
+        }
+        $update[$campo] = $valor_holded;
+    }
+
+    unset($pendientes[$campo]);
+    $update['holded_discrepancias'] = empty($pendientes) ? null : wp_json_encode($pendientes);
+
+    $wpdb->update($table, $update, ['id' => $client_id]);
+
+    if (function_exists('crm_log_action')) {
+        crm_log_action(
+            'holded_discrepancia_resuelta',
+            sprintf('Discrepancia de "%s" %s (Holded: "%s").', $campo, $accion === 'aplicar' ? 'aplicada' : 'descartada', $valor_holded),
+            $client_id, null, 'info'
+        );
+    }
+
+    wp_send_json_success(['valor' => $valor_holded, 'accion' => $accion]);
+}
+
 function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
     $client_id = (int) $client_id;
     if ($client_id <= 0) {
@@ -123,7 +283,8 @@ function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
         "SELECT intereses, estado_por_sector, presupuesto, tipo, holded_web,
                 holded_estimate_id, holded_estimate_numero, holded_estimate_total,
                 holded_estimate_moneda, holded_estimate_aprobado,
-                holded_contact_updated_at, holded_last_synced_at, codigo_postal, provincia
+                holded_contact_updated_at, holded_last_synced_at,
+                codigo_postal, provincia, direccion, poblacion, holded_discrepancias
          FROM {$table} WHERE id = %d",
         $client_id
     ), ARRAY_A);
@@ -207,16 +368,17 @@ function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
     if (empty($client['holded_web']) && !empty($contacto['website'])) {
         $update['holded_web'] = esc_url_raw((string) $contacto['website']);
     }
-    // v1.20.154: rellena el código postal si Holded trae uno válido y el
-    // cliente todavía no tiene — mismo criterio "solo si estaba vacío" de
-    // arriba, y mismo doble filtro que crm_inst_extract_client_fields_from_holded_contact()
-    // (formato + debe coincidir con la provincia ya guardada, si la hay).
-    if (empty($client['codigo_postal']) && function_exists('crm_validate_codigo_postal')) {
-        $bill_address = is_array($contacto['bill_address'] ?? null) ? $contacto['bill_address'] : [];
-        $cp_holded = trim((string) ($bill_address['postal_code'] ?? ''));
-        if ($cp_holded !== '' && crm_validate_codigo_postal($cp_holded, $client['provincia'] ?? '')) {
-            $update['codigo_postal'] = $cp_holded;
-        }
+    // v1.20.166: dirección/población/provincia/CP — si estaban vacías se
+    // rellenan solas (mismo criterio que ya tenía el CP desde v1.20.154); si
+    // ya tenían un valor y Holded trae uno DISTINTO, no se pisa nunca —
+    // queda anotado en holded_discrepancias para que la ficha lo muestre y
+    // el usuario decida cuál de los dos es el bueno (reunión 2026-09-30).
+    $discrepancias_resultado = crm_holded_reconciliar_direccion($client, $contacto);
+    $update = array_merge($update, $discrepancias_resultado['update']);
+    if ($discrepancias_resultado['discrepancias'] !== null) {
+        $update['holded_discrepancias'] = $discrepancias_resultado['discrepancias'] === []
+            ? null
+            : wp_json_encode($discrepancias_resultado['discrepancias']);
     }
 
     // v1.20.98: adjuntar el PDF del presupuesto al campo "Presupuestos" del

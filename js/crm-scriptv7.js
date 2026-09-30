@@ -561,11 +561,11 @@ function showToast(msg, tipo, duration = 4000) {
         let valid = true;
 
         // 1) Validaciones de campos obligatorios
+        // v1.20.166: dirección y código postal dejan de ser obligatorios —
+        // un lead recién captado puede no tener todavía ni dirección.
         [
             { sel: "[name='cliente_nombre']", msg: "El nombre del cliente es obligatorio." },
-            { sel: "[name='empresa']", msg: "El nombre de la empresa es obligatorio." },
-            { sel: "[name='direccion']", msg: "La dirección es obligatoria." },
-            { sel: "[name='codigo_postal']", msg: "El código postal es obligatorio." }
+            { sel: "[name='empresa']", msg: "El nombre de la empresa es obligatorio." }
         ].forEach(({ sel, msg }) => {
             const inp = form.querySelector(sel);
             if (inp && !inp.value.trim()) { valid = false; showError(inp, msg); }

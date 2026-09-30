@@ -172,8 +172,8 @@
                 input.value = '';
                 if (resp && resp.success) {
                     const d = resp.data || {};
-                    $status.css('color', '#065f46').text(`OK · ${d.inserted || 0} nuevos · ${d.dupes || 0} duplicados · ${d.errors || 0} con error (de ${d.total || 0} filas)`);
-                    if ((d.inserted || 0) > 0) {
+                    $status.css('color', '#065f46').text(`OK · ${d.inserted || 0} nuevos · ${d.reparados || 0} reparados · ${d.dupes || 0} duplicados · ${d.errors || 0} con error (de ${d.total || 0} filas)`);
+                    if ((d.inserted || 0) > 0 || (d.reparados || 0) > 0) {
                         setTimeout(function () { location.reload(); }, 1500);
                     }
                 } else {

@@ -182,60 +182,40 @@ function crm_leadkit_csv_origen_desde_fuente($fuente_raw) {
 }
 
 /**
- * Comprueba si ya existe un lead importado con este ID de LeadKit (dedupe).
- * Búsqueda por texto sobre el JSON de lead_meta — sin depender de funciones
- * JSON de MySQL que puede que el hosting no tenga. Busca entre TODOS los
- * orígenes posibles de un lead de LeadKit (v1.20.169: antes solo miraba
+ * Busca un cliente ya importado con este ID de LeadKit (dedupe). Búsqueda
+ * por texto sobre el JSON de lead_meta — sin depender de funciones JSON de
+ * MySQL que puede que el hosting no tenga. Busca entre TODOS los orígenes
+ * posibles de un lead de LeadKit (v1.20.169: antes solo miraba
  * 'placassolares' — con varias Fuentes posibles, un lead guardado como
  * 'aerotermia' habría pasado el dedupe como si nunca se hubiera importado).
  *
  * @param string $leadkit_id
- * @return bool
+ * @return int client_id, o 0 si no existe.
  */
-function crm_leadkit_csv_ya_existe($leadkit_id) {
+function crm_leadkit_csv_buscar_client_id($leadkit_id) {
     global $wpdb;
     $table = $wpdb->prefix . 'crm_clients';
     $origenes = crm_leadkit_csv_origenes_posibles();
     $placeholders = implode(',', array_fill(0, count($origenes), '%s'));
     $args = array_merge($origenes, ['%"leadkit_id":"' . $wpdb->esc_like($leadkit_id) . '"%']);
-    $encontrado = (int) $wpdb->get_var($wpdb->prepare(
+    return (int) $wpdb->get_var($wpdb->prepare(
         "SELECT id FROM $table WHERE origen_lead IN ($placeholders) AND lead_meta LIKE %s LIMIT 1",
         $args
     ));
-    return $encontrado > 0;
 }
 
 /**
- * Inserta una fila del CSV como lead nuevo (origen_lead según la Fuente
- * real del CSV — placassolares/aerotermia/luz, ver
- * crm_leadkit_csv_origen_desde_fuente()), sin comercial asignado — entra en
- * la misma cola que los leads MK.
+ * Extrae y valida de una fila ya parseada los campos que van a columnas
+ * reales de wp_crm_clients — compartido entre la inserción de un lead nuevo
+ * y la reparación de uno ya existente (v1.20.170), para no mantener la
+ * misma validación duplicada en dos sitios.
  *
- * @param array $fila Fila ya parseada por crm_leadkit_csv_parsear().
- * @return string 'ok'|'dup'|'err'
+ * @param array $fila
+ * @return array{telefono:string, email:string, provincia:string, codigo_postal:string,
+ *               direccion:string, poblacion:string, comentarios:string, tipo:string,
+ *               origen_lead:string, fuente_raw:string}
  */
-function crm_leadkit_csv_insertar_fila(array $fila) {
-    global $wpdb;
-    $table = $wpdb->prefix . 'crm_clients';
-
-    $leadkit_id = (string) ($fila['id'] ?? '');
-    $nombre     = (string) ($fila['nombre'] ?? '');
-    if ($leadkit_id === '' || $nombre === '') {
-        return 'err';
-    }
-    if (crm_leadkit_csv_ya_existe($leadkit_id)) {
-        return 'dup';
-    }
-
-    // La fecha ya viene sin las comillas literales (ver crm_leadkit_csv_parsear()).
-    $fecha_db = current_time('mysql');
-    if (!empty($fila['date'])) {
-        $ts = strtotime((string) $fila['date']);
-        if ($ts) {
-            $fecha_db = gmdate('Y-m-d H:i:s', $ts);
-        }
-    }
-
+function crm_leadkit_csv_extraer_campos(array $fila) {
     // v1.20.168 — la exportación "con todos los datos" de LeadKit SÍ trae
     // teléfono/email/dirección/población/provincia/CP con nombre de columna
     // estable (antes se guardaban solo dentro de lead_meta.respuestas,
@@ -286,6 +266,103 @@ function crm_leadkit_csv_insertar_fila(array $fila) {
     $fuente_raw  = (string) ($fila['_variables']['Fuente'] ?? '');
     $origen_lead = crm_leadkit_csv_origen_desde_fuente($fuente_raw);
 
+    return compact('telefono', 'email', 'provincia', 'codigo_postal', 'direccion', 'poblacion', 'comentarios', 'tipo', 'origen_lead', 'fuente_raw');
+}
+
+/**
+ * v1.20.170 — a petición del usuario: reimportar el mismo CSV solo
+ * detectaba duplicados y los saltaba, así que los leads que habían entrado
+ * antes (v1.20.150-168) solo con el nombre se quedaban así para siempre —
+ * nadie los "arreglaba" reimportando. Rellena SOLO los campos que sigan
+ * vacíos en la ficha ya existente con lo que traiga el CSV ahora — igual
+ * que la sincro de Holded con el código postal: nunca pisa un dato que ya
+ * hubiera (a mano o de una importación anterior).
+ *
+ * @param int   $client_id
+ * @param array $campos Lo que devuelve crm_leadkit_csv_extraer_campos().
+ * @return bool true si se completó al menos un campo, false si no había nada que reparar.
+ */
+function crm_leadkit_csv_reparar_fila($client_id, array $campos) {
+    global $wpdb;
+    $table = $wpdb->prefix . 'crm_clients';
+
+    $actual = $wpdb->get_row($wpdb->prepare(
+        "SELECT telefono, email_cliente, direccion, poblacion, provincia, codigo_postal, tipo, comentarios FROM $table WHERE id = %d",
+        $client_id
+    ), ARRAY_A);
+    if (!$actual) {
+        return false;
+    }
+
+    $mapa_columnas = [
+        'telefono'      => $campos['telefono'],
+        'email_cliente' => $campos['email'],
+        'direccion'     => $campos['direccion'],
+        'poblacion'     => $campos['poblacion'],
+        'provincia'     => $campos['provincia'],
+        'codigo_postal' => $campos['codigo_postal'],
+        'tipo'          => $campos['tipo'],
+        'comentarios'   => $campos['comentarios'],
+    ];
+    $update = [];
+    foreach ($mapa_columnas as $columna => $valor_csv) {
+        if ($valor_csv !== '' && empty($actual[$columna])) {
+            $update[$columna] = $valor_csv;
+        }
+    }
+    if (empty($update)) {
+        return false;
+    }
+
+    $wpdb->update($table, $update, ['id' => $client_id]);
+
+    if (function_exists('crm_notes_add')) {
+        crm_notes_add([
+            'client_id' => $client_id,
+            'tipo'      => 'sistema',
+            'texto'     => 'Datos completados al reimportar el CSV de LeadKit: ' . implode(', ', array_keys($update)) . '.',
+            'autor_id'  => get_current_user_id(),
+        ]);
+    }
+    return true;
+}
+
+/**
+ * Inserta una fila del CSV como lead nuevo (origen_lead según la Fuente
+ * real del CSV — placassolares/aerotermia/luz, ver
+ * crm_leadkit_csv_origen_desde_fuente()), sin comercial asignado — entra en
+ * la misma cola que los leads MK. Si el lead YA existe (mismo ID de
+ * LeadKit), no se duplica: se intenta reparar con crm_leadkit_csv_reparar_fila().
+ *
+ * @param array $fila Fila ya parseada por crm_leadkit_csv_parsear().
+ * @return string 'ok'|'reparado'|'dup'|'err'
+ */
+function crm_leadkit_csv_insertar_fila(array $fila) {
+    global $wpdb;
+    $table = $wpdb->prefix . 'crm_clients';
+
+    $leadkit_id = (string) ($fila['id'] ?? '');
+    $nombre     = (string) ($fila['nombre'] ?? '');
+    if ($leadkit_id === '' || $nombre === '') {
+        return 'err';
+    }
+
+    $campos = crm_leadkit_csv_extraer_campos($fila);
+
+    $client_id_existente = crm_leadkit_csv_buscar_client_id($leadkit_id);
+    if ($client_id_existente > 0) {
+        return crm_leadkit_csv_reparar_fila($client_id_existente, $campos) ? 'reparado' : 'dup';
+    }
+
+    // La fecha ya viene sin las comillas literales (ver crm_leadkit_csv_parsear()).
+    $fecha_db = current_time('mysql');
+    if (!empty($fila['date'])) {
+        $ts = strtotime((string) $fila['date']);
+        if ($ts) {
+            $fecha_db = gmdate('Y-m-d H:i:s', $ts);
+        }
+    }
+
     $lead_meta = [
         'leadkit_id'    => $leadkit_id,
         'estado_leadkit'=> (string) ($fila['estado'] ?? ''),
@@ -304,14 +381,14 @@ function crm_leadkit_csv_insertar_fila(array $fila) {
         'fecha'                     => $fecha_db,
         'cliente_nombre'            => substr($nombre, 0, 255),
         'empresa'                   => '',
-        'direccion'                 => substr($direccion, 0, 255),
-        'telefono'                  => $telefono,
-        'email_cliente'             => $email,
-        'poblacion'                 => substr($poblacion, 0, 255),
-        'provincia'                 => $provincia,
-        'tipo'                      => $tipo,
-        'comentarios'               => $comentarios,
-        'codigo_postal'             => $codigo_postal,
+        'direccion'                 => substr($campos['direccion'], 0, 255),
+        'telefono'                  => $campos['telefono'],
+        'email_cliente'             => $campos['email'],
+        'poblacion'                 => substr($campos['poblacion'], 0, 255),
+        'provincia'                 => $campos['provincia'],
+        'tipo'                      => $campos['tipo'],
+        'comentarios'               => $campos['comentarios'],
+        'codigo_postal'             => $campos['codigo_postal'],
         'intereses'                 => maybe_serialize([]),
         'estado'                    => 'borrador',
         'estado_por_sector'         => maybe_serialize([]),
@@ -319,7 +396,7 @@ function crm_leadkit_csv_insertar_fila(array $fila) {
         'usuario_envio_por_sector'  => '',
         'creado_por'                => 0,
         'creado_en'                 => current_time('mysql'),
-        'origen_lead'               => $origen_lead,
+        'origen_lead'               => $campos['origen_lead'],
         'es_cliente_activo'         => 0,
         'lead_meta'                 => wp_json_encode($lead_meta),
     ];
@@ -335,7 +412,7 @@ function crm_leadkit_csv_insertar_fila(array $fila) {
         crm_notes_add([
             'client_id'  => $client_id,
             'tipo'       => 'sistema',
-            'texto'      => 'Lead importado desde CSV de LeadKit (id ' . $leadkit_id . ', fuente ' . ($fuente_raw ?: 'sin especificar') . ').',
+            'texto'      => 'Lead importado desde CSV de LeadKit (id ' . $leadkit_id . ', fuente ' . ($campos['fuente_raw'] ?: 'sin especificar') . ').',
             'autor_id'   => get_current_user_id(),
         ]);
     }
@@ -370,12 +447,15 @@ function crm_leadkit_csv_ajax_importar() {
     }
 
     $inserted = 0;
+    $reparados = 0;
     $dupes    = 0;
     $errors   = 0;
     foreach ($filas as $fila) {
         $resultado = crm_leadkit_csv_insertar_fila($fila);
         if ($resultado === 'ok') {
             $inserted++;
+        } elseif ($resultado === 'reparado') {
+            $reparados++;
         } elseif ($resultado === 'dup') {
             $dupes++;
         } else {
@@ -386,15 +466,16 @@ function crm_leadkit_csv_ajax_importar() {
     if (function_exists('crm_log_action')) {
         crm_log_action(
             'leadkit_csv_importado',
-            sprintf('Importado CSV de LeadKit: %d nuevos, %d duplicados, %d con error (de %d filas).', $inserted, $dupes, $errors, count($filas)),
+            sprintf('Importado CSV de LeadKit: %d nuevos, %d reparados, %d duplicados, %d con error (de %d filas).', $inserted, $reparados, $dupes, $errors, count($filas)),
             null, null, 'info'
         );
     }
 
     wp_send_json_success([
-        'inserted' => $inserted,
-        'dupes'    => $dupes,
-        'errors'   => $errors,
-        'total'    => count($filas),
+        'inserted'  => $inserted,
+        'reparados' => $reparados,
+        'dupes'     => $dupes,
+        'errors'    => $errors,
+        'total'     => count($filas),
     ]);
 }

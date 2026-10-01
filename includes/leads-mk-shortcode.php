@@ -277,7 +277,7 @@ function crm_render_asignacion_leads_mk() {
                     <?php else:
                         foreach ($rows as $r):
                             $meta = !empty($r['lead_meta']) ? json_decode($r['lead_meta'], true) : [];
-                            $campana = is_array($meta) ? trim(($meta['campaign_name'] ?? '') . ($meta['ad_name'] ? ' · ' . $meta['ad_name'] : '')) : '';
+                            $campana = is_array($meta) ? trim(($meta['campaign_name'] ?? '') . (!empty($meta['ad_name']) ? ' · ' . $meta['ad_name'] : '')) : '';
                             $haystack = strtolower(trim(($r['cliente_nombre'] ?: '') . ' ' . ($r['email_cliente'] ?: '') . ' ' . ($r['telefono'] ?: '') . ' ' . $campana));
                             $mk_status = crm_lead_mk_lifecycle($r);
                             $ficha = add_query_arg('client_id', (int) $r['id'], home_url('/alta-de-cliente/'));

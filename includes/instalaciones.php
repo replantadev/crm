@@ -7132,8 +7132,8 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 	$fases[] = [
 		'fase'    => 'Fase 7 · WhatsApp',
 		'titulo'  => 'Envíos por WhatsApp Business (avisos internos y al cliente)',
-		'estado'  => 'en_pruebas',
-		'detalle' => 'Cuenta de Meta Business real dada de alta 2026-09-19, número dedicado +34 601 30 04 15 (WABA "Ecovolt"), token permanente de usuario del sistema verificado en vivo contra la API real. 3 plantillas creadas en Meta y enviadas a revisión: aviso de materiales a jefes (6 variables: cliente, dirección, fecha, pendientes, estado del pedido, enlace), validar partida extra al cliente (4 variables) e instalación en marcha/cierre parcial a jefes (3 variables) — v1.20.115 corrigió un bug real donde la primera plantilla nunca llevaba el enlace a la ficha. v1.20.113 expuso los ajustes en /panel-de-control/ (antes solo en wp-admin, inaccesible para crm_admin); v1.20.116 los simplificó a solo lectura (estado + nombres de plantilla) más un botón "Enviar prueba", dejando la edición de Phone Number ID/token/nombres en wp-admin → CRM → WhatsApp. Pendiente: que Meta apruebe las 3 plantillas y hacer el primer envío real de cada flujo.',
+		'estado'  => 'hecho',
+		'detalle' => 'Cuenta de Meta Business real dada de alta 2026-09-19, número dedicado +34 601 30 04 15 (WABA "Ecovolt"), token permanente de usuario del sistema verificado en vivo contra la API real. 3 plantillas creadas en Meta: aviso de materiales a jefes (6 variables: cliente, dirección, fecha, pendientes, estado del pedido, enlace), validar partida extra al cliente (4 variables) e instalación en marcha/cierre parcial a jefes (3 variables) — v1.20.115 corrigió un bug real donde la primera plantilla nunca llevaba el enlace a la ficha. v1.20.113 expuso los ajustes en /panel-de-control/ (antes solo en wp-admin, inaccesible para crm_admin); v1.20.116 los simplificó a solo lectura (estado + nombres de plantilla) más un botón "Enviar prueba", dejando la edición de Phone Number ID/token/nombres en wp-admin → CRM → WhatsApp. **Cerrado (2026-10-01):** las 3 plantillas aprobadas por Meta y confirmado por el usuario un envío real recibido.',
 	];
 
 	$fases[] = [
@@ -7149,8 +7149,8 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 	$fases[] = [
 		'fase'    => 'Fase 7 · aviso de calendario',
 		'titulo'  => 'Recordatorio el día antes de una visita agendada (cliente, instalador y jefes)',
-		'estado'  => 'en_pruebas',
-		'detalle' => 'Cron propio (`crm_inst_aviso_calendario_cron_hourly`), hora configurable en Ajustes/Panel de control. Dedup por FILA de agenda (columna `recordatorio_enviado_en`), no un flag global por día — una instalación con 2 instaladores avisa a cada uno independientemente. Cliente: email. Instalador asignado: in-app + email. Jefes/crm_admin: in-app + email + WhatsApp, cada uno por sus propios canales (Fase 7 · canal por persona). La plantilla de WhatsApp a jefes es nueva (`crm_whatsapp_template_recordatorio_visita`) y necesita aprobación de Meta antes de poder usarse — mientras tanto ese tramo simplemente no envía nada, sin romper el resto. El cliente NO recibe por WhatsApp (necesitaría otra plantilla nueva, no construida). Construido, sin prueba real todavía.',
+		'estado'  => 'hecho',
+		'detalle' => 'Cron propio (`crm_inst_aviso_calendario_cron_hourly`), hora configurable en Ajustes/Panel de control. Dedup por FILA de agenda (columna `recordatorio_enviado_en`), no un flag global por día — una instalación con 2 instaladores avisa a cada uno independientemente. Cliente: email. Instalador asignado: in-app + email. Jefes/crm_admin: in-app + email + WhatsApp, cada uno por sus propios canales (Fase 7 · canal por persona). La plantilla de WhatsApp a jefes (`crm_whatsapp_template_recordatorio_visita`) está aprobada por Meta. El cliente NO recibe por WhatsApp este recordatorio en sí (necesitaría otra plantilla distinta) — lo que sí recibe es la plantilla de confirmación con botones, cubierta en Fase 8. **Cerrado (2026-10-01):** confirmado por el usuario un envío real recibido.',
 	];
 
 	$fases[] = [
@@ -7167,8 +7167,8 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		// avisan ni con qué plantillas).
 		'fase'    => 'Fase 7 · WhatsApp a instalador',
 		'titulo'  => 'Avisos por WhatsApp también al instalador (hoy solo in-app + email)',
-		'estado'  => 'en_pruebas',
-		'detalle' => 'Construido v1.20.129: nueva crm_inst_whatsapp_instalador() (helper genérico para UN instalador, a diferencia de las de jefes que recorren a todos) enganchada en los 4 puntos donde ya se avisaba por in-app/email — instalación asignada, visita programada/reprogramada (mismo texto para ambos casos), partida extra resuelta (aprobada/rechazada, por jefe o cliente), y cierre resuelto. De paso se tapó un hueco real: partida extra y cierre resueltos SOLO avisaban in-app al instalador, nunca por email — ahora también. El instalador activa el canal WhatsApp para sí mismo desde "Mi perfil" (misma user-meta `crm_notif_canal_whatsapp` que ya usan jefes/crm_admin) — sin esa casilla marcada, no se envía nada aunque tenga número guardado. 4 plantillas nuevas de Meta, todavía sin crear/aprobar.',
+		'estado'  => 'hecho',
+		'detalle' => 'Construido v1.20.129: nueva crm_inst_whatsapp_instalador() (helper genérico para UN instalador, a diferencia de las de jefes que recorren a todos) enganchada en los 4 puntos donde ya se avisaba por in-app/email — instalación asignada, visita programada/reprogramada (mismo texto para ambos casos), partida extra resuelta (aprobada/rechazada, por jefe o cliente), y cierre resuelto. De paso se tapó un hueco real: partida extra y cierre resueltos SOLO avisaban in-app al instalador, nunca por email — ahora también. El instalador activa el canal WhatsApp para sí mismo desde "Mi perfil" (misma user-meta `crm_notif_canal_whatsapp` que ya usan jefes/crm_admin) — sin esa casilla marcada, no se envía nada aunque tenga número guardado. **Cerrado (2026-10-01):** las 4 plantillas creadas y aprobadas por Meta, confirmado por el usuario un envío real recibido.',
 	];
 
 	$fases[] = [

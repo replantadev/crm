@@ -125,6 +125,8 @@ function crm_guia_avisos_inapp_grupos() {
             'Recordatorio de visita al día siguiente',
             'Partida extra resuelta (aprobada o rechazada)',
             'Cierre de instalación resuelto',
+            'Incidencia que abrió él mismo pasó de estado (en curso / resuelta)',
+            'Se abrió una incidencia nueva desde la ficha (por un jefe/crm_admin)',
         ],
         'Al comercial' => [
             'Lead frío (sin tocar pasado el umbral)',
@@ -141,6 +143,7 @@ function crm_guia_avisos_inapp_grupos() {
             'Cliente pidió cambiar la visita por WhatsApp (y si se le ofrecieron franjas automáticas)',
             'Cliente reprogramó su visita él mismo por WhatsApp',
             'Lead frío escalado (sigue sin tocarse)',
+            'Incidencia nueva abierta por un instalador',
         ],
     ];
 }

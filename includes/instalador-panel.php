@@ -138,6 +138,13 @@ function crm_inst_panel_format_visita_row(array $row) {
         ), ARRAY_A);
     }
 
+    // v1.20.184 — "Incidencias" como concepto propio, visibles también desde
+    // el panel del instalador (puede abrirlas y marcarlas en_curso/resueltas).
+    $incidencias = function_exists('crm_inst_table_incidencias') ? $wpdb->get_results($wpdb->prepare(
+        "SELECT id, titulo, descripcion, foto_ruta, estado, declarado_en FROM " . crm_inst_table_incidencias() . " WHERE instalacion_id = %d ORDER BY (estado = 'resuelta') ASC, declarado_en DESC",
+        (int) $row['instalacion_id']
+    ), ARRAY_A) : [];
+
     $maps_url = '';
     if (!empty($row['lat']) && !empty($row['lng'])) {
         $maps_url = 'https://www.google.com/maps?q=' . $row['lat'] . ',' . $row['lng'];
@@ -161,6 +168,7 @@ function crm_inst_panel_format_visita_row(array $row) {
         'extras'         => $extras,
         'cierre_estado'  => $row['cierre_estado'] ?? '',
         'cierre_fotos'   => $fotos_cierre,
+        'incidencias'    => $incidencias,
         'estado'         => $estado,
         'estado_label'   => $estados[$estado] ?? $estado,
         'estado_color'   => function_exists('crm_instalaciones_estado_color') ? crm_instalaciones_estado_color($estado) : '#6b7280',
@@ -608,6 +616,39 @@ function crm_inst_panel_render_card(array $v, $con_fecha, $permitir_cierre = tru
                 <span class="crm-panel-inst-extra-msg"></span>
             </div>
         </div>
+
+        <?php /* v1.20.184 — "Incidencias": un problema detectado (material dañado, acceso imposible...) — no bloquea nada, solo queda registrado y avisa a los jefes. */ ?>
+        <div class="crm-panel-inst-incidencias">
+            <?php if (!empty($v['incidencias'])) : ?>
+                <?php $incidencia_estado_labels_panel = ['abierta' => 'Abierta', 'en_curso' => 'En curso', 'resuelta' => 'Resuelta']; ?>
+                <ul class="crm-panel-inst-incidencias-lista">
+                    <?php foreach ($v['incidencias'] as $inc) : ?>
+                        <li data-incidencia-id="<?php echo (int) $inc['id']; ?>">
+                            <span class="crm-panel-inst-extra-badge crm-panel-inst-extra-badge-<?php echo esc_attr($inc['estado'] === 'resuelta' ? 'aprobado' : ($inc['estado'] === 'en_curso' ? 'enviado_cliente' : 'pendiente')); ?>"><?php echo esc_html($incidencia_estado_labels_panel[$inc['estado']] ?? ucfirst($inc['estado'])); ?></span>
+                            <strong><?php echo esc_html($inc['titulo']); ?></strong>
+                            <?php if ($inc['estado'] !== 'resuelta') : ?>
+                                <?php if ($inc['estado'] === 'abierta') : ?>
+                                    <button type="button" class="crm-panel-inst-incidencia-en-curso-btn" data-incidencia-id="<?php echo (int) $inc['id']; ?>">Marcar en curso</button>
+                                <?php endif; ?>
+                                <button type="button" class="crm-panel-inst-incidencia-resolver-btn" data-incidencia-id="<?php echo (int) $inc['id']; ?>">Resolver</button>
+                            <?php endif; ?>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php endif; ?>
+            <div class="crm-panel-inst-incidencia-form-wrap">
+                <button type="button" class="crm-panel-inst-incidencia-toggle">+ Reportar incidencia</button>
+                <div class="crm-panel-inst-incidencia-form" style="display:none;">
+                    <input type="text" class="crm-panel-inst-incidencia-titulo" placeholder="Título breve (ej. acceso bloqueado)">
+                    <textarea class="crm-panel-inst-incidencia-descripcion" placeholder="Descripción (opcional)" rows="2"></textarea>
+                    <label class="crm-panel-inst-extra-foto-label">Foto (opcional)</label>
+                    <?php echo crm_inst_panel_render_foto_dropzone('crm-panel-inst-incidencia-foto'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                    <button type="button" class="crm-btn crm-panel-inst-incidencia-guardar" data-instalacion-id="<?php echo (int) $v['instalacion_id']; ?>">Enviar</button>
+                    <span class="crm-panel-inst-incidencia-msg"></span>
+                </div>
+            </div>
+        </div>
+
         <?php if (!empty($v['cierre_fotos'])) :
             $categorias_labels_card = function_exists('crm_inst_categorias_fotos_cierre') ? crm_inst_categorias_fotos_cierre($v['subtipo_instalacion']) : [];
         ?>
@@ -1721,6 +1762,103 @@ function crm_inst_panel_extras_js($nonce) {
                     guardar.disabled = false;
                     msg.style.color = '#991b1b';
                     msg.textContent = 'Error inesperado.';
+                });
+        });
+
+        // v1.20.184 — "Incidencias" como concepto propio.
+        document.addEventListener('click', function (e) {
+            var incToggle = e.target.closest('.crm-panel-inst-incidencia-toggle');
+            if (incToggle) {
+                var incForm = incToggle.closest('.crm-panel-inst-incidencia-form-wrap').querySelector('.crm-panel-inst-incidencia-form');
+                incForm.style.display = incForm.style.display === 'none' ? 'flex' : 'none';
+                return;
+            }
+
+            var incEnCurso = e.target.closest('.crm-panel-inst-incidencia-en-curso-btn');
+            if (incEnCurso) {
+                incEnCurso.disabled = true;
+                $.post(ajaxurl, {
+                    action: 'crm_inst_actualizar_incidencia', nonce: nonce,
+                    incidencia_id: incEnCurso.getAttribute('data-incidencia-id'), estado: 'en_curso'
+                }, function (resp) {
+                    if (!resp.success) { incEnCurso.disabled = false; alert(resp.data.message); return; }
+                    location.reload();
+                });
+                return;
+            }
+
+            var incResolver = e.target.closest('.crm-panel-inst-incidencia-resolver-btn');
+            if (incResolver) {
+                var resolucion = prompt('¿Qué se hizo para resolverla?');
+                if (resolucion === null) { return; }
+                resolucion = resolucion.trim();
+                if (!resolucion) { alert('Escribe qué se hizo para resolverla.'); return; }
+                incResolver.disabled = true;
+                $.post(ajaxurl, {
+                    action: 'crm_inst_actualizar_incidencia', nonce: nonce,
+                    incidencia_id: incResolver.getAttribute('data-incidencia-id'), estado: 'resuelta', resolucion: resolucion
+                }, function (resp) {
+                    if (!resp.success) { incResolver.disabled = false; alert(resp.data.message); return; }
+                    location.reload();
+                });
+                return;
+            }
+
+            var incGuardar = e.target.closest('.crm-panel-inst-incidencia-guardar');
+            if (!incGuardar) {
+                return;
+            }
+            var incWrap = incGuardar.closest('.crm-panel-inst-incidencia-form-wrap');
+            var incTitulo = incWrap.querySelector('.crm-panel-inst-incidencia-titulo').value.trim();
+            var incDescripcion = incWrap.querySelector('.crm-panel-inst-incidencia-descripcion').value.trim();
+            var incFotoInput = incWrap.querySelector('.crm-panel-inst-incidencia-foto');
+            var incMsg = incWrap.querySelector('.crm-panel-inst-incidencia-msg');
+            var incInstalacionId = incGuardar.getAttribute('data-instalacion-id');
+
+            if (!incTitulo) {
+                incMsg.style.color = '#991b1b';
+                incMsg.textContent = 'Escribe un título.';
+                return;
+            }
+
+            incGuardar.disabled = true;
+            incMsg.style.color = '#6b7280';
+            incMsg.textContent = 'Enviando...';
+
+            var incFotoLista = (incFotoInput.files && incFotoInput.files[0])
+                ? (incFotoInput._compressedBlob ? Promise.resolve(incFotoInput._compressedBlob) : comprimirImagen(incFotoInput.files[0]))
+                : Promise.resolve(null);
+
+            incFotoLista.then(function (incFotoBlob) {
+                var body = new FormData();
+                body.append('action', 'crm_inst_declarar_incidencia');
+                body.append('nonce', nonce);
+                body.append('instalacion_id', incInstalacionId);
+                body.append('titulo', incTitulo);
+                body.append('descripcion', incDescripcion);
+                if (incFotoBlob) {
+                    body.append('foto', incFotoBlob, nombreSubida(incFotoInput.files[0], incFotoBlob));
+                }
+                return window.crmOfflineEnviar(Array.from(body.entries()), { tipo: 'incidencia', instalacion_id: incInstalacionId, label: 'Incidencia de la instalación #' + incInstalacionId });
+            })
+                .then(function (resultado) {
+                    if (resultado.offline) {
+                        incMsg.style.color = '#92400e';
+                        incMsg.textContent = 'Sin conexión — guardada, se enviará sola en cuanto vuelva la señal.';
+                        return;
+                    }
+                    if (!resultado.resp.success) {
+                        incGuardar.disabled = false;
+                        incMsg.style.color = '#991b1b';
+                        incMsg.textContent = (resultado.resp.data && resultado.resp.data.message) ? resultado.resp.data.message : 'Error.';
+                        return;
+                    }
+                    location.reload();
+                })
+                .catch(function () {
+                    incGuardar.disabled = false;
+                    incMsg.style.color = '#991b1b';
+                    incMsg.textContent = 'Error inesperado.';
                 });
         });
 

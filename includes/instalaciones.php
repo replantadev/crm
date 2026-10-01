@@ -9,6 +9,7 @@
  *   - {prefix}crm_instalacion_documentos
  *   - {prefix}crm_instalacion_agenda
  *   - {prefix}crm_instalacion_log
+ *   - {prefix}crm_instalacion_incidencias
  *
  * Roles: jefe_instalaciones (acceso completo), instalador (solo lo suyo).
  *
@@ -53,6 +54,11 @@ function crm_inst_table_log() {
 	return $wpdb->prefix . 'crm_instalacion_log';
 }
 
+function crm_inst_table_incidencias() {
+	global $wpdb;
+	return $wpdb->prefix . 'crm_instalacion_incidencias';
+}
+
 /**
  * v1.20.132 — borrado completo de UNA instalación: las 5 tablas hijas
  * (documentos, agenda, trabajos, instaladores, log) más la fila propia. Sin
@@ -88,6 +94,7 @@ function crm_inst_borrar_instalacion_completa( $instalacion_id ) {
 	$wpdb->delete( crm_inst_table_agenda(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
 	$wpdb->delete( crm_inst_table_trabajos(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
 	$wpdb->delete( crm_inst_table_instaladores(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
+	$wpdb->delete( crm_inst_table_incidencias(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
 	$wpdb->delete( crm_inst_table_log(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
 	$wpdb->delete( crm_inst_table_instalaciones(), [ 'id' => $instalacion_id ], [ '%d' ] );
 }
@@ -265,12 +272,38 @@ function crm_instalaciones_install_tables() {
   KEY fecha (fecha)
 ) $charset_collate;";
 
+	// 7. crm_instalacion_incidencias — "incidencias" como concepto propio
+	// (2026-10-01): hasta ahora un problema en una instalación solo se podía
+	// anotar como nota/log genérico, sin ciclo de vida ni aviso dedicado.
+	// Decisión del usuario: abierta → en_curso → resuelta, puramente
+	// informativa (no bloquea el cierre ni cambia el estado de la
+	// instalación — eso se deja para una fase futura si hace falta).
+	$t7   = crm_inst_table_incidencias();
+	$sql7 = "CREATE TABLE $t7 (
+  id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+  instalacion_id BIGINT(20) UNSIGNED NOT NULL,
+  titulo VARCHAR(255) NOT NULL,
+  descripcion TEXT DEFAULT NULL,
+  foto_ruta VARCHAR(500) DEFAULT NULL,
+  estado ENUM('abierta','en_curso','resuelta') NOT NULL DEFAULT 'abierta',
+  declarado_por BIGINT(20) UNSIGNED NOT NULL,
+  declarado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  resuelta_por BIGINT(20) UNSIGNED DEFAULT NULL,
+  resuelta_en DATETIME DEFAULT NULL,
+  resolucion TEXT DEFAULT NULL,
+  PRIMARY KEY  (id),
+  KEY instalacion_id (instalacion_id),
+  KEY estado (estado),
+  KEY declarado_por (declarado_por)
+) $charset_collate;";
+
 	dbDelta( $sql1 );
 	dbDelta( $sql2 );
 	dbDelta( $sql3 );
 	dbDelta( $sql4 );
 	dbDelta( $sql5 );
 	dbDelta( $sql6 );
+	dbDelta( $sql7 );
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1812,6 +1845,24 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 	$cierre_declarado_por_user = $inst['cierre_declarado_por'] ? get_userdata( (int) $inst['cierre_declarado_por'] ) : null;
 	$cierre_validado_por_user  = $inst['cierre_validado_por'] ? get_userdata( (int) $inst['cierre_validado_por'] ) : null;
 
+	// v1.20.184 — "incidencias" como concepto propio. Las resueltas van al
+	// final (ORDER BY estado desc deja 'resuelta' última alfabéticamente...
+	// no, así que se ordena explícito: abiertas/en_curso primero por fecha
+	// descendente, resueltas después).
+	$incidencias = $wpdb->get_results( $wpdb->prepare(
+		"SELECT * FROM " . crm_inst_table_incidencias() . "
+		 WHERE instalacion_id = %d
+		 ORDER BY (estado = 'resuelta') ASC, declarado_en DESC",
+		$instalacion_id
+	), ARRAY_A );
+	foreach ( $incidencias as &$incidencia ) {
+		$u_declara = get_userdata( (int) $incidencia['declarado_por'] );
+		$u_resuelve = $incidencia['resuelta_por'] ? get_userdata( (int) $incidencia['resuelta_por'] ) : null;
+		$incidencia['declarado_por_nombre'] = $u_declara ? $u_declara->display_name : '';
+		$incidencia['resuelta_por_nombre']  = $u_resuelve ? $u_resuelve->display_name : '';
+	}
+	unset( $incidencia );
+
 	$tipos    = crm_instalaciones_tipos();
 	$estados  = crm_instalaciones_estados();
 
@@ -1852,6 +1903,7 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 		'agenda_por_instalador' => $agenda_por_instalador,
 		'log'                 => $log,
 		'notificaciones'      => $notificaciones,
+		'incidencias'         => $incidencias,
 		'cierre'              => [
 			'estado'               => $inst['cierre_estado'],
 			'conformidad'          => $inst['cierre_conformidad'] !== null ? (bool) $inst['cierre_conformidad'] : null,
@@ -4456,6 +4508,9 @@ function crm_inst_ajax_listar_instalaciones() {
 					AND i.estado NOT IN ('finalizada','cancelada')
 					AND EXISTS (SELECT 1 FROM {$tabla_agenda} a3 WHERE a3.instalacion_id = i.id AND i.proveedor_entrega_estimada >= DATE(a3.fecha_cita))";
 				break;
+			case 'incidencias_abiertas':
+				$where[] = "EXISTS (SELECT 1 FROM " . crm_inst_table_incidencias() . " inc WHERE inc.instalacion_id = i.id AND inc.estado IN ('abierta','en_curso'))";
+				break;
 		}
 	} elseif ( $estado !== '' && isset( $estados_labels[ $estado ] ) ) {
 		$where[]  = 'i.estado = %s';
@@ -4557,6 +4612,11 @@ function crm_inst_get_atencion_counts() {
 		   AND i.proveedor_entrega_estimada >= DATE( a.fecha_cita )
 		   AND i.estado NOT IN ( 'finalizada', 'cancelada' )"
 	);
+	// v1.20.184 — incidencias abiertas o en curso (no bloquean nada, pero sí
+	// deben verse igual que el resto de "esto necesita que alguien actúe").
+	$incidencias_abiertas = (int) $wpdb->get_var(
+		"SELECT COUNT(DISTINCT instalacion_id) FROM " . crm_inst_table_incidencias() . " WHERE estado IN ('abierta','en_curso')"
+	);
 
 	return [
 		'materiales_urgentes'      => $materiales_urgentes,
@@ -4564,6 +4624,7 @@ function crm_inst_get_atencion_counts() {
 		'cierres_pendientes'       => $cierres_pendientes,
 		'pedidos_sin_confirmar'    => $pedidos_sin_confirmar,
 		'riesgo_retraso_proveedor' => $riesgo_retraso_proveedor,
+		'incidencias_abiertas'     => $incidencias_abiertas,
 	];
 }
 
@@ -4588,6 +4649,7 @@ function crm_inst_render_atencion_widget() {
 		[ 'label' => 'Cierres pendientes de validar',                     'total' => $c['cierres_pendientes'],  'url' => home_url( '/instalaciones/' ) ],
 		[ 'label' => 'Pedidos a proveedor sin confirmar',                 'total' => $c['pedidos_sin_confirmar'], 'url' => home_url( '/instalaciones/' ) ],
 		[ 'label' => 'Riesgo de retraso del proveedor',                   'total' => $c['riesgo_retraso_proveedor'], 'url' => home_url( '/instalaciones/' ) ],
+		[ 'label' => 'Incidencias abiertas',                              'total' => $c['incidencias_abiertas'], 'url' => home_url( '/instalaciones/' ) ],
 	];
 	if ( function_exists( 'crm_ventas_contar_estancados' ) ) {
 		$items[] = [ 'label' => 'Presupuestos estancados', 'total' => crm_ventas_contar_estancados(), 'url' => home_url( '/ventas-presupuestos/' ) ];
@@ -4784,7 +4846,8 @@ function crm_inst_shortcode_listado() {
 				{ key: 'extras_pendientes', label: 'Con partidas extra sin resolver', value: atencion.extras_pendientes },
 				{ key: 'cierres_pendientes', label: 'Con cierre por aprobar', value: atencion.cierres_pendientes },
 				{ key: 'pedidos_sin_confirmar', label: 'Con pedido a proveedor sin confirmar', value: atencion.pedidos_sin_confirmar },
-				{ key: 'riesgo_retraso_proveedor', label: 'Con riesgo de retraso del proveedor', value: atencion.riesgo_retraso_proveedor }
+				{ key: 'riesgo_retraso_proveedor', label: 'Con riesgo de retraso del proveedor', value: atencion.riesgo_retraso_proveedor },
+				{ key: 'incidencias_abiertas', label: 'Con incidencias abiertas', value: atencion.incidencias_abiertas }
 			];
 			var html = items.map(function (it) {
 				return '<div class="crm-inst-atencion-item' + (it.value > 0 ? ' tiene-avisos' : '') + (activa === it.key ? ' is-active' : '') + '" data-key="' + it.key + '">' + it.value + ' ' + escapeHtml(it.label) + '</div>';
@@ -5870,9 +5933,91 @@ function crm_inst_shortcode_ficha() {
 					<?php endif; ?>
 				</div>
 
-				<div class="crm-inst-ficha-section">
-					<h4>Notificaciones</h4>
-					<p style="color:#6b7280;font-size:13px;">Qué avisos se han enviado de esta instalación (a cliente, instalador, jefes o proveedor) y, cuando aplica, la respuesta — no es el registro completo de actividad (eso está más abajo), solo los eventos que salen del CRM hacia alguien.</p>
+				<div class="crm-inst-ficha-section crm-inst-tabs-wrap">
+					<style>
+						.crm-inst-tabs-nav { display:flex; gap:4px; border-bottom:1px solid #e5e7eb; margin-bottom:16px; }
+						.crm-inst-tabs-nav button { background:none; border:none; border-bottom:2px solid transparent; padding:8px 14px; font-size:13.5px; font-weight:600; color:#6b7280; cursor:pointer; }
+						.crm-inst-tabs-nav button:hover { color:#111827; }
+						.crm-inst-tabs-nav button.is-active { color:#111827; border-bottom-color:#111827; }
+						.crm-inst-tab-panel { display:none; }
+						.crm-inst-tab-panel.is-active { display:block; }
+					</style>
+					<div class="crm-inst-tabs-nav">
+						<button type="button" class="is-active" data-tab="incidencias">Incidencias<?php echo empty( $data['incidencias'] ) ? '' : ' (' . count( $data['incidencias'] ) . ')'; ?></button>
+						<button type="button" data-tab="notificaciones">Notificaciones<?php echo empty( $data['notificaciones'] ) ? '' : ' (' . count( $data['notificaciones'] ) . ')'; ?></button>
+						<button type="button" data-tab="actividad">Actividad<?php echo empty( $data['log'] ) ? '' : ' (' . count( $data['log'] ) . ')'; ?></button>
+					</div>
+
+					<div class="crm-inst-tab-panel is-active" data-tab-panel="incidencias">
+					<p style="color:#6b7280;font-size:13px;">Problemas detectados durante la instalación (material dañado, acceso imposible, lo que sea) — no bloquea nada ni cambia el estado de la instalación, es solo para que no se pierda el seguimiento. Las puede abrir el instalador desde su panel, o tú mismo aquí.</p>
+					<?php if ( empty( $data['incidencias'] ) ) : ?>
+						<p>Sin incidencias registradas.</p>
+					<?php else : ?>
+						<?php $incidencia_estado_labels = [ 'abierta' => 'Abierta', 'en_curso' => 'En curso', 'resuelta' => 'Resuelta' ]; ?>
+						<?php $incidencia_badge_clases  = [ 'abierta' => 'pendiente', 'en_curso' => 'enviado_cliente', 'resuelta' => 'aprobado' ]; ?>
+						<div class="table-responsive-compact">
+							<table class="crm-table-compact">
+								<thead><tr><th>Título</th><th>Foto</th><th>Declarada por</th><th>Estado</th><th></th></tr></thead>
+								<tbody id="crm-inst-incidencias-tbody">
+									<?php foreach ( $data['incidencias'] as $inc ) : ?>
+										<tr data-incidencia-id="<?php echo esc_attr( $inc['id'] ); ?>">
+											<td>
+												<?php echo esc_html( $inc['titulo'] ); ?>
+												<?php if ( ! empty( $inc['descripcion'] ) ) : ?>
+													<br><small class="crm-inst-field-info"><?php echo esc_html( $inc['descripcion'] ); ?></small>
+												<?php endif; ?>
+												<?php if ( $inc['estado'] === 'resuelta' && ! empty( $inc['resolucion'] ) ) : ?>
+													<br><small class="crm-inst-field-info">Resolución: <?php echo esc_html( $inc['resolucion'] ); ?></small>
+												<?php endif; ?>
+											</td>
+											<td>
+												<?php if ( ! empty( $inc['foto_ruta'] ) ) : ?>
+													<a href="<?php echo esc_url( $inc['foto_ruta'] ); ?>" target="_blank" rel="noopener noreferrer"><img src="<?php echo esc_url( $inc['foto_ruta'] ); ?>" alt="Foto de la incidencia" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;"></a>
+												<?php else : ?>
+													—
+												<?php endif; ?>
+											</td>
+											<td><?php echo esc_html( $inc['declarado_por_nombre'] ?: '—' ); ?><br><small class="crm-inst-field-info"><?php echo esc_html( date_i18n( 'd/m/Y H:i', strtotime( $inc['declarado_en'] ) ) ); ?></small></td>
+											<td>
+												<span class="crm-inst-extra-badge crm-inst-extra-badge-<?php echo esc_attr( $incidencia_badge_clases[ $inc['estado'] ] ?? 'neutro' ); ?>"><?php echo esc_html( $incidencia_estado_labels[ $inc['estado'] ] ?? ucfirst( $inc['estado'] ) ); ?></span>
+												<?php if ( $inc['estado'] === 'resuelta' && $inc['resuelta_por_nombre'] ) : ?>
+													<span class="crm-inst-field-info" style="display:block;">por <?php echo esc_html( $inc['resuelta_por_nombre'] ); ?><?php echo $inc['resuelta_en'] ? ' · ' . esc_html( date_i18n( 'd/m/Y', strtotime( $inc['resuelta_en'] ) ) ) : ''; ?></span>
+												<?php endif; ?>
+											</td>
+											<td>
+												<?php if ( current_user_can( 'crm_inst_manage' ) && $inc['estado'] !== 'resuelta' ) : ?>
+													<?php if ( $inc['estado'] === 'abierta' ) : ?>
+														<button type="button" class="crm-btn crm-inst-incidencia-en-curso-btn" data-incidencia-id="<?php echo esc_attr( $inc['id'] ); ?>">Marcar en curso</button>
+													<?php endif; ?>
+													<button type="button" class="crm-btn crm-inst-incidencia-resolver-btn" data-incidencia-id="<?php echo esc_attr( $inc['id'] ); ?>">Resolver</button>
+												<?php elseif ( current_user_can( 'crm_inst_manage' ) && $inc['estado'] === 'resuelta' ) : ?>
+													<button type="button" class="crm-btn crm-inst-incidencia-reabrir-btn" data-incidencia-id="<?php echo esc_attr( $inc['id'] ); ?>">Reabrir</button>
+												<?php endif; ?>
+											</td>
+										</tr>
+									<?php endforeach; ?>
+								</tbody>
+							</table>
+						</div>
+					<?php endif; ?>
+					<?php if ( current_user_can( 'crm_inst_manage' ) ) : ?>
+						<p>
+							<button type="button" class="crm-btn" id="crm-inst-incidencia-nueva-btn">Reportar incidencia</button>
+						</p>
+						<div id="crm-inst-incidencia-form-wrap" style="display:none;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-top:8px;">
+							<p><input type="text" id="crm-inst-incidencia-titulo" placeholder="Título breve" style="width:100%;max-width:400px;"></p>
+							<p><textarea id="crm-inst-incidencia-descripcion" placeholder="Descripción (opcional)" rows="2" style="width:100%;max-width:500px;"></textarea></p>
+							<p><input type="file" id="crm-inst-incidencia-foto" accept="image/*"></p>
+							<p>
+								<button type="button" class="crm-btn" id="crm-inst-incidencia-guardar-btn">Guardar incidencia</button>
+								<span id="crm-inst-incidencia-msg"></span>
+							</p>
+						</div>
+					<?php endif; ?>
+					</div>
+
+					<div class="crm-inst-tab-panel" data-tab-panel="notificaciones">
+					<p style="color:#6b7280;font-size:13px;">Qué avisos se han enviado de esta instalación (a cliente, instalador, jefes o proveedor) y, cuando aplica, la respuesta — no es el registro completo de actividad (en la pestaña de al lado), solo los eventos que salen del CRM hacia alguien.</p>
 					<?php
 					$notif_etiquetas = [];
 					foreach ( crm_inst_notificacion_tipos() as $t ) {
@@ -5894,10 +6039,9 @@ function crm_inst_shortcode_ficha() {
 							</div>
 						<?php endforeach; ?>
 					<?php endif; ?>
-				</div>
+					</div>
 
-				<div class="crm-inst-ficha-section">
-					<h4>Actividad</h4>
+					<div class="crm-inst-tab-panel" data-tab-panel="actividad">
 					<?php if ( empty( $data['log'] ) ) : ?>
 						<p>Sin actividad registrada todavía.</p>
 					<?php else : ?>
@@ -5909,6 +6053,7 @@ function crm_inst_shortcode_ficha() {
 							</div>
 						<?php endforeach; ?>
 					<?php endif; ?>
+					</div>
 				</div>
 
 			</div>
@@ -5929,6 +6074,16 @@ function crm_inst_shortcode_ficha() {
 		var estadoActual   = <?php echo wp_json_encode( $data['estado'] ); ?>;
 
 		<?php echo crm_inst_js_escape_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+
+		// v1.20.185 — pestañas para Incidencias/Notificaciones/Actividad, a
+		// petición del usuario ("mucho scroll" con las 3 secciones seguidas).
+		$('.crm-inst-tabs-nav button').on('click', function () {
+			var tab = $(this).data('tab');
+			$('.crm-inst-tabs-nav button').removeClass('is-active');
+			$(this).addClass('is-active');
+			$('.crm-inst-tab-panel').removeClass('is-active');
+			$('.crm-inst-tab-panel[data-tab-panel="' + tab + '"]').addClass('is-active');
+		});
 
 		// v1.20.84: los botones de esta ficha usan $.post(url, datos, callback)
 		// — esa forma corta SOLO llama al callback cuando la petición responde
@@ -6395,6 +6550,78 @@ function crm_inst_shortcode_ficha() {
 			}).fail(function () {
 				btn.prop('disabled', false);
 				msg.css('color', '#991b1b').text('Error de conexión.');
+			});
+		});
+
+		// v1.20.184 — "Incidencias" como concepto propio.
+		$('#crm-inst-incidencia-nueva-btn').on('click', function () {
+			$('#crm-inst-incidencia-form-wrap').toggle();
+		});
+		$('#crm-inst-incidencia-guardar-btn').on('click', function () {
+			var btn = $(this).prop('disabled', true);
+			var msg = $('#crm-inst-incidencia-msg').css('color', '#6b7280').text('Guardando…');
+			var titulo = $('#crm-inst-incidencia-titulo').val().trim();
+			if (!titulo) {
+				btn.prop('disabled', false);
+				msg.css('color', '#991b1b').text('Escribe un título.');
+				return;
+			}
+			var fd = new FormData();
+			fd.append('action', 'crm_inst_declarar_incidencia');
+			fd.append('nonce', nonce);
+			fd.append('instalacion_id', instalacionId);
+			fd.append('titulo', titulo);
+			fd.append('descripcion', $('#crm-inst-incidencia-descripcion').val());
+			var fotoInput = document.getElementById('crm-inst-incidencia-foto');
+			if (fotoInput.files && fotoInput.files[0]) {
+				fd.append('foto', fotoInput.files[0]);
+			}
+			$.ajax({ url: ajaxurl, method: 'POST', data: fd, processData: false, contentType: false })
+				.done(function (resp) {
+					if (!resp.success) {
+						btn.prop('disabled', false);
+						msg.css('color', '#991b1b').text((resp.data && resp.data.message) ? resp.data.message : 'Error.');
+						return;
+					}
+					location.reload();
+				})
+				.fail(function () {
+					btn.prop('disabled', false);
+					msg.css('color', '#991b1b').text('Error de conexión.');
+				});
+		});
+		$('.crm-inst-incidencia-en-curso-btn').on('click', function () {
+			var btn = $(this).prop('disabled', true);
+			$.post(ajaxurl, {
+				action: 'crm_inst_actualizar_incidencia', nonce: nonce,
+				incidencia_id: btn.data('incidencia-id'), estado: 'en_curso'
+			}, function (resp) {
+				if (!resp.success) { btn.prop('disabled', false); alert(resp.data.message); return; }
+				location.reload();
+			});
+		});
+		$('.crm-inst-incidencia-reabrir-btn').on('click', function () {
+			var btn = $(this).prop('disabled', true);
+			$.post(ajaxurl, {
+				action: 'crm_inst_actualizar_incidencia', nonce: nonce,
+				incidencia_id: btn.data('incidencia-id'), estado: 'abierta'
+			}, function (resp) {
+				if (!resp.success) { btn.prop('disabled', false); alert(resp.data.message); return; }
+				location.reload();
+			});
+		});
+		$('.crm-inst-incidencia-resolver-btn').on('click', function () {
+			var resolucion = prompt('¿Qué se hizo para resolverla?');
+			if (resolucion === null) { return; }
+			resolucion = resolucion.trim();
+			if (!resolucion) { alert('Escribe qué se hizo para resolverla.'); return; }
+			var btn = $(this).prop('disabled', true);
+			$.post(ajaxurl, {
+				action: 'crm_inst_actualizar_incidencia', nonce: nonce,
+				incidencia_id: btn.data('incidencia-id'), estado: 'resuelta', resolucion: resolucion
+			}, function (resp) {
+				if (!resp.success) { btn.prop('disabled', false); alert(resp.data.message); return; }
+				location.reload();
 			});
 		});
 

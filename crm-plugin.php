@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.183
+Version: 1.20.185
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.183');
+define('CRM_PLUGIN_VERSION', '1.20.185');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -87,6 +87,9 @@ require_once CRM_PLUGIN_PATH . 'includes/page-bootstrap.php';
 require_once CRM_PLUGIN_PATH . 'includes/visitas.php';
 // v1.21.0 — Módulo de control de instalaciones
 require_once CRM_PLUGIN_PATH . 'includes/instalaciones.php';
+// v1.20.184 — "Incidencias" como concepto propio en una instalación (hueco
+// real del presupuesto original del módulo, ver includes/incidencias.php).
+require_once CRM_PLUGIN_PATH . 'includes/incidencias.php';
 // v1.20.167 — acta de entrega en PDF al finalizar una instalación (hueco real
 // del presupuesto original del módulo, ver includes/acta-entrega.php).
 require_once CRM_PLUGIN_PATH . 'includes/acta-entrega.php';

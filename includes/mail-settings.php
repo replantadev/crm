@@ -75,6 +75,8 @@ function crm_mail_eventos_por_canal() {
             // recordatorio de visita al CLIENTE (decisión explícita: no crear
             // un canal "cliente" aparte todavía).
             'Recordatorio de visita al día siguiente (al CLIENTE, no al instalador)',
+            // v1.20.184 — "incidencias" como concepto propio.
+            'Incidencia resuelta (al instalador que la declaró)',
         ],
         'comercial'  => [
             'Alta de cuenta nueva (email para establecer contraseña) — página "Equipo"',

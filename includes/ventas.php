@@ -308,15 +308,18 @@ function crm_ventas_presupuestos_widget() {
  * aprobado por mes, últimos 6 meses (a partir de los mismos presupuestos de
  * Holded que la vista anterior, sin ninguna llamada adicional).
  */
-add_shortcode('crm_ventas_resumen', 'crm_ventas_resumen_widget');
-function crm_ventas_resumen_widget() {
-    if (!current_user_can('crm_admin')) {
-        return '<p>No tienes permiso para ver esta sección.</p>';
-    }
-
+/**
+ * Presupuestos generados/aprobados e importe aprobado por mes, últimos 6
+ * meses — extraído de crm_ventas_resumen_widget() (v1.20.180) para que el
+ * gráfico nuevo del dashboard (includes/dashboard-charts.php) reutilice
+ * exactamente el mismo cálculo en vez de repetir el bucle sobre Holded.
+ *
+ * @return array<string,array{label:string,generados:int,aprobados:int,importe_aprobado:float}>|WP_Error
+ */
+function crm_ventas_resumen_mensual_datos() {
     $estimates = crm_holded_get_estimates_cached();
     if (is_wp_error($estimates)) {
-        return '<p style="color:#991b1b;">No se pudo consultar Holded: ' . esc_html($estimates->get_error_message()) . '</p>';
+        return $estimates;
     }
 
     $meses = [];
@@ -344,6 +347,20 @@ function crm_ventas_resumen_widget() {
             $meses[$clave]['aprobados']++;
             $meses[$clave]['importe_aprobado'] += (float) str_replace(',', '.', (string) ($e['total'] ?? 0));
         }
+    }
+
+    return $meses;
+}
+
+add_shortcode('crm_ventas_resumen', 'crm_ventas_resumen_widget');
+function crm_ventas_resumen_widget() {
+    if (!current_user_can('crm_admin')) {
+        return '<p>No tienes permiso para ver esta sección.</p>';
+    }
+
+    $meses = crm_ventas_resumen_mensual_datos();
+    if (is_wp_error($meses)) {
+        return '<p style="color:#991b1b;">No se pudo consultar Holded: ' . esc_html($meses->get_error_message()) . '</p>';
     }
 
     ob_start();

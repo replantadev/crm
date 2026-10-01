@@ -494,8 +494,10 @@ function crm_admin_panel_widget() {
                     <p>Comerciales Activos</p>
                 </div>
             </div>
+
+            <?php if (function_exists('crm_dashboard_graficos_render')) { crm_dashboard_graficos_render(); } ?>
         </div>
-        
+
         <!-- Configuración de Emails -->
         <div class="crm-panel-section">
             <h3>Configuración de Notificaciones</h3>
@@ -516,7 +518,7 @@ function crm_admin_panel_widget() {
                     </label>
                     <label>
                         <span>Retención de logs (días):</span>
-                        <input type="number" name="log_retention_days" value="<?php echo $settings['log_retention_days']; ?>" min="1" max="365" style="width: 80px; padding: 5px;">
+                        <input type="number" name="log_retention_days" value="<?php echo (int) ($settings['log_retention_days'] ?? 30); ?>" min="1" max="365" style="width: 80px; padding: 5px;">
                     </label>
                 </div>
                 <p style="margin-top: 20px;">

@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.179
+Version: 1.20.180
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.179');
+define('CRM_PLUGIN_VERSION', '1.20.180');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -125,6 +125,9 @@ require_once CRM_PLUGIN_PATH . 'includes/gcal-sync.php';
 // Incluir archivos del plugin
 require_once CRM_PLUGIN_PATH . 'acceso.php';
 require_once CRM_PLUGIN_PATH . 'shortcodes.php';
+// v1.20.180 — Gráficos de verdad (Chart.js) en /panel-de-control/, en vez de
+// solo tarjetas de números — ver includes/dashboard-charts.php.
+require_once CRM_PLUGIN_PATH . 'includes/dashboard-charts.php';
 // v1.20.38 — Página "Flujos": diagramas mermaid de cómo funciona el CRM,
 // registrados por cada módulo junto a su propio código. v1.20.106: se movió
 // de dentro de `if (is_admin())` a aquí — desde v1.20.100 este archivo
@@ -221,11 +224,17 @@ function crm_enqueue_scripts()
 add_action('wp_enqueue_scripts', 'crm_enqueue_chartjs');
 function crm_enqueue_chartjs()
 {
-    // Verificar si se está cargando una página con shortcodes que usan Chart.js
+    // Verificar si se está cargando una página con shortcodes que usan Chart.js.
+    // v1.20.180: el `||` sin paréntesis hacía que el segundo has_shortcode()
+    // se evaluase SIEMPRE (incluso con $post sin ser un WP_Post), y además
+    // se añade crm_admin_panel (gráficos nuevos del dashboard).
     global $post;
     if (
-        is_a($post, 'WP_Post') && has_shortcode($post->post_content, 'crm_clientes_por_interes') ||
-        has_shortcode($post->post_content, 'crm_clientes_por_estado')
+        is_a($post, 'WP_Post') && (
+            has_shortcode($post->post_content, 'crm_clientes_por_interes') ||
+            has_shortcode($post->post_content, 'crm_clientes_por_estado') ||
+            has_shortcode($post->post_content, 'crm_admin_panel')
+        )
     ) {
 
         // Registrar y encolar Chart.js

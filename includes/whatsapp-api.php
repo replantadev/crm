@@ -488,8 +488,12 @@ function crm_whatsapp_webhook_procesar_mensaje($mensaje) {
 
     $confirma = strpos($accion, 'confirm') !== false;
     $cambio   = strpos($accion, 'cambi') !== false;
+    // v1.20.179: acepta "opcion1"/"opcion_1"/"opción 1" — el botón se creó en
+    // Meta Business Manager como texto plano "opcion1" (sin tilde), pero si
+    // algún día se edita a "Opción 1" (más legible de cara al cliente) para
+    // que no deje de funcionar sin tocar código.
     $opcion_elegida = 0;
-    if (preg_match('/opcion[_\s]?(\d+)/', $accion, $m)) {
+    if (preg_match('/opci[oó]n[_\s]?(\d+)/u', $accion, $m)) {
         $opcion_elegida = (int) $m[1];
     }
     if (!$confirma && !$cambio && $opcion_elegida <= 0) {

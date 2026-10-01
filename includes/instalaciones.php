@@ -5844,7 +5844,11 @@ function crm_inst_shortcode_ficha() {
 									<span id="crm-inst-generar-acta-msg"></span>
 								<?php endif; ?>
 							</p>
-							<?php if ( ! empty( $data['cierre']['fotos'] ) || ! empty( $data['cierre']['acta_pdf_url'] ) ) :
+							<?php
+								// v1.20.175: el ZIP siempre lleva al menos la memoria en
+								// texto (datos de cliente/instalación/cierre), así que ya
+								// no hace falta que haya fotos o acta para que merezca la
+								// pena mostrar el botón.
 								$zip_url = add_query_arg( [
 									'action'         => 'crm_inst_descargar_zip',
 									'instalacion_id' => $data['id'],
@@ -5854,7 +5858,6 @@ function crm_inst_shortcode_ficha() {
 								<p>
 									<a href="<?php echo esc_url( $zip_url ); ?>" class="crm-btn" style="background:#374151;">Descargar toda la documentación (ZIP)</a>
 								</p>
-							<?php endif; ?>
 						<?php endif; ?>
 					<?php endif; ?>
 				</div>

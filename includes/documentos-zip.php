@@ -21,9 +21,75 @@ if (!defined('ABSPATH')) {
 }
 
 /**
+ * Memoria en texto plano de la instalación (datos de cliente, instalación,
+ * instaladores, materiales/trabajos entregados y cierre) — pedida por el
+ * usuario 2026-10-01: el ZIP solo bajaba fotos/acta, sin ningún resumen de
+ * los datos en sí. Reutiliza crm_inst_get_instalacion_data() como única
+ * fuente de datos (mismo criterio que el acta de entrega en PDF) y el mismo
+ * filtro de "materiales realmente entregados" que usa esa acta.
+ *
+ * @param array $data Lo que devuelve crm_inst_get_instalacion_data().
+ * @return string
+ */
+function crm_inst_zip_memoria_texto(array $data) {
+    $lineas = [];
+    $lineas[] = 'MEMORIA DE INSTALACIÓN #' . $data['id_visible'];
+    $lineas[] = 'Generado: ' . date_i18n('d/m/Y H:i');
+    $lineas[] = '';
+    $lineas[] = '== CLIENTE ==';
+    $lineas[] = 'Nombre: ' . $data['cliente_nombre'];
+    $lineas[] = 'Teléfono: ' . ($data['telefono'] ?: '—');
+    $lineas[] = 'Email: ' . ($data['email_cliente'] ?: '—');
+    $lineas[] = 'Dirección de instalación: ' . ($data['direccion_instalacion'] ?: '—');
+    $lineas[] = '';
+    $lineas[] = '== INSTALACIÓN ==';
+    $lineas[] = 'Tipo: ' . $data['tipo_instalacion_label'] . ' (' . $data['subtipo_instalacion_label'] . ')';
+    $lineas[] = 'Estado: ' . $data['estado_label'];
+    $lineas[] = 'Fecha de alta: ' . ($data['fecha_creacion'] ? date_i18n('d/m/Y H:i', strtotime($data['fecha_creacion'])) : '—');
+    $lineas[] = 'Duración estimada: ' . $data['duracion_dias'] . ' día(s)';
+    $lineas[] = '';
+    $lineas[] = '== INSTALADOR(ES) ==';
+    if (empty($data['instaladores'])) {
+        $lineas[] = 'Sin instalador asignado.';
+    } else {
+        foreach ($data['instaladores'] as $inst) {
+            $lineas[] = '- ' . $inst['display_name'] . ' (' . $inst['rol_en_proyecto'] . ')'
+                . (!empty($inst['horas_declaradas']) ? ' — ' . $inst['horas_declaradas'] . ' h declaradas' : '');
+        }
+    }
+    $lineas[] = '';
+    $lineas[] = '== MATERIALES / TRABAJOS ENTREGADOS ==';
+    $materiales_entregados = array_filter($data['materiales'], function ($m) {
+        return $m['origen'] === 'extra' ? $m['estado'] === 'aprobado' : !empty($m['montado_en']);
+    });
+    if (empty($materiales_entregados)) {
+        $lineas[] = 'Sin materiales/trabajos registrados como entregados.';
+    } else {
+        foreach ($materiales_entregados as $m) {
+            $lineas[] = sprintf('- %s (%s x %s€ = %s€)', $m['descripcion'], $m['unidades'], number_format($m['precio_unitario'], 2, ',', '.'), number_format($m['importe'], 2, ',', '.'));
+        }
+    }
+    $lineas[] = '';
+    $lineas[] = '== CIERRE ==';
+    $lineas[] = 'Estado: ' . ($data['cierre']['estado'] ?: 'sin cerrar');
+    if ($data['cierre']['estado'] !== '') {
+        $lineas[] = 'Conformidad del cliente: ' . ($data['cierre']['conformidad'] ? 'Sí' : 'No');
+        $lineas[] = 'Observaciones: ' . ($data['cierre']['observaciones'] ?: '—');
+        if ($data['cierre']['declarado_por_nombre']) {
+            $lineas[] = 'Declarado por: ' . $data['cierre']['declarado_por_nombre'] . ($data['cierre']['declarado_en'] ? ' el ' . date_i18n('d/m/Y H:i', strtotime($data['cierre']['declarado_en'])) : '');
+        }
+        if ($data['cierre']['validado_por_nombre']) {
+            $lineas[] = 'Validado por: ' . $data['cierre']['validado_por_nombre'] . ($data['cierre']['validado_en'] ? ' el ' . date_i18n('d/m/Y H:i', strtotime($data['cierre']['validado_en'])) : '');
+        }
+    }
+
+    return implode("\n", $lineas) . "\n";
+}
+
+/**
  * Construye el ZIP en un archivo temporal y devuelve su ruta local, o
- * WP_Error si no hay nada que empaquetar o falla algo. Separada de la parte
- * HTTP (cabeceras/exit) para poder probarla de forma aislada.
+ * WP_Error si falla algo. Separada de la parte HTTP (cabeceras/exit) para
+ * poder probarla de forma aislada.
  *
  * @param int $instalacion_id
  * @return string|WP_Error Ruta local del .zip temporal.
@@ -31,6 +97,11 @@ if (!defined('ABSPATH')) {
 function crm_inst_construir_zip_documentos($instalacion_id) {
     if (!class_exists('ZipArchive')) {
         return new WP_Error('sin_zip', 'Esta instalación de WordPress no tiene soporte de ZIP (extensión PHP "zip"). Contacta con tu proveedor de hosting.');
+    }
+
+    $data = crm_inst_get_instalacion_data($instalacion_id);
+    if (is_wp_error($data)) {
+        return $data;
     }
 
     global $wpdb;
@@ -51,15 +122,13 @@ function crm_inst_construir_zip_documentos($instalacion_id) {
         }
     }
 
-    if (empty($archivos)) {
-        return new WP_Error('sin_documentos', 'Esta instalación todavía no tiene documentos descargables.');
-    }
-
     $tmp_zip = wp_tempnam('crm-inst-doc-' . $instalacion_id);
     $zip = new ZipArchive();
     if ($zip->open($tmp_zip, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
         return new WP_Error('zip_fallo', 'No se pudo generar el ZIP.');
     }
+
+    $zip->addFromString('memoria-instalacion.txt', crm_inst_zip_memoria_texto($data));
 
     $nombres_usados = [];
     foreach ($archivos as $archivo) {

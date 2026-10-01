@@ -74,6 +74,11 @@ function crm_icon_path($name) {
             // básicas, para no depender de encontrar el path exacto sin acceso
             // a la librería original.
             'diagram'      => '<circle cx="60" cy="60" r="28" fill="none" stroke="currentColor" stroke-width="14"/><circle cx="196" cy="60" r="28" fill="none" stroke="currentColor" stroke-width="14"/><circle cx="128" cy="196" r="28" fill="none" stroke="currentColor" stroke-width="14"/><line x1="88" y1="60" x2="168" y2="60" stroke="currentColor" stroke-width="14"/><line x1="72" y1="84" x2="112" y2="172" stroke="currentColor" stroke-width="14"/><line x1="184" y1="84" x2="144" y2="172" stroke="currentColor" stroke-width="14"/>',
+            // v1.20.187 — "A frío" en la cola de leads MK. No es un path de
+            // Phosphor: un asterisco de 3 líneas con puntas redondeadas
+            // (mismo criterio que 'diagram' arriba) para no depender de
+            // acceso a la librería original.
+            'snowflake'    => '<line x1="128" y1="30" x2="128" y2="226" stroke="currentColor" stroke-width="16" stroke-linecap="round"/><line x1="30" y1="79" x2="226" y2="177" stroke="currentColor" stroke-width="16" stroke-linecap="round"/><line x1="30" y1="177" x2="226" y2="79" stroke="currentColor" stroke-width="16" stroke-linecap="round"/>',
         ];
     }
     return $paths[$name] ?? '';

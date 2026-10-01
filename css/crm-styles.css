@@ -4637,23 +4637,59 @@ button.aceptar-presupuesto{background:#25C685;color:#fff;font-size:12px;margin:4
     font-size: 12px;
     font-weight: 600;
 }
-.crm-leads-mk-sync,
-.crm-leads-mk-assign,
-.crm-leads-mk-cold,
-.crm-leads-mk-delete {
+.crm-leads-mk-sync {
     border: 0;
     cursor: pointer;
     padding: 6px 10px;
     border-radius: 4px;
     font-size: 12px;
     color: #fff;
+    background: #2563eb;
 }
-.crm-leads-mk-sync   { background: #2563eb; }
-.crm-leads-mk-assign { background: #16a34a; }
-.crm-leads-mk-cold   { background: #6b7280; }
-.crm-leads-mk-delete { background: #dc2626; }
-.crm-leads-mk-sync:disabled,
-.crm-leads-mk-assign:disabled { opacity: 0.6; cursor: wait; }
+.crm-leads-mk-sync:disabled { opacity: 0.6; cursor: wait; }
+
+/* v1.20.187 — fila de acciones de la cola de leads MK (Asignar/Auto-asignar/
+   A frío/Eliminar): antes 4 botones de texto sólido apretados en una celda,
+   con clases "sm"/"ghost" que no tenían ningún CSS detrás. Chips compactos,
+   coherentes con los tokens de crm-design-v2.css. */
+.crm-leads-mk-actions-cell {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+.crm-leads-mk-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid var(--crm-n-200, #e4e4e7);
+    background: var(--crm-n-0, #fff);
+    color: var(--crm-n-700, #3f3f46);
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.crm-leads-mk-action:hover { background: var(--crm-n-50, #fafafa); border-color: var(--crm-n-300, #d4d4d8); }
+.crm-leads-mk-action:active { transform: translateY(1px); }
+.crm-leads-mk-action:disabled { opacity: .55; cursor: wait; transform: none; }
+.crm-leads-mk-action--primary {
+    border-color: var(--crm-acc-200, #bfdbfe);
+    background: var(--crm-acc-50, #eff6ff);
+    color: var(--crm-acc-700, #1d4ed8);
+}
+.crm-leads-mk-action--primary:hover { background: var(--crm-acc-100, #dbeafe); border-color: var(--crm-acc-500, #3b82f6); }
+.crm-leads-mk-action--danger {
+    border-color: #fecaca;
+    background: var(--crm-dan-50, #fef2f2);
+    color: var(--crm-dan-700, #b91c1c);
+}
+.crm-leads-mk-action--danger:hover { background: #fee2e2; border-color: #fca5a5; }
 
 .crm-leads-mk-filters {
     display: flex;

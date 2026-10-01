@@ -59,7 +59,8 @@
         const sector = $('#crm-leads-mk-sector').val();
         if (!userId) { showToast('Selecciona un comercial', 'warning'); return; }
 
-        const $btn = $(this).prop('disabled', true).text('Asignando…');
+        const $btn = $(this).prop('disabled', true);
+        $btn.find('.crm-leads-mk-action-label').text('Asignando…');
         ajax('crm_lead_assign', { lead_id: leadId, user_id: userId, sector: sector })
             .done(function (resp) {
                 if (resp && resp.success) {
@@ -80,15 +81,15 @@
                         $delegateCell.html('<a class="crm-link" href="' + href + '">' + delegado + '</a>');
                     }
                     applyFilters();
-                    $btn.prop('disabled', false).text('Asignar');
+                    $btn.prop('disabled', false).find('.crm-leads-mk-action-label').text('Asignar');
                 } else {
                     showToast((resp && resp.data && resp.data.message) || 'Error', 'error');
-                    $btn.prop('disabled', false).text('Asignar');
+                    $btn.prop('disabled', false).find('.crm-leads-mk-action-label').text('Asignar');
                 }
             })
             .fail(function (xhr) {
                 showToast('Error AJAX: ' + (xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message || xhr.statusText), 'error');
-                $btn.prop('disabled', false).text('Asignar');
+                $btn.prop('disabled', false).find('.crm-leads-mk-action-label').text('Asignar');
             });
     });
 
@@ -99,7 +100,8 @@
         const leadId = $row.data('id');
         const sector = $('#crm-leads-mk-sector').val();
 
-        const $btn = $(this).prop('disabled', true).text('Asignando…');
+        const $btn = $(this).prop('disabled', true);
+        $btn.find('.crm-leads-mk-action-label').text('Asignando…');
         ajax('crm_lead_auto_assign', { lead_id: leadId, sector: sector })
             .done(function (resp) {
                 if (resp && resp.success) {
@@ -129,7 +131,7 @@
                 showToast('Error AJAX: ' + (xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message || xhr.statusText), 'error');
             })
             .always(function () {
-                $btn.prop('disabled', false).text('Auto-asignar');
+                $btn.prop('disabled', false).find('.crm-leads-mk-action-label').text('Auto-asignar');
             });
     });
 

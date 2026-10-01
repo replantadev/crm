@@ -306,10 +306,10 @@ function crm_render_asignacion_leads_mk() {
                                 </select>
                             </td>
                             <td class="crm-leads-mk-actions-cell">
-                                <button type="button" class="crm-btn crm-btn-sm crm-leads-mk-assign">Asignar</button>
-                                <button type="button" class="crm-btn crm-btn-sm crm-btn-ghost crm-leads-mk-auto-assign" title="Asigna al comercial activo con menos cartera ahora mismo">Auto-asignar</button>
-                                <button type="button" class="crm-btn crm-btn-sm crm-btn-ghost crm-leads-mk-cold">A frío</button>
-                                <button type="button" class="crm-btn crm-btn-sm crm-btn-danger crm-leads-mk-delete">Eliminar</button>
+                                <button type="button" class="crm-leads-mk-action crm-leads-mk-action--primary crm-leads-mk-assign"><?php echo crm_icon('check-circle', 14); ?><span class="crm-leads-mk-action-label">Asignar</span></button>
+                                <button type="button" class="crm-leads-mk-action crm-leads-mk-auto-assign" title="Asigna al comercial activo con menos cartera ahora mismo"><?php echo crm_icon('target', 14); ?><span class="crm-leads-mk-action-label">Auto-asignar</span></button>
+                                <button type="button" class="crm-leads-mk-action crm-leads-mk-cold"><?php echo crm_icon('snowflake', 14); ?><span class="crm-leads-mk-action-label">A frío</span></button>
+                                <button type="button" class="crm-leads-mk-action crm-leads-mk-action--danger crm-leads-mk-delete"><?php echo crm_icon('trash', 14); ?><span class="crm-leads-mk-action-label">Eliminar</span></button>
                             </td>
                         </tr>
                     <?php endforeach; endif; ?>

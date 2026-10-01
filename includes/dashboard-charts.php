@@ -231,7 +231,7 @@ function crm_dashboard_graficos_render() {
     <div class="crm-dash-charts-grid">
 
         <div class="crm-dash-chart-card">
-            <h4>Clientes por estado del pipeline</h4>
+            <h4>Clientes por estado del flujo</h4>
             <p class="crm-dash-chart-sub">De "sin enviar" a "contratos firmados" — <?php echo (int) array_sum(array_column($estado, 'value')); ?> clientes en total.</p>
             <div class="crm-dash-chart-canvas-wrap"><canvas id="crm-dash-chart-estado"></canvas></div>
         </div>

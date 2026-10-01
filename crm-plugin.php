@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.180
+Version: 1.20.181
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.180');
+define('CRM_PLUGIN_VERSION', '1.20.181');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -233,6 +233,7 @@ function crm_enqueue_chartjs()
         is_a($post, 'WP_Post') && (
             has_shortcode($post->post_content, 'crm_clientes_por_interes') ||
             has_shortcode($post->post_content, 'crm_clientes_por_estado') ||
+            has_shortcode($post->post_content, 'crm_rendimiento_comercial') ||
             has_shortcode($post->post_content, 'crm_admin_panel')
         )
     ) {

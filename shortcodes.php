@@ -49,13 +49,33 @@ function crm_widget_select_clientes_field($field) {
     return [];
 }
 
+/**
+ * Colores validados (`node validate_palette.js`, ver includes/dashboard-charts.php
+ * para el detalle) para los widgets de Chart.js del Escritorio general —
+ * v1.20.181. Los de crm_get_colores_sectores()/crm_get_estados_sector()
+ * (crm-plugin.php) NO se tocan aquí a propósito: fallan la validación
+ * (contraste + separación para daltonismo) pero también los usa un email de
+ * notificación (crm-plugin.php ~4095) y un <select>, y cambiarlos ahí no es
+ * el alcance de "arreglar los gráficos" — este mapa es solo para pintar.
+ */
+function crm_dashboard_paleta_sectores_validada() {
+    return [
+        'energia'            => '#2a78d6',
+        'alarmas'            => '#eb6834',
+        'telecomunicaciones' => '#1baf7a',
+        'seguros'            => '#eda100',
+        'renovables'         => '#e87ba4',
+    ];
+}
+
 add_shortcode('crm_clientes_por_interes', 'crm_clientes_por_interes_widget');
 function crm_clientes_por_interes_widget() {
     if (!is_user_logged_in()) {
         return "<p>Debes iniciar sesión para ver este widget.</p>";
     }
 
-    $sectores = array_keys(crm_get_colores_sectores());
+    $colores = crm_dashboard_paleta_sectores_validada();
+    $sectores = array_keys($colores);
     $counts = array_fill_keys($sectores, 0);
 
     // v1.20.3: filtrar por rol — admin todos, comercial sus clientes,
@@ -72,7 +92,7 @@ function crm_clientes_por_interes_widget() {
 
     $labels = array_map('ucfirst', $sectores);
     $data = array_values($counts);
-    $colors = array_values(crm_get_colores_sectores());
+    $colors = array_values($colores);
 
     ob_start();
     ?>
@@ -102,21 +122,33 @@ function crm_clientes_por_interes_widget() {
     document.addEventListener("DOMContentLoaded", function() {
       const ctx = document.getElementById('chart-clientes-interes').getContext('2d');
       new Chart(ctx, {
-        type: 'doughnut',
+        // v1.20.181: era un doughnut de 5 porciones — un donut obliga a
+        // distinguir TODOS los pares de color a la vez, y 5 categorías no
+        // pasan esa validación con ninguna paleta razonable (confirmado con
+        // el validador: solo los 3 primeros slots de la paleta categórica
+        // pasan "todos los pares"). Una barra horizontal con etiqueta propia
+        // solo necesita colores adyacentes distinguibles, que sí pasa.
+        type: 'bar',
         data: {
           labels: <?php echo json_encode($labels); ?>,
           datasets: [{
             data: <?php echo json_encode($data); ?>,
             backgroundColor: <?php echo json_encode($colors); ?>,
-            borderWidth: 0,
-            cutout: '65%'
+            borderRadius: 4,
+            barPercentage: 0.7,
           }]
         },
         options: {
+          indexAxis: 'y',
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            legend: { display: false }
+            legend: { display: false },
+            tooltip: { callbacks: { label: function (ctx) { return ctx.parsed.x + ' cliente(s)'; } } }
+          },
+          scales: {
+            x: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#e1e0d9' } },
+            y: { grid: { display: false } }
           }
         }
       });
@@ -1044,11 +1076,22 @@ function crm_clientes_por_estado_widget() {
         }
     }
 
+    // v1.20.181: colores validados (ver crm_dashboard_graficos_datos_estado(),
+    // includes/dashboard-charts.php) en vez de los de crm_get_estados_sector(),
+    // que fallan contraste y separación para daltonismo.
+    $colores_validados = [
+        'borrador'             => '#898781',
+        'enviado'              => '#86b6ef',
+        'presupuesto_generado' => '#5598e7',
+        'presupuesto_aceptado' => '#2a78d6',
+        'contratos_generados'  => '#1c5cab',
+        'contratos_firmados'   => '#104281',
+    ];
     $datasets = array();
     foreach ($estados as $e) {
         $estado_info = crm_get_estados_sector();
         $label = $estado_info[$e]['label'];
-        $color = $estado_info[$e]['color'];
+        $color = $colores_validados[$e] ?? '#898781';
         $data_points = array();
         foreach ($sectores as $s) {
             $data_points[] = $matrix[$e][$s];
@@ -1177,27 +1220,77 @@ function crm_rendimiento_comercial_widget() {
         </div>
 
         <div class="widget-content-compact">
-            <div class="stats-grid-compact">
-                <?php 
-                $labels = array(
-                    'borrador' => 'Sin enviar',
-                    'presupuesto_aceptado' => 'Presup. Aceptado', 
-                    'contratos_generados' => 'Contratos Gen.',
-                    'contratos_firmados' => 'Contratos Firm.'
-                );
-                
-                $total = array_sum($totales);
-                
-                foreach ($totales as $key => $count): 
+            <?php
+            // v1.20.181: eran tarjetas de solo-número — convertido a un
+            // gráfico de barras real, mismos datos, mismo filtro por rol de
+            // siempre (ya calculado arriba). Colores validados (gris + 3
+            // pasos de azul), igual criterio que el resto de gráficos del
+            // dashboard.
+            $labels = array(
+                'borrador' => 'Sin enviar',
+                'presupuesto_aceptado' => 'Presup. Aceptado',
+                'contratos_generados' => 'Contratos Gen.',
+                'contratos_firmados' => 'Contratos Firm.'
+            );
+            $colores_rendimiento = array(
+                'borrador' => '#898781',
+                'presupuesto_aceptado' => '#5598e7',
+                'contratos_generados' => '#1c5cab',
+                'contratos_firmados' => '#104281',
+            );
+            $total = array_sum($totales);
+            $chart_labels = array_values($labels);
+            $chart_data = array_values($totales);
+            $chart_colors = array();
+            foreach (array_keys($totales) as $key) {
+                $chart_colors[] = $colores_rendimiento[$key];
+            }
+            ?>
+            <div class="chart-container-compact">
+                <canvas id="chart-rendimiento-comercial"></canvas>
+            </div>
+            <div class="chart-legend-compact">
+                <?php foreach ($labels as $key => $label):
+                    $count = $totales[$key];
                     $percentage = $total > 0 ? round(($count / $total) * 100, 1) : 0;
                 ?>
-                    <div class="stat-item-compact estado-<?php echo $key; ?>">
-                        <div class="stat-label"><?php echo $labels[$key]; ?></div>
-                        <div class="stat-value"><?php echo $count; ?></div>
-                        <div class="stat-percent"><?php echo $percentage; ?>%</div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: <?php echo $colores_rendimiento[$key]; ?>"></div>
+                        <span class="legend-label"><?php echo $label; ?></span>
+                        <span class="legend-value"><?php echo $count; ?> (<?php echo $percentage; ?>%)</span>
                     </div>
                 <?php endforeach; ?>
             </div>
+            <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                if (typeof Chart === 'undefined') { return; }
+                new Chart(document.getElementById('chart-rendimiento-comercial').getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels: <?php echo json_encode($chart_labels); ?>,
+                        datasets: [{
+                            data: <?php echo json_encode($chart_data); ?>,
+                            backgroundColor: <?php echo json_encode($chart_colors); ?>,
+                            borderRadius: 4,
+                            barPercentage: 0.7,
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: { callbacks: { label: function (ctx) { return ctx.parsed.x + ' cliente(s)'; } } }
+                        },
+                        scales: {
+                            x: { beginAtZero: true, ticks: { precision: 0 } },
+                            y: { grid: { display: false } }
+                        }
+                    }
+                });
+            });
+            </script>
 
             <?php
             $current_user_obj = wp_get_current_user();

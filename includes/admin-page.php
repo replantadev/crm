@@ -341,6 +341,13 @@ function crm_register_admin_settings() {
         'default'           => '',
         'sanitize_callback' => 'sanitize_text_field',
     ]);
+    // v1.20.177 — franjas para reprogramar cita (cliente propone fecha/hora
+    // concreta en vez de que el jefe tenga que llamar a mano).
+    register_setting('crm_settings', 'crm_whatsapp_template_reprogramar_visita_cliente', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'sanitize_text_field',
+    ]);
     // v1.20.138 — reunión con cliente 2026-09-22, punto 5: WhatsApp al
     // comercial cuando el admin actualiza la ficha de uno de sus clientes.
     register_setting('crm_settings', 'crm_whatsapp_template_comercial_cliente_actualizado', [
@@ -1542,6 +1549,13 @@ function crm_admin_render_settings() {
                 <td>
                     <input type="text" id="crm_whatsapp_template_confirmacion_visita_cliente" name="crm_whatsapp_template_confirmacion_visita_cliente" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_confirmacion_visita_cliente', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
                     <p class="description">Al cliente, junto con el recordatorio del día antes — debe tener 2 botones de respuesta rápida ("Confirmo la visita" / "Necesito cambiar la fecha") para que el webhook pueda interpretar la respuesta.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_whatsapp_template_reprogramar_visita_cliente">Plantilla — franjas para reprogramar (cliente)</label></th>
+                <td>
+                    <input type="text" id="crm_whatsapp_template_reprogramar_visita_cliente" name="crm_whatsapp_template_reprogramar_visita_cliente" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_whatsapp_template_reprogramar_visita_cliente', '')); ?>" placeholder="nombre_exacto_de_la_plantilla_en_meta">
+                    <p class="description">Al cliente, cuando pulsa "Necesito cambiar la fecha" en la plantilla de arriba — el cuerpo lleva 2 variables ({{1}} nombre, {{2}} las 3 franjas en texto, p.ej. "1) lunes 10:00 · 2) martes 10:00 · 3) martes 16:00") y debe tener 3 botones de respuesta rápida FIJOS: "Opción 1" (payload <code>opcion_1</code>), "Opción 2" (payload <code>opcion_2</code>), "Opción 3" (payload <code>opcion_3</code>) — el texto de los botones no puede variar por envío (limitación de WhatsApp Business), por eso las franjas van en el cuerpo del mensaje y los botones son solo "Opción N". Sin esta plantilla, "Necesito cambiar" sigue funcionando como antes (solo avisa al jefe).</p>
                 </td>
             </tr>
             <tr>

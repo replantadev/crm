@@ -151,6 +151,7 @@ function crm_whatsapp_catalogo() {
         'crm_whatsapp_template_instalador_extra_resuelta'     => 'Partida extra resuelta (a instalador)',
         'crm_whatsapp_template_instalador_cierre_resuelto'    => 'Cierre resuelto (a instalador)',
         'crm_whatsapp_template_confirmacion_visita_cliente'   => 'Confirmación de cita (al cliente, con botones)',
+        'crm_whatsapp_template_reprogramar_visita_cliente'    => 'Franjas para reprogramar cita (al cliente, cuando pide cambio — con 3 botones "Opción 1/2/3", payload opcion_1/opcion_2/opcion_3)',
         'crm_whatsapp_template_comercial_cliente_actualizado' => 'Ficha de cliente actualizada (al comercial)',
         'crm_whatsapp_template_comercial_visita'              => 'Visita comercial asignada/reprogramada (al comercial o visitador)',
     ];
@@ -289,6 +290,8 @@ function crm_whatsapp_test_parametros($opcion_plantilla) {
             return ['Cliente de prueba', 'aprobado', home_url('/')];
         case 'crm_whatsapp_template_confirmacion_visita_cliente':
             return ['Cliente de prueba', 'mañana 10:00', 'C/ Ejemplo 1, Madrid'];
+        case 'crm_whatsapp_template_reprogramar_visita_cliente':
+            return ['Cliente de prueba', '1) lunes 10:00 · 2) martes 10:00 · 3) martes 16:00'];
         case 'crm_whatsapp_template_comercial_cliente_actualizado':
             return ['Comercial de prueba', 'Cliente de prueba', 'Empresa de ejemplo S.L.', 'Madrid', 'cambió el teléfono'];
         case 'crm_whatsapp_template_comercial_visita':
@@ -485,7 +488,11 @@ function crm_whatsapp_webhook_procesar_mensaje($mensaje) {
 
     $confirma = strpos($accion, 'confirm') !== false;
     $cambio   = strpos($accion, 'cambi') !== false;
-    if (!$confirma && !$cambio) {
+    $opcion_elegida = 0;
+    if (preg_match('/opcion[_\s]?(\d+)/', $accion, $m)) {
+        $opcion_elegida = (int) $m[1];
+    }
+    if (!$confirma && !$cambio && $opcion_elegida <= 0) {
         return;
     }
 
@@ -519,7 +526,7 @@ function crm_whatsapp_webhook_procesar_mensaje($mensaje) {
     // próxima cita a la que ya se le pidió confirmación" es suficiente para
     // el caso normal (una visita activa a la vez).
     $agenda_row = $wpdb->get_row($wpdb->prepare(
-        "SELECT a.id, a.instalacion_id, a.fecha_cita
+        "SELECT a.id, a.instalacion_id, a.fecha_cita, a.instalador_id
          FROM " . crm_inst_table_agenda() . " a
          INNER JOIN " . crm_inst_table_instalaciones() . " i ON i.id = a.instalacion_id
          WHERE i.client_id = %d
@@ -554,8 +561,41 @@ function crm_whatsapp_webhook_procesar_mensaje($mensaje) {
         if (function_exists('crm_inst_log_action')) {
             crm_inst_log_action($instalacion_id, 'agenda', 'cita_cambio_solicitado', 'El cliente pidió cambiar por WhatsApp la visita del ' . $fecha_label . '.');
         }
+        // v1.20.177: en vez de solo avisar al jefe para que llame, se le
+        // ofrecen al cliente hasta 3 franjas libres de su instalador — si
+        // elige una (ver $opcion_elegida más abajo), se reprograma sola, sin
+        // que nadie tenga que llamar. El aviso al jefe se mantiene como red
+        // de seguridad (si no elige ninguna, toca contactar igualmente).
+        // El SELECT de $cliente (más arriba) no trae `telefono` — usamos el
+        // número que acaba de escribirnos, más fiable que releer la ficha.
+        $franjas_resultado = function_exists('crm_whatsapp_ofrecer_franjas_cliente')
+            ? crm_whatsapp_ofrecer_franjas_cliente($agenda_row, array_merge($cliente, ['telefono' => $telefono_from]))
+            : new WP_Error('crm_inst_franjas_no_disponible', 'Función de franjas no cargada.');
+        $detalle_jefes = 'El cliente pidió cambiar la visita — ' . $cliente['cliente_nombre'] . '. ';
+        $detalle_jefes .= is_wp_error($franjas_resultado)
+            ? ('No se le pudieron ofrecer franjas automáticas (' . $franjas_resultado->get_error_message() . ') — contactar para reagendar.')
+            : 'Se le han ofrecido 3 franjas por WhatsApp; si no elige ninguna, contactar para reagendar.';
         if (function_exists('crm_notificar_jefes_instalaciones')) {
-            crm_notificar_jefes_instalaciones('cita_cambio_solicitado', 'El cliente pidió cambiar la visita — ' . $cliente['cliente_nombre'] . '. Contactar para reagendar.', $url_ficha);
+            crm_notificar_jefes_instalaciones('cita_cambio_solicitado', $detalle_jefes, $url_ficha);
+        }
+    } elseif ($opcion_elegida > 0) {
+        $franjas = get_transient('crm_inst_whatsapp_franjas_' . (int) $agenda_row['id']);
+        $fecha_elegida = is_array($franjas) ? ($franjas[$opcion_elegida - 1] ?? null) : null;
+        if (!$fecha_elegida) {
+            if (function_exists('crm_inst_log_action')) {
+                crm_inst_log_action($instalacion_id, 'agenda', 'cita_opcion_invalida', 'El cliente respondió a una franja (opción ' . $opcion_elegida . ') que ya no es válida (caducada o ya elegida).');
+            }
+            return;
+        }
+        $fecha_label_nueva = function_exists('date_i18n') ? date_i18n('d/m/Y H:i', strtotime($fecha_elegida)) : $fecha_elegida;
+        if (function_exists('crm_inst_reprogramar_cita_agenda') && crm_inst_reprogramar_cita_agenda((int) $agenda_row['id'], $fecha_elegida)) {
+            delete_transient('crm_inst_whatsapp_franjas_' . (int) $agenda_row['id']);
+            if (function_exists('crm_inst_log_action')) {
+                crm_inst_log_action($instalacion_id, 'agenda', 'cita_reprogramada_cliente', 'El cliente reprogramó por WhatsApp su visita del ' . $fecha_label . ' al ' . $fecha_label_nueva . '.');
+            }
+            if (function_exists('crm_notificar_jefes_instalaciones')) {
+                crm_notificar_jefes_instalaciones('cita_reprogramada_cliente', 'El cliente reprogramó su visita al ' . $fecha_label_nueva . ' — ' . $cliente['cliente_nombre'] . '.', $url_ficha);
+            }
         }
     }
 }

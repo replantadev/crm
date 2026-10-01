@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.176
+Version: 1.20.177
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.176');
+define('CRM_PLUGIN_VERSION', '1.20.177');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -112,6 +112,9 @@ require_once CRM_PLUGIN_PATH . 'includes/equipo-gestion.php';
 // v1.20.87 — Andamiaje de WhatsApp Business (Meta Cloud API), sin credenciales
 // reales todavía — ver includes/whatsapp-api.php.
 require_once CRM_PLUGIN_PATH . 'includes/whatsapp-api.php';
+// v1.20.177 — el cliente puede fijar él mismo una franja concreta al pedir
+// cambio por WhatsApp (ver includes/whatsapp-reprogramar.php).
+require_once CRM_PLUGIN_PATH . 'includes/whatsapp-reprogramar.php';
 // v1.20.32 — Servicio de geocodificación (Nominatim), genérico y reutilizable
 require_once CRM_PLUGIN_PATH . 'includes/geocoding.php';
 // v1.20.2 — Shortcode frontend de Mi agenda + bloqueo wp-admin

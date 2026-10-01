@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.172
+Version: 1.20.173
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.172');
+define('CRM_PLUGIN_VERSION', '1.20.173');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -72,6 +72,9 @@ require_once CRM_PLUGIN_PATH . 'includes/notifications.php';
 // de asignación de arriba: canal nuevo, por usuario, con historial de admin.
 require_once CRM_PLUGIN_PATH . 'includes/notificaciones-inapp.php';
 require_once CRM_PLUGIN_PATH . 'includes/leads-mk-shortcode.php';
+// v1.20.173 — Agente comercial, Fase 1: aviso de "lead frío" (ver
+// includes/leads-mk-aviso-frio.php).
+require_once CRM_PLUGIN_PATH . 'includes/leads-mk-aviso-frio.php';
 require_once CRM_PLUGIN_PATH . 'includes/leads-leadkit-csv.php';
 require_once CRM_PLUGIN_PATH . 'includes/funnel-ventas.php';
 // v1.19.0 — Sistema de diseño v2 (iconos, badges, app shell)

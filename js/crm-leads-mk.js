@@ -92,6 +92,47 @@
             });
     });
 
+    // v1.20.173 — Agente comercial, Fase 1: "Auto-asignar" al comercial activo
+    // con menos cartera, sin tener que elegir a mano en el desplegable.
+    $(document).on('click', '.crm-leads-mk-auto-assign', function () {
+        const $row = $(this).closest('tr');
+        const leadId = $row.data('id');
+        const sector = $('#crm-leads-mk-sector').val();
+
+        const $btn = $(this).prop('disabled', true).text('Asignando…');
+        ajax('crm_lead_auto_assign', { lead_id: leadId, sector: sector })
+            .done(function (resp) {
+                if (resp && resp.success) {
+                    showToast(resp.data.message, 'success');
+                    const status = (resp.data && resp.data.status) || 'asignado';
+                    const statusLabel = (resp.data && resp.data.status_label) || 'Asignado';
+                    const delegado = (resp.data && resp.data.delegado) || '';
+                    $row.attr('data-status', status);
+                    $row.find('.crm-lead-mk-status')
+                        .removeClass('status-pendiente status-asignado status-trabajado')
+                        .addClass('status-' + status)
+                        .text(statusLabel);
+                    if (delegado) {
+                        const $delegateCell = $row.find('td').eq(7);
+                        const href = $row.attr('data-ficha') || ('/alta-de-cliente/?client_id=' + leadId);
+                        $delegateCell.html('<a class="crm-link" href="' + href + '">' + delegado + '</a>');
+                    }
+                    if (resp.data && resp.data.user_id) {
+                        $row.find('.crm-leads-mk-assignee').val(resp.data.user_id);
+                    }
+                    applyFilters();
+                } else {
+                    showToast((resp && resp.data && resp.data.message) || 'Error', 'error');
+                }
+            })
+            .fail(function (xhr) {
+                showToast('Error AJAX: ' + (xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message || xhr.statusText), 'error');
+            })
+            .always(function () {
+                $btn.prop('disabled', false).text('Auto-asignar');
+            });
+    });
+
     $(document).on('click', '.crm-leads-mk-cold', function () {
         const $row = $(this).closest('tr');
         const leadId = $row.data('id');

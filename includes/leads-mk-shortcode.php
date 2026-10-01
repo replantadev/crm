@@ -307,6 +307,7 @@ function crm_render_asignacion_leads_mk() {
                             </td>
                             <td class="crm-leads-mk-actions-cell">
                                 <button type="button" class="crm-btn crm-btn-sm crm-leads-mk-assign">Asignar</button>
+                                <button type="button" class="crm-btn crm-btn-sm crm-btn-ghost crm-leads-mk-auto-assign" title="Asigna al comercial activo con menos cartera ahora mismo">Auto-asignar</button>
                                 <button type="button" class="crm-btn crm-btn-sm crm-btn-ghost crm-leads-mk-cold">A frío</button>
                                 <button type="button" class="crm-btn crm-btn-sm crm-btn-danger crm-leads-mk-delete">Eliminar</button>
                             </td>
@@ -324,24 +325,23 @@ function crm_render_asignacion_leads_mk() {
  * AJAX endpoints
  * ------------------------------------------------------------------------- */
 
-add_action('wp_ajax_crm_lead_assign', 'crm_lead_assign_ajax');
-function crm_lead_assign_ajax() {
-    if (!current_user_can('crm_admin')) {
-        wp_send_json_error(['message' => 'No autorizado'], 403);
-    }
-    check_ajax_referer('crm_leads_mk', 'nonce');
-
-    $lead_id = isset($_POST['lead_id']) ? (int) $_POST['lead_id'] : 0;
-    $user_id = isset($_POST['user_id']) ? (int) $_POST['user_id'] : 0;
-    $sector  = isset($_POST['sector'])  ? sanitize_key($_POST['sector'])  : '';
-
-    if (!$lead_id || !$user_id) {
-        wp_send_json_error(['message' => 'Datos incompletos']);
-    }
-
+/**
+ * Núcleo de la asignación de un lead MK a un comercial — compartido por la
+ * asignación manual (`crm_lead_assign_ajax`) y el auto-asignar por carga
+ * (`crm_lead_auto_assign_ajax`, v1.20.173) para no duplicar la lógica de
+ * actualización/sector/log/notificación.
+ *
+ * @param int    $lead_id
+ * @param int    $user_id Comercial destino (ya validado como comercial activo por el llamador).
+ * @param string $sector  Sector inicial opcional.
+ * @return array{ok:bool,message:string,delegado?:string}
+ */
+function crm_lead_assign_a_comercial($lead_id, $user_id, $sector = '') {
+    $lead_id = (int) $lead_id;
+    $user_id = (int) $user_id;
     $user = get_userdata($user_id);
-    if (!$user || !in_array('comercial', (array) $user->roles, true)) {
-        wp_send_json_error(['message' => 'El usuario no es comercial']);
+    if (!$lead_id || !$user || !in_array('comercial', (array) $user->roles, true)) {
+        return ['ok' => false, 'message' => 'Datos no válidos.'];
     }
 
     global $wpdb;
@@ -352,7 +352,7 @@ function crm_lead_assign_ajax() {
         array_merge([$lead_id], $origenes['args'])
     ), ARRAY_A);
     if (!$row) {
-        wp_send_json_error(['message' => 'Lead no encontrado']);
+        return ['ok' => false, 'message' => 'Lead no encontrado'];
     }
 
     $update = [
@@ -365,7 +365,8 @@ function crm_lead_assign_ajax() {
         'actualizado_por' => get_current_user_id(),
     ];
 
-    // Si el admin marcó un sector inicial, lo añadimos a intereses y al estado_por_sector como 'borrador'
+    // Si se marcó un sector inicial, lo añadimos a intereses y al estado_por_sector como 'borrador'
+    $sector = sanitize_key((string) $sector);
     $sectores_validos = ['energia', 'alarmas', 'telecomunicaciones', 'seguros', 'renovables'];
     if ($sector && in_array($sector, $sectores_validos, true)) {
         $intereses_actuales = (array) maybe_unserialize($row['intereses'] ?? '');
@@ -383,7 +384,7 @@ function crm_lead_assign_ajax() {
 
     $ok = $wpdb->update($table, $update, ['id' => $lead_id]);
     if ($ok === false) {
-        wp_send_json_error(['message' => 'Error BD: ' . $wpdb->last_error]);
+        return ['ok' => false, 'message' => 'Error BD: ' . $wpdb->last_error];
     }
 
     if (function_exists('crm_notes_log_assignment')) {
@@ -393,11 +394,104 @@ function crm_lead_assign_ajax() {
         crm_notif_assignment_send($lead_id, $user_id);
     }
 
+    return ['ok' => true, 'message' => 'Lead asignado a ' . $user->display_name, 'delegado' => $user->display_name];
+}
+
+add_action('wp_ajax_crm_lead_assign', 'crm_lead_assign_ajax');
+function crm_lead_assign_ajax() {
+    if (!current_user_can('crm_admin')) {
+        wp_send_json_error(['message' => 'No autorizado'], 403);
+    }
+    check_ajax_referer('crm_leads_mk', 'nonce');
+
+    $lead_id = isset($_POST['lead_id']) ? (int) $_POST['lead_id'] : 0;
+    $user_id = isset($_POST['user_id']) ? (int) $_POST['user_id'] : 0;
+    $sector  = isset($_POST['sector'])  ? sanitize_key($_POST['sector'])  : '';
+
+    if (!$lead_id || !$user_id) {
+        wp_send_json_error(['message' => 'Datos incompletos']);
+    }
+
+    $resultado = crm_lead_assign_a_comercial($lead_id, $user_id, $sector);
+    if (!$resultado['ok']) {
+        wp_send_json_error(['message' => $resultado['message']]);
+    }
+
     wp_send_json_success([
-        'message' => 'Lead asignado a ' . $user->display_name,
+        'message' => $resultado['message'],
         'status'  => 'asignado',
         'status_label' => crm_lead_mk_lifecycle_label('asignado'),
-        'delegado' => $user->display_name,
+        'delegado' => $resultado['delegado'],
+    ]);
+}
+
+/**
+ * Elige el comercial activo (no KO) con menos cartera actual — mismo
+ * recuento que ya usa el panel de Equipo (`wp_crm_clients` con ese
+ * `user_id`). Empate: el de ID más bajo, para que el resultado sea
+ * determinista y fácil de probar.
+ *
+ * @return array{id:int,nombre:string}|null
+ */
+function crm_leads_mk_elegir_comercial_auto() {
+    if (!function_exists('crm_equipo_comerciales_activos')) {
+        return null;
+    }
+    $activos = crm_equipo_comerciales_activos();
+    if (empty($activos)) {
+        return null;
+    }
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'crm_clients';
+    $mejor = null;
+    foreach ($activos as $c) {
+        $cartera = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table} WHERE user_id = %d",
+            $c['id']
+        ));
+        if ($mejor === null || $cartera < $mejor['cartera'] || ($cartera === $mejor['cartera'] && $c['id'] < $mejor['id'])) {
+            $mejor = ['id' => $c['id'], 'nombre' => $c['nombre'], 'cartera' => $cartera];
+        }
+    }
+    return $mejor;
+}
+
+add_action('wp_ajax_crm_lead_auto_assign', 'crm_lead_auto_assign_ajax');
+/**
+ * Agente comercial, Fase 1 (v1.20.173) — "Auto-asignar": en vez de que el
+ * admin elija a mano en el desplegable, asigna el lead al comercial activo
+ * con menos cartera en ese momento. Reparte sin que nadie tenga que fijarse
+ * en quién tiene menos carga.
+ */
+function crm_lead_auto_assign_ajax() {
+    if (!current_user_can('crm_admin')) {
+        wp_send_json_error(['message' => 'No autorizado'], 403);
+    }
+    check_ajax_referer('crm_leads_mk', 'nonce');
+
+    $lead_id = isset($_POST['lead_id']) ? (int) $_POST['lead_id'] : 0;
+    $sector  = isset($_POST['sector'])  ? sanitize_key($_POST['sector'])  : '';
+    if (!$lead_id) {
+        wp_send_json_error(['message' => 'Datos incompletos']);
+    }
+
+    $elegido = crm_leads_mk_elegir_comercial_auto();
+    if (!$elegido) {
+        wp_send_json_error(['message' => 'No hay ningún comercial activo al que asignar.']);
+    }
+
+    $resultado = crm_lead_assign_a_comercial($lead_id, $elegido['id'], $sector);
+    if (!$resultado['ok']) {
+        wp_send_json_error(['message' => $resultado['message']]);
+    }
+
+    wp_send_json_success([
+        'message' => $resultado['message'],
+        'status'  => 'asignado',
+        'status_label' => crm_lead_mk_lifecycle_label('asignado'),
+        'delegado' => $resultado['delegado'],
+        'user_id'  => $elegido['id'],
     ]);
 }
 

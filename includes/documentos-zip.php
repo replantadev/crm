@@ -33,7 +33,7 @@ if (!defined('ABSPATH')) {
  */
 function crm_inst_zip_memoria_texto(array $data) {
     $lineas = [];
-    $lineas[] = 'MEMORIA DE INSTALACIÓN #' . $data['id_visible'];
+    $lineas[] = 'MEMORIA DE INSTALACIÓN ' . $data['id_visible'];
     $lineas[] = 'Generado: ' . date_i18n('d/m/Y H:i');
     $lineas[] = '';
     $lineas[] = '== CLIENTE ==';

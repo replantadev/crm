@@ -120,21 +120,87 @@ function crm_inst_franjas_disponibles_instalador($instalador_id, $num_franjas = 
  * Aplica la franja elegida: actualiza SOLO la fila de agenda concreta a la
  * que el cliente está respondiendo (no las de otros instaladores de la
  * misma instalación, si los hubiera — el cliente está reprogramando SU
- * cita, no la de todo el mundo). Vuelve a 'pendiente' para que el
- * recordatorio del día antes la mande a confirmar de nuevo con normalidad.
+ * cita, no la de todo el mundo). Vuelve a 'pendiente' y resetea
+ * `recordatorio_enviado_en` para que el recordatorio del día antes
+ * (crm_inst_aviso_calendario_run()) la mande a confirmar de nuevo con
+ * normalidad para la fecha nueva — sin este reseteo no volvería a avisar a
+ * nadie (mismo bug real que se encontró y arregló en
+ * crm_inst_ajax_guardar_agenda(), v1.20.178).
+ *
+ * Además, avisa YA (sin esperar al día antes) al instalador y a los jefes
+ * — mismo trío de canales que usa el reagendado manual desde la ficha
+ * (crm_inst_ajax_guardar_agenda()): in-app + email + WhatsApp (reutilizando
+ * la plantilla ya existente `crm_whatsapp_template_instalador_visita`, no
+ * hace falta una plantilla nueva para esto). También actualiza
+ * `cierre_previsto` si todavía no se había fijado a mano, igual que el
+ * reagendado manual.
  *
  * @param int    $agenda_id
  * @param string $fecha_mysql
+ * @param array  $contexto {instalacion_id:int, instalador_id:int, cliente_nombre:string}
  * @return bool
  */
-function crm_inst_reprogramar_cita_agenda($agenda_id, $fecha_mysql) {
+function crm_inst_reprogramar_cita_agenda($agenda_id, $fecha_mysql, array $contexto = []) {
     global $wpdb;
     $ok = $wpdb->update(
         crm_inst_table_agenda(),
         ['fecha_cita' => $fecha_mysql, 'estado' => 'pendiente', 'recordatorio_enviado_en' => null],
         ['id' => (int) $agenda_id]
     );
-    return $ok !== false;
+    if ($ok === false) {
+        return false;
+    }
+
+    $instalacion_id = (int) ($contexto['instalacion_id'] ?? 0);
+    $instalador_id  = (int) ($contexto['instalador_id'] ?? 0);
+    $cliente_nombre = (string) ($contexto['cliente_nombre'] ?? '');
+    $timestamp      = strtotime($fecha_mysql);
+    $fecha_label    = function_exists('date_i18n') ? date_i18n('d/m/Y H:i', $timestamp) : $fecha_mysql;
+    $url_calendario = function_exists('home_url') ? home_url('/calendario-instalador/') : '';
+    $url_ficha      = $instalacion_id > 0 && function_exists('add_query_arg') ? add_query_arg('id', $instalacion_id, home_url('/instalacion/')) : '';
+
+    if ($instalador_id > 0) {
+        $mensaje_visita = 'Visita reprogramada para ' . $fecha_label . ' — ' . ($cliente_nombre ?: 'cliente') . ' (el cliente eligió la fecha por WhatsApp).';
+        if (function_exists('crm_notificar')) {
+            crm_notificar($instalador_id, 'visita_reprogramada', $mensaje_visita, $url_calendario);
+        }
+        if (function_exists('crm_inst_email_instalador')) {
+            crm_inst_email_instalador($instalador_id, 'Visita reprogramada', $mensaje_visita, $url_calendario);
+        }
+        if (function_exists('crm_inst_whatsapp_instalador')) {
+            crm_inst_whatsapp_instalador(
+                $instalador_id,
+                'crm_whatsapp_template_instalador_visita',
+                [$cliente_nombre ?: 'cliente', $fecha_label, $url_calendario],
+                'Visita reprogramada (elegida por el cliente)'
+            );
+        }
+    }
+
+    if (function_exists('crm_notificar_jefes_instalaciones')) {
+        crm_notificar_jefes_instalaciones('cita_reprogramada_cliente', 'El cliente reprogramó su visita al ' . $fecha_label . ' — ' . ($cliente_nombre ?: 'cliente') . '.', $url_ficha);
+    }
+    if (function_exists('crm_inst_aviso_enviar_email_jefes')) {
+        crm_inst_aviso_enviar_email_jefes('Visita reprogramada por el cliente', 'El cliente reprogramó su visita al ' . $fecha_label . ' — ' . ($cliente_nombre ?: 'cliente') . '.', $url_ficha);
+    }
+
+    // Cierre previsto = fecha de la visita + 2 días laborables, solo si no
+    // se había fijado ya a mano — mismo criterio que crm_inst_ajax_guardar_agenda().
+    if ($instalacion_id > 0 && function_exists('crm_inst_table_instalaciones') && function_exists('crm_inst_sumar_dias_laborables')) {
+        $cierre_previsto_actual = $wpdb->get_var($wpdb->prepare(
+            "SELECT cierre_previsto FROM " . crm_inst_table_instalaciones() . " WHERE id = %d",
+            $instalacion_id
+        ));
+        if (empty($cierre_previsto_actual)) {
+            $wpdb->update(
+                crm_inst_table_instalaciones(),
+                ['cierre_previsto' => date('Y-m-d', crm_inst_sumar_dias_laborables($timestamp, 2))],
+                ['id' => $instalacion_id]
+            );
+        }
+    }
+
+    return true;
 }
 
 /**

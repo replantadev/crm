@@ -4277,9 +4277,17 @@ function crm_inst_ajax_guardar_agenda() {
 		) );
 
 		if ( $existing_id > 0 ) {
+			// v1.20.178 — bug real encontrado revisando el flujo de
+			// reprogramado por WhatsApp: esto NO reseteaba
+			// `recordatorio_enviado_en`, así que si la visita ya había
+			// recibido el recordatorio del día antes (confirmación + aviso a
+			// cliente/instalador/jefes) y el jefe la reprogramaba a mano
+			// después, el cron del día antes (crm_inst_aviso_calendario_run(),
+			// que filtra por `recordatorio_enviado_en IS NULL`) se la saltaba
+			// para la fecha nueva — nadie volvía a avisar a nadie.
 			$wpdb->update(
 				crm_inst_table_agenda(),
-				[ 'fecha_cita' => $fecha_mysql, 'estado' => 'pendiente' ],
+				[ 'fecha_cita' => $fecha_mysql, 'estado' => 'pendiente', 'recordatorio_enviado_en' => null ],
 				[ 'id' => $existing_id ]
 			);
 		} else {

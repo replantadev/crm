@@ -588,13 +588,17 @@ function crm_whatsapp_webhook_procesar_mensaje($mensaje) {
             return;
         }
         $fecha_label_nueva = function_exists('date_i18n') ? date_i18n('d/m/Y H:i', strtotime($fecha_elegida)) : $fecha_elegida;
-        if (function_exists('crm_inst_reprogramar_cita_agenda') && crm_inst_reprogramar_cita_agenda((int) $agenda_row['id'], $fecha_elegida)) {
+        // Nota: crm_inst_reprogramar_cita_agenda() ya se encarga de avisar al
+        // instalador (in-app+email+WhatsApp) y a los jefes (in-app+email) —
+        // aquí solo queda el log propio del webhook y limpiar el transient.
+        if (function_exists('crm_inst_reprogramar_cita_agenda') && crm_inst_reprogramar_cita_agenda((int) $agenda_row['id'], $fecha_elegida, [
+            'instalacion_id' => $instalacion_id,
+            'instalador_id'  => (int) ($agenda_row['instalador_id'] ?? 0),
+            'cliente_nombre' => $cliente['cliente_nombre'],
+        ])) {
             delete_transient('crm_inst_whatsapp_franjas_' . (int) $agenda_row['id']);
             if (function_exists('crm_inst_log_action')) {
                 crm_inst_log_action($instalacion_id, 'agenda', 'cita_reprogramada_cliente', 'El cliente reprogramó por WhatsApp su visita del ' . $fecha_label . ' al ' . $fecha_label_nueva . '.');
-            }
-            if (function_exists('crm_notificar_jefes_instalaciones')) {
-                crm_notificar_jefes_instalaciones('cita_reprogramada_cliente', 'El cliente reprogramó su visita al ' . $fecha_label_nueva . ' — ' . $cliente['cliente_nombre'] . '.', $url_ficha);
             }
         }
     }

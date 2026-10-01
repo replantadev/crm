@@ -213,7 +213,12 @@
                 input.value = '';
                 if (resp && resp.success) {
                     const d = resp.data || {};
-                    $status.css('color', '#065f46').text(`OK · ${d.inserted || 0} nuevos · ${d.reparados || 0} reparados · ${d.dupes || 0} duplicados · ${d.errors || 0} con error (de ${d.total || 0} filas)`);
+                    // v1.20.182 — de los reparados/duplicados, cuántos siguen
+                    // sin comercial asignado (para saber cuáles hay que
+                    // repartir, sin abrir ficha por ficha).
+                    const sinAsignar = (d.reparados_sin_asignar || 0) + (d.dupes_sin_asignar || 0);
+                    const sinAsignarTxt = sinAsignar > 0 ? ` · ${sinAsignar} sin comercial asignado` : '';
+                    $status.css('color', '#065f46').text(`OK · ${d.inserted || 0} nuevos · ${d.reparados || 0} reparados · ${d.dupes || 0} duplicados · ${d.errors || 0} con error (de ${d.total || 0} filas)${sinAsignarTxt}`);
                     // v1.20.171 — Fuentes del CSV que no encajan con ningún
                     // proveedor conocido (placassolares/aerotermia/luz): se
                     // avisa con un alert() para que no pase desapercibido

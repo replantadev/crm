@@ -4450,25 +4450,21 @@ function crm_inst_ajax_guardar_cierre_previsto() {
  * suficiente para el volumen actual; si crece habrá que paginar.
  */
 add_action( 'wp_ajax_crm_inst_listar_instalaciones', 'crm_inst_ajax_listar_instalaciones' );
-function crm_inst_ajax_listar_instalaciones() {
-	if ( ! crm_inst_current_user_can_manage() || ! check_ajax_referer( 'crm_inst_holded', 'nonce', false ) ) {
-		wp_send_json_error( [ 'message' => 'Sin permisos.' ], 403 );
-	}
-
+/**
+ * Construye el WHERE + params del listado de instalaciones a partir de los
+ * filtros de pantalla (estado/tipo/búsqueda/atención) — extraído en v1.20.188
+ * de crm_inst_ajax_listar_instalaciones() para que la exportación a CSV
+ * (crm_inst_export_csv()) use exactamente la misma lógica de filtros, sin
+ * duplicarla.
+ *
+ * @return array{where:string, params:array}
+ */
+function crm_inst_listado_where_sql( $estado, $tipo, $query, $atencion_filtro ) {
 	global $wpdb;
-	$clients_table = $wpdb->prefix . 'crm_clients';
-	$tabla_inst    = crm_inst_table_instalaciones();
-	$tabla_trab    = crm_inst_table_trabajos();
-	$tabla_agenda  = crm_inst_table_agenda();
-
-	$estados_labels  = crm_instalaciones_estados();
-	$tipos_labels    = crm_instalaciones_tipos();
-	$subtipos_labels = crm_instalaciones_subtipos();
-
-	$estado    = sanitize_key( wp_unslash( $_POST['estado'] ?? '' ) );
-	$tipo      = sanitize_key( wp_unslash( $_POST['tipo_instalacion'] ?? '' ) );
-	$query     = sanitize_text_field( wp_unslash( $_POST['query'] ?? '' ) );
-	$atencion_filtro = sanitize_key( wp_unslash( $_POST['atencion'] ?? '' ) );
+	$tabla_trab     = crm_inst_table_trabajos();
+	$tabla_agenda   = crm_inst_table_agenda();
+	$estados_labels = crm_instalaciones_estados();
+	$tipos_labels   = crm_instalaciones_tipos();
 
 	$where  = [ '1=1' ];
 	$params = [];
@@ -4525,6 +4521,32 @@ function crm_inst_ajax_listar_instalaciones() {
 		$params[] = '%' . $wpdb->esc_like( $query ) . '%';
 	}
 
+	return [ 'where' => implode( ' AND ', $where ), 'params' => $params ];
+}
+
+function crm_inst_ajax_listar_instalaciones() {
+	if ( ! crm_inst_current_user_can_manage() || ! check_ajax_referer( 'crm_inst_holded', 'nonce', false ) ) {
+		wp_send_json_error( [ 'message' => 'Sin permisos.' ], 403 );
+	}
+
+	global $wpdb;
+	$clients_table = $wpdb->prefix . 'crm_clients';
+	$tabla_inst    = crm_inst_table_instalaciones();
+	$tabla_trab    = crm_inst_table_trabajos();
+
+	$estados_labels  = crm_instalaciones_estados();
+	$tipos_labels    = crm_instalaciones_tipos();
+	$subtipos_labels = crm_instalaciones_subtipos();
+
+	$estado    = sanitize_key( wp_unslash( $_POST['estado'] ?? '' ) );
+	$tipo      = sanitize_key( wp_unslash( $_POST['tipo_instalacion'] ?? '' ) );
+	$query     = sanitize_text_field( wp_unslash( $_POST['query'] ?? '' ) );
+	$atencion_filtro = sanitize_key( wp_unslash( $_POST['atencion'] ?? '' ) );
+
+	$filtro = crm_inst_listado_where_sql( $estado, $tipo, $query, $atencion_filtro );
+	$where  = [ $filtro['where'] ];
+	$params = $filtro['params'];
+
 	$sql = "SELECT i.id, i.estado, i.tipo_instalacion, i.subtipo_instalacion, i.fecha_creacion, i.holded_doc_id,
 			i.proveedor_pedido_estado,
 			c.cliente_nombre,
@@ -4569,6 +4591,68 @@ function crm_inst_ajax_listar_instalaciones() {
 		'total' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$tabla_inst}" ),
 		'atencion' => crm_inst_get_atencion_counts(),
 	] );
+}
+
+/**
+ * Exporta el listado de instalaciones a CSV, respetando los mismos filtros
+ * (estado/tipo/búsqueda/atención) que la pantalla — v1.20.188. Vía
+ * admin-post.php (no AJAX) porque el navegador tiene que descargar un
+ * archivo, no recibir JSON.
+ */
+add_action( 'admin_post_crm_inst_export_csv', 'crm_inst_export_csv' );
+function crm_inst_export_csv() {
+	if ( ! is_user_logged_in() || ! crm_inst_current_user_can_manage() ) {
+		wp_die( 'Sin permisos', 403 );
+	}
+	check_admin_referer( 'crm_inst_export_csv' );
+
+	global $wpdb;
+	$clients_table = $wpdb->prefix . 'crm_clients';
+	$tabla_inst    = crm_inst_table_instalaciones();
+	$tabla_trab    = crm_inst_table_trabajos();
+
+	$estado          = sanitize_key( wp_unslash( $_GET['estado'] ?? '' ) );
+	$tipo            = sanitize_key( wp_unslash( $_GET['tipo_instalacion'] ?? '' ) );
+	$query           = sanitize_text_field( wp_unslash( $_GET['query'] ?? '' ) );
+	$atencion_filtro = sanitize_key( wp_unslash( $_GET['atencion'] ?? '' ) );
+
+	$filtro = crm_inst_listado_where_sql( $estado, $tipo, $query, $atencion_filtro );
+	$estados_labels = crm_instalaciones_estados();
+	$tipos_labels   = crm_instalaciones_tipos();
+
+	$sql = "SELECT i.id, i.estado, i.tipo_instalacion, i.subtipo_instalacion, i.fecha_creacion, i.holded_doc_id,
+			i.proveedor_pedido_estado,
+			c.cliente_nombre,
+			(SELECT COUNT(*) FROM {$tabla_trab} t WHERE t.instalacion_id = i.id) AS num_materiales,
+			(SELECT COUNT(*) FROM {$tabla_trab} t2 WHERE t2.instalacion_id = i.id AND t2.origen = 'extra' AND t2.estado IN ('pendiente','enviado_cliente')) AS extras_pendientes
+		FROM {$tabla_inst} i
+		LEFT JOIN {$clients_table} c ON c.id = i.client_id
+		WHERE " . $filtro['where'] . "
+		ORDER BY i.fecha_creacion DESC
+		LIMIT 10000";
+
+	$rows = empty( $filtro['params'] ) ? $wpdb->get_results( $sql, ARRAY_A ) : $wpdb->get_results( $wpdb->prepare( $sql, $filtro['params'] ), ARRAY_A );
+
+	$out_rows = [];
+	foreach ( (array) $rows as $r ) {
+		$out_rows[] = [
+			$r['cliente_nombre'] ?: '(sin cliente)',
+			$tipos_labels[ $r['tipo_instalacion'] ] ?? $r['tipo_instalacion'],
+			crm_inst_subtipo_label( $r['subtipo_instalacion'] ),
+			$estados_labels[ $r['estado'] ] ?? $r['estado'],
+			(int) $r['num_materiales'],
+			(int) $r['extras_pendientes'],
+			$r['proveedor_pedido_estado'] ?: '',
+			$r['fecha_creacion'],
+			$r['holded_doc_id'] ?: '',
+		];
+	}
+
+	crm_csv_export_stream(
+		'instalaciones_' . date( 'Y-m-d_H-i-s' ) . '.csv',
+		[ 'Cliente', 'Tipo', 'Subtipo', 'Estado', 'Nº materiales', 'Extras pendientes', 'Estado pedido proveedor', 'Fecha creación', 'Nº presupuesto Holded' ],
+		$out_rows
+	);
 }
 
 /**
@@ -4782,6 +4866,7 @@ function crm_inst_shortcode_listado() {
 		<div class="crm-widget-compact">
 			<div class="widget-header-compact">
 				<h3 class="widget-title-compact">Instalaciones</h3>
+				<a href="#" id="crm-inst-export-csv" class="crm-btn"><?php echo crm_icon( 'file-text', 14 ); ?> Exportar CSV</a>
 				<a href="<?php echo esc_url( $nueva_url ); ?>" class="crm-btn">+ Nueva instalación</a>
 			</div>
 			<div class="widget-content-compact">
@@ -4917,6 +5002,27 @@ function crm_inst_shortcode_listado() {
 			atencionActiva = (atencionActiva === key) ? '' : key;
 			$('#crm-inst-filtro-estado').val('');
 			cargar();
+		});
+
+		// v1.20.188 — "Exportar CSV" descarga con los MISMOS filtros activos
+		// en pantalla (estado/tipo/búsqueda/atención), no todo el listado sin
+		// filtrar — misma lógica que cargar(), vía admin-post.php porque hace
+		// falta que el navegador descargue un archivo, no recibir JSON.
+		$('#crm-inst-export-csv').on('click', function (e) {
+			e.preventDefault();
+			var estado = atencionActiva === '' ? $('#crm-inst-filtro-estado').val() : '';
+			var tipo   = $('#crm-inst-filtro-tipo').val();
+			var query  = $('#crm-inst-filtro-query').val();
+			// v1.20.188: wp_nonce_url() devuelve entidades HTML (&#038;), pensado
+			// para echo en un atributo href, no para una cadena JS — por eso
+			// aquí se construye a mano con wp_create_nonce() en vez de
+			// wp_nonce_url(), para no mandar "&amp;" literal en la URL.
+			var url = <?php echo wp_json_encode( admin_url( 'admin-post.php?action=crm_inst_export_csv&_wpnonce=' . wp_create_nonce( 'crm_inst_export_csv' ) ) ); ?>;
+			url += '&estado=' + encodeURIComponent(estado || '')
+				+ '&tipo_instalacion=' + encodeURIComponent(tipo || '')
+				+ '&query=' + encodeURIComponent(query || '')
+				+ '&atencion=' + encodeURIComponent(atencionActiva || '');
+			window.location.href = url;
 		});
 
 		cargar();

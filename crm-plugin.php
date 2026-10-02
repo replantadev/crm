@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.187
+Version: 1.20.188
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.187');
+define('CRM_PLUGIN_VERSION', '1.20.188');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -64,6 +64,7 @@ require_once CRM_PLUGIN_PATH . 'includes/roles.php';
 require_once CRM_PLUGIN_PATH . 'includes/data.php';
 require_once CRM_PLUGIN_PATH . 'includes/uploads-handler.php';
 require_once CRM_PLUGIN_PATH . 'includes/logger.php';
+require_once CRM_PLUGIN_PATH . 'includes/csv-export.php';
 require_once CRM_PLUGIN_PATH . 'includes/notes.php';
 require_once CRM_PLUGIN_PATH . 'includes/duplicates.php';
 require_once CRM_PLUGIN_PATH . 'includes/leads-sheets.php';
@@ -3604,8 +3605,9 @@ function crm_todas_las_altas()
         <div class="crm-table-header">
             <h3><img src="<?php echo get_site_icon_url(); ?>" alt="Logo" class="crm-logo-small"> Todas las Altas - Energitel CRM</h3>
             <p class="table-subtitle">Gestión completa del equipo comercial</p>
+            <a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=crm_export_clientes_csv' ), 'crm_export_clientes_csv' ) ); ?>" class="crm-btn"><?php echo function_exists( 'crm_icon' ) ? crm_icon( 'file-text', 14 ) : ''; ?> Exportar CSV</a>
         </div>
-        
+
         <div class="table-responsive">
             <table id="crm-todas-las-altas" class="crm-table-material">
                 <thead>
@@ -3682,6 +3684,53 @@ function crm_obtener_todas_altas()
     } else {
         wp_send_json_error(['message' => 'No se encontraron clientes.']);
     }
+}
+
+/**
+ * Exporta "Todas las Altas" a CSV — v1.20.188. Mismos datos que
+ * crm_obtener_todas_altas() pero sin los campos serializados (facturas,
+ * presupuesto, contratos...) que no tienen sentido en una fila de CSV.
+ */
+add_action('admin_post_crm_export_clientes_csv', 'crm_export_clientes_csv');
+function crm_export_clientes_csv() {
+    if (!is_user_logged_in() || !current_user_can('crm_admin')) {
+        wp_die('Sin permisos', 403);
+    }
+    check_admin_referer('crm_export_clientes_csv');
+
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'crm_clients';
+    $clientes = $wpdb->get_results("
+        SELECT c.id, c.fecha, c.cliente_nombre, c.empresa, c.direccion, c.poblacion, c.email_cliente, c.telefono, c.estado, c.origen_lead, c.actualizado_en,
+            COALESCE(u.display_name, '—') AS comercial
+        FROM $table_name c
+        LEFT JOIN {$wpdb->users} u ON c.user_id = u.ID
+        ORDER BY c.actualizado_en DESC
+    ", ARRAY_A);
+
+    $rows = [];
+    foreach ((array) $clientes as $c) {
+        $rows[] = [
+            $c['id'],
+            $c['fecha'],
+            $c['cliente_nombre'],
+            $c['empresa'],
+            $c['direccion'],
+            $c['poblacion'],
+            $c['email_cliente'],
+            $c['telefono'] ?? '',
+            function_exists('crm_get_estado_label') ? crm_get_estado_label($c['estado']) : $c['estado'],
+            $c['origen_lead'],
+            $c['comercial'],
+            $c['actualizado_en'],
+        ];
+    }
+
+    crm_csv_export_stream(
+        'clientes_' . date('Y-m-d_H-i-s') . '.csv',
+        ['ID', 'Fecha alta', 'Cliente', 'Empresa', 'Dirección', 'Población', 'Email', 'Teléfono', 'Estado', 'Origen', 'Comercial', 'Última edición'],
+        $rows
+    );
 }
 
 function crm_purge_client_related_data($client_id, array $client_data = []) {

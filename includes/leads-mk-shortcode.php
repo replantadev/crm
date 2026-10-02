@@ -220,6 +220,7 @@ function crm_render_asignacion_leads_mk() {
                     <input type="file" id="crm-leads-mk-leadkit-file" accept=".csv" style="display:none;">
                 </label>
                 <span class="crm-leads-mk-leadkit-status"></span>
+                <a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=crm_export_leads_mk_csv' ), 'crm_export_leads_mk_csv' ) ); ?>" class="crm-btn"><?php echo crm_icon( 'file-text', 14 ); ?> Exportar CSV</a>
             </div>
         </div>
 
@@ -319,6 +320,55 @@ function crm_render_asignacion_leads_mk() {
     </div>
     <?php
     return ob_get_clean();
+}
+
+/**
+ * Exporta la cola de leads MK a CSV — v1.20.188. Mismo origen/orden que la
+ * pantalla (crm_leads_mk_origenes_in_sql(), LIMIT elevado respecto al de
+ * pantalla porque aquí no hay filtrado client-side que recorte la vista).
+ */
+add_action('admin_post_crm_export_leads_mk_csv', 'crm_export_leads_mk_csv');
+function crm_export_leads_mk_csv() {
+    if (!is_user_logged_in() || !current_user_can('crm_admin')) {
+        wp_die('Sin permisos', 403);
+    }
+    check_admin_referer('crm_export_leads_mk_csv');
+
+    global $wpdb;
+    $table = $wpdb->prefix . 'crm_clients';
+    $origenes = crm_leads_mk_origenes_in_sql();
+    $origen_labels = ['lead_mk' => 'Meta/Google', 'placassolares' => 'placassolares.es', 'aerotermia' => 'aerotermia.es', 'luz' => 'luz.es'];
+
+    $rows_db = $wpdb->get_results($wpdb->prepare(
+        "SELECT id, fecha, cliente_nombre, telefono, email_cliente, lead_meta, user_id, delegado, lead_mk_status, origen_lead
+         FROM $table
+         WHERE {$origenes['sql']}
+         ORDER BY id DESC
+         LIMIT 10000",
+        $origenes['args']
+    ), ARRAY_A);
+
+    $rows = [];
+    foreach ((array) $rows_db as $r) {
+        $meta = !empty($r['lead_meta']) ? json_decode($r['lead_meta'], true) : [];
+        $campana = is_array($meta) ? trim(($meta['campaign_name'] ?? '') . (!empty($meta['ad_name']) ? ' · ' . $meta['ad_name'] : '')) : '';
+        $rows[] = [
+            mysql2date('d/m/Y H:i', $r['fecha']),
+            $r['cliente_nombre'] ?: '(sin nombre)',
+            $r['telefono'],
+            $r['email_cliente'],
+            $campana,
+            $origen_labels[$r['origen_lead']] ?? $r['origen_lead'],
+            crm_lead_mk_lifecycle_label(crm_lead_mk_lifecycle($r)),
+            $r['delegado'] ?: 'Sin asignar',
+        ];
+    }
+
+    crm_csv_export_stream(
+        'leads_mk_' . date('Y-m-d_H-i-s') . '.csv',
+        ['Fecha', 'Nombre', 'Teléfono', 'Email', 'Campaña', 'Fuente', 'Lifecycle MK', 'Comercial'],
+        $rows
+    );
 }
 
 /* -------------------------------------------------------------------------

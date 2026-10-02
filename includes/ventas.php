@@ -259,6 +259,7 @@ function crm_ventas_presupuestos_widget() {
     <div class="crm-widget-compact">
         <div class="widget-header-compact">
             <h3 class="widget-title-compact">Presupuestos (Holded)</h3>
+            <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=crm_export_ventas_presupuestos_csv'), 'crm_export_ventas_presupuestos_csv')); ?>" class="crm-btn"><?php echo crm_icon('file-text', 14); ?> Exportar CSV</a>
             <div class="widget-stats-compact">
                 <span class="total-count"><?php echo count($estimates); ?> presupuestos</span>
             </div>
@@ -301,6 +302,48 @@ function crm_ventas_presupuestos_widget() {
     </div>
     <?php
     return ob_get_clean();
+}
+
+/**
+ * Exporta "Presupuestos (Holded)" a CSV — v1.20.188. Mismos datos/orden que
+ * el widget, misma fuente (crm_holded_get_estimates_cached()).
+ */
+add_action('admin_post_crm_export_ventas_presupuestos_csv', 'crm_export_ventas_presupuestos_csv');
+function crm_export_ventas_presupuestos_csv() {
+    if (!is_user_logged_in() || !current_user_can('crm_admin')) {
+        wp_die('Sin permisos', 403);
+    }
+    check_admin_referer('crm_export_ventas_presupuestos_csv');
+
+    $estimates = crm_holded_get_estimates_cached();
+    if (is_wp_error($estimates)) {
+        wp_die('No se pudo consultar Holded: ' . esc_html($estimates->get_error_message()));
+    }
+    usort($estimates, function ($a, $b) {
+        return strcmp((string) ($b['date'] ?? ''), (string) ($a['date'] ?? ''));
+    });
+    $clientes = crm_ventas_mapa_clientes_por_contact_id();
+
+    $rows = [];
+    foreach ($estimates as $e) {
+        $contact_id = (string) ($e['contact_id'] ?? '');
+        $cliente = $clientes[$contact_id] ?? null;
+        $aprobado = empty($e['draft']);
+        $rows[] = [
+            $e['document_number'] ?? '',
+            $cliente ? $cliente['nombre'] : ($e['contact_name'] ?? '—'),
+            !empty($e['date']) ? date_i18n('d/m/Y', strtotime((string) $e['date'])) : '',
+            number_format((float) str_replace(',', '.', (string) ($e['total'] ?? 0)), 2, ',', '.'),
+            $e['currency'] ?? '€',
+            $aprobado ? 'Aprobado' : 'Pendiente',
+        ];
+    }
+
+    crm_csv_export_stream(
+        'presupuestos_holded_' . date('Y-m-d_H-i-s') . '.csv',
+        ['Nº', 'Cliente', 'Fecha', 'Importe', 'Moneda', 'Estado'],
+        $rows
+    );
 }
 
 /**

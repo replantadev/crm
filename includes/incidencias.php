@@ -203,3 +203,19 @@ function crm_inst_ajax_actualizar_incidencia() {
 
     wp_send_json_success(['id' => $incidencia_id, 'estado' => $nuevo_estado]);
 }
+
+/**
+ * Roadmap de "Incidencias" (v1.20.184/185) — ver includes/flujos-page.php.
+ * Añadida en v1.20.189 porque se quedó fuera por descuido al construir la
+ * función: la regla del propio plan es que todo módulo nuevo registre su
+ * entrada en el mismo commit que lo crea.
+ */
+add_filter('crm_roadmap_fases', function ($fases) {
+    $fases[] = [
+        'fase'    => 'Incidencias en instalaciones',
+        'titulo'  => 'Concepto propio con ciclo de vida y notificaciones (antes solo notas/log genérico)',
+        'estado'  => 'hecho',
+        'detalle' => 'Pedido explícito del usuario ("adelante con incidencias"). La puede abrir tanto el instalador (panel de campo) como el jefe/crm_admin (ficha) — el usuario pidió que quedase claro para qué es esto y que se vieran las notificaciones. Ciclo de vida: Abierta → En curso → Resuelta, puramente informativa (no bloquea el cierre). Notificación asimétrica según quién declara: instalador abre → avisa a jefes; jefe abre → avisa a los instaladores asignados. Integrada en el widget "Requiere atención", el listado, la ficha (en pestañas junto a Notificaciones/Actividad, a petición del usuario para reducir el scroll) y el panel de instalador. Verificado con 21 pruebas unitarias + smoke-test real en navegador y BD: reportar, marcar en curso y resolver con nota, las tres confirmadas en la tabla real.',
+    ];
+    return $fases;
+});

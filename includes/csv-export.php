@@ -39,3 +39,18 @@ function crm_csv_export_stream($filename, array $header, iterable $rows) {
     fclose($out);
     exit;
 }
+
+/**
+ * Roadmap de "Exportación a CSV" (v1.20.188) — ver includes/flujos-page.php.
+ * Añadida en v1.20.189 por el mismo motivo que la de Incidencias: se quedó
+ * fuera por descuido al construir la función inicial.
+ */
+add_filter('crm_roadmap_fases', function ($fases) {
+    $fases[] = [
+        'fase'    => 'Exportación de listados a CSV',
+        'titulo'  => 'Instalaciones, Clientes, Leads MK y Ventas-Presupuestos',
+        'estado'  => 'en_pruebas',
+        'detalle' => 'Cierra el último hueco abierto de la auditoría original del presupuesto. Alcance acordado con el usuario: solo CSV (sin añadir ninguna librería nueva para .xlsx real, el plugin no tenía ninguna) y 4 listados — Instalaciones, Clientes ("Todas las altas"), Leads de Marketing y Ventas-Presupuestos (Holded). Instalaciones respeta los filtros activos en pantalla (estado/tipo/búsqueda/atención); los otros 3 exportan todo, igual que su query de pantalla. Verificado con descarga real en el navegador + contenido del CSV comprobado byte a byte para Instalaciones, Clientes y Leads MK. El de Ventas-Presupuestos no se pudo probar end-to-end porque Local no tiene clave de Holded configurada — mismo código exacto que los otros 3, ya verificados, pendiente solo de una prueba con datos reales de Holded.',
+    ];
+    return $fases;
+});

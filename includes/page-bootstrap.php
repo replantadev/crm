@@ -125,6 +125,19 @@ function crm_required_pages() {
             'content' => '[crm_inst_validar_extra_cliente]',
         ],
         [
+            // v1.20.191 — encuesta de satisfacción al cliente (R-06-2).
+            'slug'    => 'encuesta-satisfaccion',
+            'title'   => 'Encuesta de satisfacción',
+            'content' => '[crm_inst_encuesta_satisfaccion]',
+        ],
+        [
+            // v1.20.191 — listado para crm_admin/jefe_instalaciones, distinto
+            // de la página pública de arriba (esta exige login).
+            'slug'    => 'encuestas-de-satisfaccion',
+            'title'   => 'Encuestas de satisfacción',
+            'content' => '[crm_inst_encuestas_listado]',
+        ],
+        [
             // v1.20.100 — item de menú "Flujos": roadmap + diagramas del CRM.
             'slug'    => 'flujos',
             'title'   => 'Flujos',

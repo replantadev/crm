@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.190
+Version: 1.20.191
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.190');
+define('CRM_PLUGIN_VERSION', '1.20.191');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -97,6 +97,9 @@ require_once CRM_PLUGIN_PATH . 'includes/acta-entrega.php';
 // v1.20.172 — Descarga conjunta en ZIP de la documentación de una instalación
 // (hueco real del presupuesto original del módulo, ver includes/documentos-zip.php).
 require_once CRM_PLUGIN_PATH . 'includes/documentos-zip.php';
+// v1.20.191 — Encuesta de satisfacción al cliente (R-06-2 de Ecovolt), último
+// punto pendiente de Fase 8 (ver includes/encuesta-satisfaccion.php).
+require_once CRM_PLUGIN_PATH . 'includes/encuesta-satisfaccion.php';
 // v1.20.41 — Fase 4: panel branded del instalador (calendario, sin App Shell)
 require_once CRM_PLUGIN_PATH . 'includes/instalador-panel.php';
 // v1.20.26 — Cliente API de Holded (presupuestos, productos, almacenes)

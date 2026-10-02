@@ -10,6 +10,7 @@
  *   - {prefix}crm_instalacion_agenda
  *   - {prefix}crm_instalacion_log
  *   - {prefix}crm_instalacion_incidencias
+ *   - {prefix}crm_instalacion_encuestas
  *
  * Roles: jefe_instalaciones (acceso completo), instalador (solo lo suyo).
  *
@@ -96,6 +97,11 @@ function crm_inst_table_agenda() {
 	return $wpdb->prefix . 'crm_instalacion_agenda';
 }
 
+function crm_inst_table_encuestas() {
+	global $wpdb;
+	return $wpdb->prefix . 'crm_instalacion_encuestas';
+}
+
 function crm_inst_table_log() {
 	global $wpdb;
 	return $wpdb->prefix . 'crm_instalacion_log';
@@ -142,6 +148,7 @@ function crm_inst_borrar_instalacion_completa( $instalacion_id ) {
 	$wpdb->delete( crm_inst_table_trabajos(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
 	$wpdb->delete( crm_inst_table_instaladores(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
 	$wpdb->delete( crm_inst_table_incidencias(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
+	$wpdb->delete( crm_inst_table_encuestas(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
 	$wpdb->delete( crm_inst_table_log(), [ 'instalacion_id' => $instalacion_id ], [ '%d' ] );
 	$wpdb->delete( crm_inst_table_instalaciones(), [ 'id' => $instalacion_id ], [ '%d' ] );
 }
@@ -344,6 +351,46 @@ function crm_instalaciones_install_tables() {
   KEY declarado_por (declarado_por)
 ) $charset_collate;";
 
+	// 8. crm_instalacion_encuestas — encuesta de satisfacción al cliente
+	// (R-06-2 de Ecovolt, 2026-10-02): se envía por email N días después de
+	// finalizar, con un enlace de un solo uso (mismo patrón de `token` que
+	// partida extra/proveedor). "Resultado medio"/"% global"/"Conforme" se
+	// calculan solos de las 10 valoraciones; "acciones_necesarias" y
+	// "responsable_revision" los rellena a mano el jefe desde la ficha tras
+	// revisar la respuesta — por eso van en columnas propias, editables, no
+	// calculadas.
+	$t8   = crm_inst_table_encuestas();
+	$sql8 = "CREATE TABLE $t8 (
+  id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+  instalacion_id BIGINT(20) UNSIGNED NOT NULL,
+  token VARCHAR(64) NOT NULL DEFAULT '',
+  enviada_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  respondida_en DATETIME DEFAULT NULL,
+  atencion_trato TINYINT UNSIGNED DEFAULT NULL,
+  rapidez_respuesta TINYINT UNSIGNED DEFAULT NULL,
+  asesoramiento_tecnico TINYINT UNSIGNED DEFAULT NULL,
+  cumplimiento_plazos TINYINT UNSIGNED DEFAULT NULL,
+  calidad_trabajos TINYINT UNSIGNED DEFAULT NULL,
+  profesionalidad_personal TINYINT UNSIGNED DEFAULT NULL,
+  limpieza_orden TINYINT UNSIGNED DEFAULT NULL,
+  cumplimiento_compromisos TINYINT UNSIGNED DEFAULT NULL,
+  documentacion_entregada TINYINT UNSIGNED DEFAULT NULL,
+  satisfaccion_global TINYINT UNSIGNED DEFAULT NULL,
+  volveria_contratar ENUM('si','no','probablemente') DEFAULT NULL,
+  recomendaria ENUM('si','no','probablemente') DEFAULT NULL,
+  observaciones TEXT DEFAULT NULL,
+  resultado_medio DECIMAL(3,2) DEFAULT NULL,
+  valoracion_global_pct DECIMAL(5,2) DEFAULT NULL,
+  conforme TINYINT(1) DEFAULT NULL,
+  acciones_necesarias TEXT DEFAULT NULL,
+  responsable_revision VARCHAR(255) DEFAULT NULL,
+  revisado_por BIGINT(20) UNSIGNED DEFAULT NULL,
+  revisado_en DATETIME DEFAULT NULL,
+  PRIMARY KEY  (id),
+  KEY instalacion_id (instalacion_id),
+  KEY token (token)
+) $charset_collate;";
+
 	dbDelta( $sql1 );
 	dbDelta( $sql2 );
 	dbDelta( $sql3 );
@@ -351,6 +398,7 @@ function crm_instalaciones_install_tables() {
 	dbDelta( $sql5 );
 	dbDelta( $sql6 );
 	dbDelta( $sql7 );
+	dbDelta( $sql8 );
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1903,6 +1951,17 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 		"SELECT ruta, subido_en, version FROM " . crm_inst_table_documentos() . " WHERE instalacion_id = %d AND tipo = 'archivo_final' ORDER BY id DESC LIMIT 1",
 		$instalacion_id
 	), ARRAY_A );
+
+	// v1.20.191 — encuesta de satisfacción al cliente (R-06-2 de Ecovolt):
+	// la más reciente, por si en el futuro se permitiera reenviarla.
+	$encuesta = $wpdb->get_row( $wpdb->prepare(
+		"SELECT * FROM " . crm_inst_table_encuestas() . " WHERE instalacion_id = %d ORDER BY id DESC LIMIT 1",
+		$instalacion_id
+	), ARRAY_A );
+	if ( $encuesta ) {
+		$revisado_por_user = $encuesta['revisado_por'] ? get_userdata( (int) $encuesta['revisado_por'] ) : null;
+		$encuesta['revisado_por_nombre'] = $revisado_por_user ? $revisado_por_user->display_name : '';
+	}
 	$cierre_declarado_por_user = $inst['cierre_declarado_por'] ? get_userdata( (int) $inst['cierre_declarado_por'] ) : null;
 	$cierre_validado_por_user  = $inst['cierre_validado_por'] ? get_userdata( (int) $inst['cierre_validado_por'] ) : null;
 
@@ -1983,6 +2042,7 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 			'version'     => (int) ( $archivo_final_doc['version'] ?? 0 ),
 			'generado_en' => $archivo_final_doc['subido_en'] ?? '',
 		],
+		'encuesta'            => $encuesta ?: null,
 		'checklist_confirmado_en' => $inst['checklist_confirmado_en'],
 		'holded_invoice_id'   => $inst['holded_invoice_id'],
 		'holded_purchase_id'  => $inst['holded_purchase_id'],
@@ -2108,6 +2168,9 @@ function crm_inst_notificaciones_settings_render() {
 		update_option( 'crm_inst_cierre_requiere_aprobacion', ! empty( $_POST['crm_inst_cierre_requiere_aprobacion'] ), false );
 		update_option( 'crm_inst_aviso_calendario_hora', max( 0, min( 23, (int) ( $_POST['crm_inst_aviso_calendario_hora'] ?? 9 ) ) ), false );
 		update_option( 'crm_inst_aviso_cliente_visita_email', ! empty( $_POST['crm_inst_aviso_cliente_visita_email'] ), false );
+		update_option( 'crm_inst_encuesta_activa', ! empty( $_POST['crm_inst_encuesta_activa'] ), false );
+		update_option( 'crm_inst_encuesta_dias', max( 0, (int) ( $_POST['crm_inst_encuesta_dias'] ?? 3 ) ), false );
+		update_option( 'crm_inst_encuesta_google_review_url', esc_url_raw( wp_unslash( $_POST['crm_inst_encuesta_google_review_url'] ?? '' ) ), false );
 		echo '<div style="padding:8px 12px;background:#d1fae5;color:#065f46;border-radius:6px;margin-bottom:10px;font-size:13px;">Configuración de notificaciones guardada.</div>';
 	}
 
@@ -2171,6 +2234,21 @@ function crm_inst_notificaciones_settings_render() {
 				El cierre que declara el instalador (conformidad + observaciones + fotos) queda pendiente hasta que un jefe de instalaciones lo valide
 			</label>
 			<p style="font-size:12.5px;color:#6b7280;margin:4px 0 0;">Desmarcado (por defecto): el cierre del instalador es definitivo al momento — la instalación pasa a "Finalizada" directamente.</p>
+
+			<h4 style="margin:16px 0 8px;">Encuesta de satisfacción al cliente (R-06-2)</h4>
+			<label style="display:block;margin-bottom:8px;">
+				<input type="checkbox" name="crm_inst_encuesta_activa" value="1" <?php checked( get_option( 'crm_inst_encuesta_activa', false ) ); ?>>
+				Enviar la encuesta de satisfacción por email tras finalizar una instalación
+			</label>
+			<p style="font-size:12.5px;color:#6b7280;margin:0 0 8px;">Desmarcada por defecto: no se envía nada hasta activarla aquí.</p>
+			<p style="margin-bottom:8px;">
+				Esperar
+				<input type="number" min="0" step="1" name="crm_inst_encuesta_dias" value="<?php echo esc_attr( (int) get_option( 'crm_inst_encuesta_dias', 3 ) ); ?>" style="width:60px;">
+				día(s) después de finalizar la instalación.
+			</p>
+			<label style="display:block;margin-bottom:4px;">Enlace para dejar reseña en Google (opcional)</label>
+			<input type="url" name="crm_inst_encuesta_google_review_url" value="<?php echo esc_attr( (string) get_option( 'crm_inst_encuesta_google_review_url', '' ) ); ?>" style="width:100%;max-width:420px;box-sizing:border-box;padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;" placeholder="https://g.page/r/.../review">
+			<p style="font-size:12.5px;color:#6b7280;margin:4px 0 0;">Se muestra al cliente tras responder, solo si su valoración de "Satisfacción global" es alta (4-5). En blanco: simplemente se le da las gracias, sin pedir reseña. Si la valoración es baja (1-2), se avisa a jefes/crm_admin para que contacten — no se pide reseña.</p>
 
 			<p style="margin-top:14px;"><button type="submit" class="crm-btn">Guardar</button></p>
 		</form>
@@ -4954,6 +5032,7 @@ function crm_inst_shortcode_listado() {
 			<div class="widget-header-compact">
 				<h3 class="widget-title-compact">Instalaciones</h3>
 				<a href="#" id="crm-inst-export-csv" class="crm-btn"><?php echo crm_icon( 'file-text', 14 ); ?> Exportar CSV</a>
+				<a href="<?php echo esc_url( home_url( '/encuestas-de-satisfaccion/' ) ); ?>" class="crm-btn">Encuestas de satisfacción</a>
 				<a href="<?php echo esc_url( $nueva_url ); ?>" class="crm-btn">+ Nueva instalación</a>
 			</div>
 			<div class="widget-content-compact">
@@ -6136,6 +6215,69 @@ function crm_inst_shortcode_ficha() {
 					<?php endif; ?>
 				</div>
 
+				<?php if ( $data['cierre']['estado'] === 'aprobado' ) : ?>
+					<div class="crm-inst-ficha-section">
+						<h3 style="margin-top:0;">Encuesta de satisfacción (R-06-2)</h3>
+						<?php if ( empty( $data['encuesta'] ) ) : ?>
+							<p class="crm-inst-field-info" style="color:#6b7280;">
+								<?php if ( get_option( 'crm_inst_encuesta_activa', false ) ) : ?>
+									Todavía no se ha enviado — se envía sola a los <?php echo (int) get_option( 'crm_inst_encuesta_dias', 3 ); ?> día(s) de finalizar.
+								<?php else : ?>
+									El envío automático de esta encuesta está desactivado en Ajustes.
+								<?php endif; ?>
+							</p>
+						<?php elseif ( empty( $data['encuesta']['respondida_en'] ) ) : ?>
+							<p class="crm-inst-field-info">Enviada al cliente el <?php echo esc_html( date_i18n( 'd/m/Y H:i', strtotime( $data['encuesta']['enviada_en'] ) ) ); ?> — pendiente de respuesta.</p>
+						<?php else :
+							$asp = [
+								'atencion_trato'           => 'Atención y trato recibido',
+								'rapidez_respuesta'        => 'Rapidez de respuesta',
+								'asesoramiento_tecnico'    => 'Asesoramiento técnico',
+								'cumplimiento_plazos'      => 'Cumplimiento de plazos',
+								'calidad_trabajos'         => 'Calidad de los trabajos realizados',
+								'profesionalidad_personal' => 'Profesionalidad del personal',
+								'limpieza_orden'           => 'Limpieza y orden de los trabajos',
+								'cumplimiento_compromisos' => 'Cumplimiento de compromisos',
+								'documentacion_entregada'  => 'Documentación entregada',
+								'satisfaccion_global'      => 'Satisfacción global',
+							];
+						?>
+							<p class="crm-inst-field-info">Respondida el <?php echo esc_html( date_i18n( 'd/m/Y H:i', strtotime( $data['encuesta']['respondida_en'] ) ) ); ?>.</p>
+							<table class="crm-table-compact" style="max-width:520px;">
+								<tbody>
+									<?php foreach ( $asp as $campo => $label ) : ?>
+										<tr><td><?php echo esc_html( $label ); ?></td><td><strong><?php echo esc_html( $data['encuesta'][ $campo ] ?? '—' ); ?></strong> / 5</td></tr>
+									<?php endforeach; ?>
+									<tr><td>¿Volvería a contratar?</td><td><strong><?php echo esc_html( ucfirst( (string) $data['encuesta']['volveria_contratar'] ) ); ?></strong></td></tr>
+									<tr><td>¿Recomendaría ECOVOLT?</td><td><strong><?php echo esc_html( ucfirst( (string) $data['encuesta']['recomendaria'] ) ); ?></strong></td></tr>
+								</tbody>
+							</table>
+							<?php if ( ! empty( $data['encuesta']['observaciones'] ) ) : ?>
+								<p><strong>Observaciones del cliente:</strong><br><?php echo nl2br( esc_html( $data['encuesta']['observaciones'] ) ); ?></p>
+							<?php endif; ?>
+							<p>
+								<strong>Resultado medio:</strong> <?php echo esc_html( number_format( (float) $data['encuesta']['resultado_medio'], 2 ) ); ?> / 5
+								&nbsp;·&nbsp; <strong>Valoración global:</strong> <?php echo esc_html( number_format( (float) $data['encuesta']['valoracion_global_pct'], 0 ) ); ?>%
+								&nbsp;·&nbsp;
+								<span class="crm-inst-extra-badge <?php echo $data['encuesta']['conforme'] ? 'crm-inst-extra-badge-aprobado' : 'crm-inst-extra-badge-rechazado'; ?>"><?php echo $data['encuesta']['conforme'] ? 'Conforme' : 'No conforme'; ?></span>
+							</p>
+							<?php if ( current_user_can( 'crm_inst_manage' ) ) : ?>
+								<div style="margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;">
+									<h4 style="margin:0 0 8px;">Evaluación interna</h4>
+									<label style="display:block;font-size:13px;font-weight:600;margin-bottom:4px;">Acciones necesarias</label>
+									<textarea id="crm-inst-encuesta-acciones" rows="2" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-family:inherit;"><?php echo esc_textarea( (string) ( $data['encuesta']['acciones_necesarias'] ?? '' ) ); ?></textarea>
+									<label style="display:block;font-size:13px;font-weight:600;margin:10px 0 4px;">Responsable de revisión</label>
+									<input type="text" id="crm-inst-encuesta-responsable" value="<?php echo esc_attr( (string) ( $data['encuesta']['responsable_revision'] ?? '' ) ); ?>" style="width:100%;max-width:320px;box-sizing:border-box;padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;">
+									<p><button type="button" class="crm-btn" id="crm-inst-encuesta-guardar-btn" data-instalacion-id="<?php echo esc_attr( $data['id'] ); ?>">Guardar evaluación interna</button> <span id="crm-inst-encuesta-guardar-msg"></span></p>
+									<?php if ( ! empty( $data['encuesta']['revisado_por_nombre'] ) ) : ?>
+										<p style="font-size:12px;color:#6b7280;">Última revisión: <?php echo esc_html( $data['encuesta']['revisado_por_nombre'] ); ?> el <?php echo esc_html( date_i18n( 'd/m/Y H:i', strtotime( $data['encuesta']['revisado_en'] ) ) ); ?>.</p>
+									<?php endif; ?>
+								</div>
+							<?php endif; ?>
+						<?php endif; ?>
+					</div>
+				<?php endif; ?>
+
 				<div class="crm-inst-ficha-section crm-inst-tabs-wrap">
 					<style>
 						.crm-inst-tabs-nav { display:flex; gap:4px; border-bottom:1px solid #e5e7eb; margin-bottom:16px; }
@@ -6825,6 +6967,22 @@ function crm_inst_shortcode_ficha() {
 			}, function (resp) {
 				if (!resp.success) { btn.prop('disabled', false); alert(resp.data.message); return; }
 				location.reload();
+			});
+		});
+
+		// v1.20.191 — "Evaluación interna" de la encuesta de satisfacción.
+		$('#crm-inst-encuesta-guardar-btn').on('click', function () {
+			var btn = $(this).prop('disabled', true);
+			var msg = $('#crm-inst-encuesta-guardar-msg').css('color', '#6b7280').text('Guardando…');
+			$.post(ajaxurl, {
+				action: 'crm_inst_encuesta_guardar_revision', nonce: nonce,
+				instalacion_id: $(this).data('instalacion-id'),
+				acciones_necesarias: $('#crm-inst-encuesta-acciones').val(),
+				responsable_revision: $('#crm-inst-encuesta-responsable').val()
+			}, function (resp) {
+				btn.prop('disabled', false);
+				if (!resp.success) { msg.css('color', '#991b1b').text((resp.data && resp.data.message) ? resp.data.message : 'Error.'); return; }
+				msg.css('color', '#065f46').text('Guardado.');
 			});
 		});
 

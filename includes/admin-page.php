@@ -292,6 +292,25 @@ function crm_register_admin_settings() {
         'default'           => false,
         'sanitize_callback' => function ($v) { return !empty($v); },
     ]);
+    // v1.20.191 — Encuesta de satisfacción al cliente (R-06-2 de Ecovolt).
+    register_setting('crm_settings', 'crm_inst_encuesta_activa', [
+        'type'              => 'boolean',
+        'default'           => false,
+        'sanitize_callback' => function ($v) { return !empty($v); },
+    ]);
+    register_setting('crm_settings', 'crm_inst_encuesta_dias', [
+        'type'              => 'integer',
+        'default'           => 3,
+        'sanitize_callback' => function ($v) {
+            $n = (int) $v;
+            return $n >= 0 ? $n : 3;
+        },
+    ]);
+    register_setting('crm_settings', 'crm_inst_encuesta_google_review_url', [
+        'type'              => 'string',
+        'default'           => '',
+        'sanitize_callback' => 'esc_url_raw',
+    ]);
     register_setting('crm_settings', 'crm_whatsapp_template_recordatorio_visita', [
         'type'              => 'string',
         'default'           => '',
@@ -1494,6 +1513,27 @@ function crm_admin_render_settings() {
                 <td>
                     <label><input type="checkbox" id="crm_inst_aviso_cliente_visita_email" name="crm_inst_aviso_cliente_visita_email" value="1" <?php checked(get_option('crm_inst_aviso_cliente_visita_email', false)); ?>> Enviar un email al cliente en el momento de programar/reprogramar la visita (v1.20.130)</label>
                     <p class="description">Desmarcado (por defecto): el cliente se entera de la visita solo con el recordatorio del día antes. Marcado, recibe también un email inmediato al agendar/reprogramar.</p>
+                </td>
+            </tr>
+            <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Encuesta de satisfacción — R-06-2 (v1.20.191)</h3></th></tr>
+            <tr>
+                <th><label for="crm_inst_encuesta_activa">Activar</label></th>
+                <td>
+                    <label><input type="checkbox" id="crm_inst_encuesta_activa" name="crm_inst_encuesta_activa" value="1" <?php checked(get_option('crm_inst_encuesta_activa', false)); ?>> Enviar la encuesta de satisfacción por email tras finalizar una instalación</label>
+                    <p class="description">Desmarcada por defecto: no se envía nada hasta activarla aquí. También editable desde /panel-de-control/.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_inst_encuesta_dias">Días de espera</label></th>
+                <td>
+                    <input type="number" min="0" step="1" id="crm_inst_encuesta_dias" name="crm_inst_encuesta_dias" value="<?php echo esc_attr((string) get_option('crm_inst_encuesta_dias', 3)); ?>" style="width:70px;"> días después de finalizar la instalación.
+                </td>
+            </tr>
+            <tr>
+                <th><label for="crm_inst_encuesta_google_review_url">Enlace para dejar reseña (Google)</label></th>
+                <td>
+                    <input type="url" id="crm_inst_encuesta_google_review_url" name="crm_inst_encuesta_google_review_url" class="regular-text" value="<?php echo esc_attr((string) get_option('crm_inst_encuesta_google_review_url', '')); ?>" placeholder="https://g.page/r/.../review">
+                    <p class="description">Se muestra al cliente tras responder, solo si su "Satisfacción global" es alta (4-5). En blanco: solo se le da las gracias, sin pedir reseña. Si la valoración es baja (1-2), se avisa a jefes/crm_admin para que contacten.</p>
                 </td>
             </tr>
             <tr><th colspan="2"><h3 style="margin:18px 0 6px;">Visitas comerciales — WhatsApp (v1.20.156)</h3></th></tr>

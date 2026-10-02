@@ -51,6 +51,7 @@ function crm_paginas_publicas_sin_login() {
         'confirmar-pedido',   // v1.20.57 — el proveedor (Santoki) confirma un pedido.
         'plan-de-seguridad',  // v1.20.60 — se abre en pestaña nueva desde el panel del instalador.
         'validar-extra',      // v1.20.75 — el cliente aprueba/rechaza una partida extra.
+        'encuesta-satisfaccion', // v1.20.191 — el cliente responde la encuesta de satisfacción (R-06-2).
     ]);
 }
 

@@ -1093,6 +1093,15 @@ function crm_inst_match_or_create_client_from_holded_contact( array $contact ) {
 		return new WP_Error( 'crm_inst_invalid_contact', 'El contacto de Holded no tiene nombre.' );
 	}
 
+	// v1.20.194: bug real encontrado en auditoría — se escribía 'estado' a
+	// mano sin su 'estado_por_sector' correspondiente, saltándose
+	// crm_calcula_estado_global(). Con una instalación creada desde un
+	// presupuesto de renovables ya aprobado, el sector 'renovables' sí está
+	// en ese estado — se declara explícitamente para que los dos queden
+	// consistentes desde el alta (antes dependía de que el cron de Holded
+	// pasara por este mismo contacto para corregirlo).
+	$estado_por_sector_inicial = [ 'renovables' => 'presupuesto_aceptado' ];
+
 	$insert = $wpdb->insert(
 		$table,
 		[
@@ -1104,7 +1113,9 @@ function crm_inst_match_or_create_client_from_holded_contact( array $contact ) {
 			'poblacion'                => $campos['poblacion'],
 			'provincia'                => $campos['provincia'] !== '' ? $campos['provincia'] : 'León',
 			'codigo_postal'            => $campos['codigo_postal'],
-			'estado'                   => 'presupuesto_aceptado',
+			'intereses'                => maybe_serialize( [ 'renovables' ] ),
+			'estado_por_sector'        => maybe_serialize( $estado_por_sector_inicial ),
+			'estado'                   => crm_calcula_estado_global( $estado_por_sector_inicial ),
 			'fecha_envio_por_sector'   => maybe_serialize( [] ),
 			'usuario_envio_por_sector' => maybe_serialize( [] ),
 			'origen_lead'              => 'instalacion_holded',
@@ -1241,10 +1252,15 @@ function crm_inst_enrich_client_for_renovables( $client_id, $estimate_id, $tipo_
 	}
 
 	// 2) Estado del sector: solo si el sector no tenía ya un estado propio.
+	// v1.20.194: bug real encontrado en auditoría — esto cambiaba
+	// estado_por_sector pero nunca recalculaba el estado GLOBAL a partir del
+	// mapa resultante, dejándolo desincronizado hasta el próximo guardado
+	// completo del formulario o la siguiente pasada del cron de Holded.
 	$estado_por_sector = crm_safe_unserialize_array( $client['estado_por_sector'] ?? '' );
 	if ( empty( $estado_por_sector['renovables'] ) ) {
 		$estado_por_sector['renovables']  = 'presupuesto_aceptado';
 		$update['estado_por_sector']      = maybe_serialize( $estado_por_sector );
+		$update['estado']                 = crm_calcula_estado_global( $estado_por_sector );
 	}
 
 	// 3) Tipo de cliente: solo si estaba vacío.

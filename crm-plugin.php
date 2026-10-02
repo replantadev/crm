@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.193
+Version: 1.20.194
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.193');
+define('CRM_PLUGIN_VERSION', '1.20.194');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -3968,6 +3968,12 @@ add_filter('crm_roadmap_fases', function ($fases) {
         'estado'  => 'hecho',
         'detalle' => 'v1.20.154, a petición del usuario tras hablarlo con Aurora ("de forma segura, robusta y escalable"): campo obligatorio con validación de formato y de que el prefijo coincide con la provincia (7 casos de prueba a mano antes de desplegar). Se rellena solo desde Holded al crear o sincronizar un cliente (solo si estaba vacío), y se usa para afinar la geocodificación. Confirmado por el usuario: el botón "Sincronizar ahora" rellenó bien los códigos postales de clientes ya existentes.',
     ];
+    $fases[] = [
+        'fase'    => 'Auditoría 2026-10-02 · estado vs. subestados',
+        'titulo'  => 'El estado global del cliente no se recalculaba siempre al cambiar los subestados por sector',
+        'estado'  => 'hecho',
+        'detalle' => 'Pedido explícito del usuario: "comprueba si colisiona el estado general del cliente con los subestados". Encontrado un bug raíz real y 2 consecuencias directas. Raíz: crm_update_clients_table_structure() (la lista de columnas que se auto-reparan en cada subida de versión) nunca incluyó estado_por_sector/fecha_envio_por_sector/usuario_envio_por_sector/reenvios — columnas que SÍ están en el CREATE TABLE original pero cuyo ALTER solo corre en la activación del plugin, nunca en una actualización normal. Cualquier entorno activado antes de que el código empezara a depender de estas columnas (o nunca reactivado) se queda sin ellas para siempre — cada guardado que las incluye falla en silencio (wpdb traga el error de MySQL), así que estado_por_sector nunca llega a persistir y el estado global queda aislado de los subestados. Corregido añadiéndolas a la lista de auto-reparación — verificado en Local: al subir de versión, las 4 columnas aparecieron solas. Consecuencias ya con la tabla completa: crm_ajax_quitar_interes() (quitar un interés) y crm_inst_enrich_client_for_renovables() (alta de instalación desde presupuesto) cambiaban estado_por_sector pero nunca recalculaban el estado global con crm_calcula_estado_global() — corregido en los dos sitios, mismo criterio que ya usa correctamente el sync horario de Holded. Verificado con un caso real en Local: cliente con energia=contratos_firmados y renovables=borrador (estado global stancado en "borrador"); al quitar el interés "renovables", el estado global pasó correctamente a "contratos_firmados". Nota aparte, no corregida a propósito (cambia el comportamiento de una función existente, pendiente de confirmar con el usuario): la casilla "Forzar este estado" del formulario de cliente escribe el estado global a mano sin pasar por crm_calcula_estado_global() — el valor forzado puede volver a calcularse automáticamente la próxima vez que cualquier otra acción recalcule el estado (quitar un interés, el sync de Holded, un guardado normal sin forzar), revirtiendo el valor forzado sin aviso.',
+    ];
     return $fases;
 });
 
@@ -4623,6 +4629,27 @@ function crm_update_clients_table_structure() {
         // no coinciden con lo que ya hay en la ficha (JSON, ver
         // crm_holded_reconciliar_direccion() en holded-clientes-sync.php).
         'holded_discrepancias' => "TEXT DEFAULT NULL",
+        // v1.20.194 — bug real encontrado en auditoría: estas 4 columnas
+        // están en el CREATE TABLE de crm_create_clients_table() desde hace
+        // tiempo (estado_por_sector es la base de TODA la lógica de
+        // "estado general vs. subestados por sector") pero nunca se habían
+        // incluido aquí, en la lista que de verdad se comprueba/repara en
+        // cada subida de versión (este bucle sí corre en plugins_loaded,
+        // crm_create_clients_table() con dbDelta solo corre en la
+        // ACTIVACIÓN del plugin). Cualquier entorno cuya tabla se creara
+        // antes de que estas columnas existieran en el código — o que
+        // nunca se reactivara el plugin — se queda ATASCADO para siempre
+        // sin ellas: cada $wpdb->update()/insert() que las incluye falla
+        // en silencio (error real de MySQL "Unknown column", que $wpdb
+        // traga sin interrumpir la petición), así que el estado_por_sector
+        // nunca llega a guardarse y el estado global vive aislado de los
+        // subestados — justo la colisión que se pidió auditar. Encontrado
+        // al intentar sembrar datos de prueba en Local: la tabla real no
+        // tenía ninguna de las 4.
+        'estado_por_sector'        => "LONGTEXT DEFAULT NULL",
+        'fecha_envio_por_sector'   => "TEXT DEFAULT NULL",
+        'usuario_envio_por_sector' => "TEXT DEFAULT NULL",
+        'reenvios'                 => "INT(11) DEFAULT 0",
     ];
     
     foreach ($required_columns as $column => $definition) {
@@ -5109,6 +5136,13 @@ function crm_ajax_quitar_interes() {
     }
     
     // Actualizar la base de datos
+    // v1.20.194: bug real encontrado en auditoría — esta función cambiaba
+    // estado_por_sector (al quitar el sector) pero nunca recalculaba el
+    // estado GLOBAL a partir de los sectores que quedan, dejándolo
+    // desincronizado (el "estado general" seguía reflejando un sector que
+    // ya no existe) hasta el próximo guardado completo del formulario o la
+    // siguiente pasada del cron de Holded. Mismo criterio que ya usa
+    // crm_holded_sync_actualizar_cliente(): escribir los dos juntos.
     $updated = $wpdb->update(
         $table_name,
         [
@@ -5117,6 +5151,7 @@ function crm_ajax_quitar_interes() {
             'presupuesto' => serialize($presupuestos),
             'contratos_firmados' => serialize($contratos_firmados),
             'estado_por_sector' => serialize($estado_por_sector),
+            'estado' => crm_calcula_estado_global($estado_por_sector),
             'actualizado_en' => current_time('mysql')
         ],
         ['id' => $client_id]

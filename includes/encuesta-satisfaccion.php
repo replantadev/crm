@@ -520,13 +520,41 @@ function crm_inst_shortcode_encuestas_listado() {
 
     ob_start();
     ?>
+    <style>
+        /* v1.20.192 — antes estos 3 grupos de botones usaban .crm-btn (bloque
+           sólido, sin gap ni wrap), que en esta página concreta (5 filtros +
+           export + "Ver ficha" por fila) quedaba horrible: los filtros se
+           solapaban entre sí al no caber en una línea. Chips compactos con
+           flex-wrap real, mismo criterio ya aplicado en la cola de leads MK. */
+        .crm-encuestas-admin-header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; }
+        .crm-encuestas-admin-export {
+            display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 14px;
+            border-radius:999px; border:1px solid var(--crm-n-200,#e4e4e7); background:var(--crm-n-0,#fff);
+            color:var(--crm-n-700,#3f3f46); font-size:13px; font-weight:600; text-decoration:none; white-space:nowrap;
+        }
+        .crm-encuestas-admin-export:hover { background:var(--crm-n-50,#fafafa); border-color:var(--crm-n-300,#d4d4d8); }
+        .crm-encuestas-admin-filtros { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px; }
+        .crm-encuestas-admin-filtro {
+            display:inline-flex; align-items:center; height:30px; padding:0 14px;
+            border-radius:999px; border:1px solid var(--crm-n-200,#e4e4e7); background:var(--crm-n-0,#fff);
+            color:var(--crm-n-700,#3f3f46); font-size:12.5px; font-weight:600; text-decoration:none; white-space:nowrap;
+        }
+        .crm-encuestas-admin-filtro:hover { background:var(--crm-n-50,#fafafa); border-color:var(--crm-n-300,#d4d4d8); }
+        .crm-encuestas-admin-filtro.is-active { background:var(--crm-acc-50,#eff6ff); border-color:var(--crm-acc-200,#bfdbfe); color:var(--crm-acc-700,#1d4ed8); }
+        .crm-encuestas-admin-ver {
+            display:inline-flex; align-items:center; height:26px; padding:0 10px;
+            border-radius:999px; border:1px solid var(--crm-n-200,#e4e4e7); background:var(--crm-n-0,#fff);
+            color:var(--crm-n-700,#3f3f46); font-size:12px; font-weight:600; text-decoration:none; white-space:nowrap;
+        }
+        .crm-encuestas-admin-ver:hover { background:var(--crm-n-50,#fafafa); border-color:var(--crm-n-300,#d4d4d8); }
+    </style>
     <div class="crm-widget-compact">
-        <div class="widget-header-compact">
+        <div class="widget-header-compact crm-encuestas-admin-header">
             <h3 class="widget-title-compact">Encuestas de satisfacción</h3>
-            <a href="<?php echo $export_url; ?>" class="crm-btn"><?php echo function_exists('crm_icon') ? crm_icon('file-text', 14) : ''; ?> Exportar CSV</a>
+            <a href="<?php echo $export_url; ?>" class="crm-encuestas-admin-export"><?php echo function_exists('crm_icon') ? crm_icon('file-text', 14) : ''; ?> Exportar CSV</a>
         </div>
         <div class="widget-content-compact">
-            <p style="margin:0 0 12px;">
+            <div class="crm-encuestas-admin-filtros">
                 <?php
                 $filtros = [
                     ''              => 'Todas',
@@ -538,9 +566,9 @@ function crm_inst_shortcode_encuestas_listado() {
                 foreach ($filtros as $key => $label):
                     $url = $key === '' ? remove_query_arg('filtro') : add_query_arg('filtro', $key);
                 ?>
-                    <a href="<?php echo esc_url($url); ?>" class="crm-btn" style="<?php echo $filtro === $key ? '' : 'background:#9ca3af;'; ?>"><?php echo esc_html($label); ?></a>
+                    <a href="<?php echo esc_url($url); ?>" class="crm-encuestas-admin-filtro<?php echo $filtro === $key ? ' is-active' : ''; ?>"><?php echo esc_html($label); ?></a>
                 <?php endforeach; ?>
-            </p>
+            </div>
             <div class="table-responsive-compact">
                 <table class="crm-table-compact">
                     <thead>
@@ -574,7 +602,7 @@ function crm_inst_shortcode_encuestas_listado() {
                                     <?php endif; ?>
                                 </td>
                                 <td><?php echo !empty($f['acciones_necesarias']) ? '✓' : '—'; ?></td>
-                                <td><a href="<?php echo esc_url($ficha_url); ?>" class="crm-btn">Ver ficha</a></td>
+                                <td><a href="<?php echo esc_url($ficha_url); ?>" class="crm-encuestas-admin-ver">Ver ficha</a></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>

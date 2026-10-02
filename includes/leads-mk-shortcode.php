@@ -340,7 +340,7 @@ function crm_export_leads_mk_csv() {
     $origen_labels = ['lead_mk' => 'Meta/Google', 'placassolares' => 'placassolares.es', 'aerotermia' => 'aerotermia.es', 'luz' => 'luz.es'];
 
     $rows_db = $wpdb->get_results($wpdb->prepare(
-        "SELECT id, fecha, cliente_nombre, telefono, email_cliente, lead_meta, user_id, delegado, lead_mk_status, origen_lead
+        "SELECT id, fecha, cliente_nombre, telefono, email_cliente, lead_meta, user_id, delegado, lead_mk_status, origen_lead, comentarios
          FROM $table
          WHERE {$origenes['sql']}
          ORDER BY id DESC
@@ -361,12 +361,13 @@ function crm_export_leads_mk_csv() {
             $origen_labels[$r['origen_lead']] ?? $r['origen_lead'],
             crm_lead_mk_lifecycle_label(crm_lead_mk_lifecycle($r)),
             $r['delegado'] ?: 'Sin asignar',
+            $r['comentarios'] ?? '',
         ];
     }
 
     crm_csv_export_stream(
         'leads_mk_' . date('Y-m-d_H-i-s') . '.csv',
-        ['Fecha', 'Nombre', 'Teléfono', 'Email', 'Campaña', 'Fuente', 'Lifecycle MK', 'Comercial'],
+        ['Fecha', 'Nombre', 'Teléfono', 'Email', 'Campaña', 'Fuente', 'Lifecycle MK', 'Comercial', 'Comentarios'],
         $rows
     );
 }

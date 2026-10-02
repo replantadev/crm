@@ -79,7 +79,55 @@ function crm_flujos_roadmap_shared_css() {
         .crm-flujos-toc { right:12px; bottom:12px; }
         .crm-flujos-toc-panel { width:calc(100vw - 48px); max-width:320px; }
     }
+    .crm-flujos-tabs-nav { display:flex; gap:4px; border-bottom:1px solid #e5e7eb; margin-bottom:18px; }
+    .crm-flujos-tabs-nav button { background:none; border:none; border-bottom:2px solid transparent; padding:10px 16px; font-size:14px; font-weight:600; color:#6b7280; cursor:pointer; }
+    .crm-flujos-tabs-nav button:hover { color:#111827; }
+    .crm-flujos-tabs-nav button.is-active { color:#111827; border-bottom-color:#111827; }
+    .crm-flujos-tab-panel { display:none; }
+    .crm-flujos-tab-panel.is-active { display:block; }
     CSS;
+}
+
+/**
+ * JS compartido del selector de pestañas Roadmap/Flujos — v1.20.193, a
+ * petición del usuario ("divídela en pestañas: roadmap-flujos"). Mismo
+ * patrón ya usado en la ficha de instalación (Incidencias/Notificaciones/
+ * Actividad). También intercepta los enlaces del índice flotante (TOC):
+ * el de "Roadmap" activa esa pestaña; los de diagramas activan "Flujos"
+ * antes de hacer scroll al ancla (si no, el navegador no puede desplazarse
+ * dentro de un panel oculto con display:none).
+ */
+function crm_flujos_tabs_js() {
+    return <<<JS
+    (function () {
+        var nav = document.querySelector('.crm-flujos-tabs-nav');
+        if (!nav) { return; }
+        function activar(tab) {
+            document.querySelectorAll('.crm-flujos-tabs-nav button').forEach(function (b) {
+                b.classList.toggle('is-active', b.getAttribute('data-tab') === tab);
+            });
+            document.querySelectorAll('.crm-flujos-tab-panel').forEach(function (p) {
+                p.classList.toggle('is-active', p.getAttribute('data-tab-panel') === tab);
+            });
+            // Los diagramas mermaid solo se pueden medir/pintar con su
+            // contenedor ya visible — se renderizan aquí (idempotente, mermaid
+            // ignora los que ya tiene marcados como procesados), no al cargar
+            // la página con la pestaña todavía oculta.
+            if (tab === 'flujos' && typeof window.crmFlujosRenderMermaid === 'function') {
+                window.crmFlujosRenderMermaid();
+            }
+        }
+        nav.querySelectorAll('button').forEach(function (btn) {
+            btn.addEventListener('click', function () { activar(btn.getAttribute('data-tab')); });
+        });
+        document.querySelectorAll('.crm-flujos-toc-panel a').forEach(function (a) {
+            a.addEventListener('click', function () {
+                var href = a.getAttribute('href') || '';
+                activar(href === '#crm-roadmap' ? 'roadmap' : 'flujos');
+            });
+        });
+    })();
+    JS;
 }
 
 /**
@@ -211,8 +259,22 @@ function crm_flujos_render_diagramas_html(array $diagramas, $incluir_mermaid_js 
         <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
         <script>
         document.addEventListener('DOMContentLoaded', function () {
-            if (typeof mermaid !== 'undefined') {
-                mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+            if (typeof mermaid === 'undefined') { return; }
+            // v1.20.193 — los diagramas ahora viven en la pestaña "Flujos",
+            // oculta (display:none) al cargar la página. `startOnLoad:true`
+            // intentaba medir y pintar el SVG dentro de un contenedor oculto
+            // y fallaba (dimensiones NaN, error real visto en consola:
+            // "attribute transform: Expected number, translate(undefined, NaN)").
+            // Con `startOnLoad:false` no se renderiza nada hasta que
+            // crm_flujos_tabs_js() llama a mermaid.run() al activar esa
+            // pestaña por primera vez, con el contenedor ya visible.
+            mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+            window.crmFlujosRenderMermaid = function () { mermaid.run(); };
+            // Si la pestaña "Flujos" ya estuviera activa al cargar (por si
+            // algún día cambia el valor por defecto), renderiza igual.
+            var panelFlujos = document.querySelector('[data-tab-panel="flujos"]');
+            if (!panelFlujos || panelFlujos.classList.contains('is-active')) {
+                window.crmFlujosRenderMermaid();
             }
         });
         </script>
@@ -238,13 +300,22 @@ function crm_flujos_shortcode() {
     <style><?php echo crm_flujos_roadmap_shared_css(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></style>
     <?php $diagramas = crm_flujos_get_diagramas(); ?>
     <?php echo crm_flujos_render_toc_html($diagramas); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
-    <div class="crm-flujo-card" id="crm-roadmap">
-        <h2 style="margin-top:0;">Roadmap del CRM</h2>
-        <p style="max-width:820px;color:#555;">Estado real de cada parte del CRM — hecho, en pruebas, pendiente o bloqueado. Lo registra cada módulo junto a su propio código (no es un documento aparte), para que nunca se desincronice de lo que el CRM hace de verdad.</p>
-        <?php echo crm_roadmap_render_html(crm_roadmap_get_fases()); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+    <div class="crm-flujos-tabs-nav">
+        <button type="button" class="is-active" data-tab="roadmap">Roadmap</button>
+        <button type="button" data-tab="flujos">Flujos</button>
     </div>
-    <p style="max-width:820px;color:#555;">Diagramas de los flujos principales del CRM:</p>
-    <?php echo crm_flujos_render_diagramas_html($diagramas); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+    <div class="crm-flujos-tab-panel is-active" data-tab-panel="roadmap">
+        <div class="crm-flujo-card" id="crm-roadmap">
+            <h2 style="margin-top:0;">Roadmap del CRM</h2>
+            <p style="max-width:820px;color:#555;">Estado real de cada parte del CRM — hecho, en pruebas, pendiente o bloqueado. Lo registra cada módulo junto a su propio código (no es un documento aparte), para que nunca se desincronice de lo que el CRM hace de verdad.</p>
+            <?php echo crm_roadmap_render_html(crm_roadmap_get_fases()); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+        </div>
+    </div>
+    <div class="crm-flujos-tab-panel" data-tab-panel="flujos">
+        <p style="max-width:820px;color:#555;">Diagramas de los flujos principales del CRM:</p>
+        <?php echo crm_flujos_render_diagramas_html($diagramas); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+    </div>
+    <script><?php echo crm_flujos_tabs_js(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></script>
     <?php
     return ob_get_clean();
 }
@@ -260,20 +331,28 @@ function crm_flujos_render_admin() {
     <?php $diagramas = crm_flujos_get_diagramas(); ?>
     <?php echo crm_flujos_render_toc_html($diagramas); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
 
-    <div class="crm-flujo-card" id="crm-roadmap">
-        <h2 style="margin-top:0;">Roadmap del módulo de instalaciones</h2>
-        <p style="max-width:820px;color:#555;">Estado real de cada fase — lo registra el módulo junto a su código (<code>add_filter('crm_roadmap_fases', ...)</code>), igual que los diagramas de abajo. También visible para <code>crm_admin</code> en <code>/panel-de-control/</code>.</p>
-        <?php echo crm_roadmap_render_html(crm_roadmap_get_fases()); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+    <div class="crm-flujos-tabs-nav">
+        <button type="button" class="is-active" data-tab="roadmap">Roadmap</button>
+        <button type="button" data-tab="flujos">Flujos</button>
     </div>
-
-    <p style="max-width:820px;color:#555;">
-        Cada diagrama lo registra el módulo que describe, junto a su código
-        (busca <code>add_filter('crm_flujos_diagramas', ...)</code> en el
-        archivo correspondiente). Si algo de aquí no coincide con lo que
-        hace el CRM, el sitio a corregir es ese <code>add_filter</code>, no
-        esta página.
-    </p>
-    <?php echo crm_flujos_render_diagramas_html($diagramas); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+    <div class="crm-flujos-tab-panel is-active" data-tab-panel="roadmap">
+        <div class="crm-flujo-card" id="crm-roadmap">
+            <h2 style="margin-top:0;">Roadmap del módulo de instalaciones</h2>
+            <p style="max-width:820px;color:#555;">Estado real de cada fase — lo registra el módulo junto a su código (<code>add_filter('crm_roadmap_fases', ...)</code>), igual que los diagramas de la otra pestaña. También visible para <code>crm_admin</code> en <code>/panel-de-control/</code>.</p>
+            <?php echo crm_roadmap_render_html(crm_roadmap_get_fases()); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+        </div>
+    </div>
+    <div class="crm-flujos-tab-panel" data-tab-panel="flujos">
+        <p style="max-width:820px;color:#555;">
+            Cada diagrama lo registra el módulo que describe, junto a su código
+            (busca <code>add_filter('crm_flujos_diagramas', ...)</code> en el
+            archivo correspondiente). Si algo de aquí no coincide con lo que
+            hace el CRM, el sitio a corregir es ese <code>add_filter</code>, no
+            esta página.
+        </p>
+        <?php echo crm_flujos_render_diagramas_html($diagramas); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+    </div>
+    <script><?php echo crm_flujos_tabs_js(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></script>
     <?php
     crm_admin_page_footer();
 }

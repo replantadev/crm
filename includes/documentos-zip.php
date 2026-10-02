@@ -104,11 +104,12 @@ function crm_inst_construir_zip_documentos($instalacion_id) {
         return $data;
     }
 
-    global $wpdb;
-    $documentos = $wpdb->get_results($wpdb->prepare(
-        "SELECT ruta, tipo, categoria FROM " . crm_inst_table_documentos() . " WHERE instalacion_id = %d ORDER BY tipo ASC, id ASC",
-        $instalacion_id
-    ), ARRAY_A);
+    // v1.20.190 — bug real corregido: antes esto leía TODAS las filas de la
+    // tabla sin deduplicar, así que regenerar el acta 3 veces metía 3 PDFs
+    // de acta distintos en el mismo ZIP, sin que el cliente supiera cuál es
+    // el bueno. crm_inst_documentos_actuales() (includes/instalaciones.php)
+    // se queda solo con la versión vigente de cada tipo/categoría.
+    $documentos = crm_inst_documentos_actuales($instalacion_id);
 
     $archivos = [];
     foreach ((array) $documentos as $doc) {
@@ -173,3 +174,93 @@ function crm_inst_ajax_descargar_zip() {
     @unlink($tmp_zip);
     exit;
 }
+
+/**
+ * Archivado automático al finalizar — v1.20.190. Cierra el último hueco de
+ * la auditoría original del presupuesto ("versionado de documentos y
+ * archivado automático al finalizar"). Decisión del usuario: SÍ generar y
+ * guardar el ZIP como documento permanente (no solo bloquear subidas
+ * nuevas, que sería la alternativa más pasiva).
+ *
+ * Reutiliza crm_inst_construir_zip_documentos() (el mismo ZIP del botón de
+ * descarga manual) pero en vez de servirlo al navegador y borrarlo, lo
+ * copia a uploads/crm-archivos-finales/ y lo registra como un documento más
+ * (tipo='archivo_final', con su propia versión — por si una instalación se
+ * reabre y se vuelve a finalizar más adelante, caso raro pero no bloqueado
+ * en ningún otro sitio del módulo).
+ *
+ * Best-effort a propósito, mismo criterio que el acta de entrega: se llama
+ * justo después de generarla (crm_inst_ajax_cerrar_instalacion() y
+ * crm_inst_ajax_validar_cierre(), includes/instalaciones.php) y un fallo
+ * aquí nunca debe impedir que la instalación quede finalizada de verdad.
+ *
+ * @param int $instalacion_id
+ * @return string|WP_Error URL del ZIP archivado, o WP_Error.
+ */
+function crm_inst_archivar_documentacion_final($instalacion_id) {
+    $instalacion_id = (int) $instalacion_id;
+
+    $tmp_zip = crm_inst_construir_zip_documentos($instalacion_id);
+    if (is_wp_error($tmp_zip)) {
+        return $tmp_zip;
+    }
+
+    $upload_dir = wp_upload_dir();
+    $subdir     = '/crm-archivos-finales';
+    if (!file_exists($upload_dir['basedir'] . $subdir)) {
+        wp_mkdir_p($upload_dir['basedir'] . $subdir);
+    }
+
+    global $wpdb;
+    $version_anterior = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT MAX(version) FROM " . crm_inst_table_documentos() . " WHERE instalacion_id = %d AND tipo = 'archivo_final'",
+        $instalacion_id
+    ));
+    $version = $version_anterior + 1;
+
+    // v1.20.190: el nombre de archivo incluye la versión, no solo la marca
+    // de tiempo — probado en Local que dos archivados seguidos dentro del
+    // mismo segundo generaban el MISMO nombre de fichero, pisando
+    // físicamente la versión anterior en disco aunque la fila de la base de
+    // datos fuese distinta (rompía la promesa de conservar el historial).
+    $nombre_fichero = 'archivo-final-instalacion-' . $instalacion_id . '-v' . $version . '-' . gmdate('Ymd-His') . '.zip';
+    $destino        = $upload_dir['basedir'] . $subdir . '/' . $nombre_fichero;
+
+    if (!@copy($tmp_zip, $destino)) {
+        @unlink($tmp_zip);
+        return new WP_Error('crm_archivo_final_no_guardado', 'No se pudo guardar el archivo final en el servidor.');
+    }
+    @unlink($tmp_zip);
+
+    $url = $upload_dir['baseurl'] . $subdir . '/' . $nombre_fichero;
+
+    $wpdb->insert(crm_inst_table_documentos(), [
+        'instalacion_id' => $instalacion_id,
+        'tipo'           => 'archivo_final',
+        'ruta'           => $url,
+        'subido_por'     => get_current_user_id(),
+        'subido_en'      => current_time('mysql'),
+        'version'        => $version,
+    ]);
+
+    if (function_exists('crm_inst_log_action')) {
+        crm_inst_log_action($instalacion_id, 'instalacion', 'archivo_final_generado', 'Documentación archivada automáticamente al finalizar (v' . $version . ').');
+    }
+
+    return $url;
+}
+
+/**
+ * Roadmap de "versionado de documentos y archivado automático" (v1.20.190)
+ * — ver includes/flujos-page.php. Cierra el último punto de la lista de
+ * huecos de la auditoría original del presupuesto.
+ */
+add_filter('crm_roadmap_fases', function ($fases) {
+    $fases[] = [
+        'fase'    => 'Versionado de documentos y archivado automático',
+        'titulo'  => 'El acta regenerada no se duplica en el ZIP; se archiva solo al finalizar',
+        'estado'  => 'en_pruebas',
+        'detalle' => 'Cierra el último hueco abierto de la auditoría original. Dos bugs reales encontrados (no solo un hueco): (1) el ZIP de descarga manual incluía TODAS las versiones históricas del acta si se había regenerado más de una vez, sin indicar cuál era la vigente — la columna `version` del esquema existe desde la Fase 1 pero nunca se rellenaba; (2) probando el archivado automático dos veces seguidas en Local, generar dos versiones dentro del mismo segundo producía el MISMO nombre de archivo en disco — la versión nueva pisaba físicamente a la anterior, rompiendo la promesa de conservar el historial. Ambos corregidos: crm_inst_documentos_actuales() (dedup por tipo/categoría) reutilizada por el ZIP y el archivado; el nombre de archivo incluye ahora el número de versión, no solo la marca de tiempo. Decisión del usuario: las versiones superadas NO se borran (se guardan como historial, solo dejan de contar como "actuales"); al finalizar una instalación (cierre directo o aprobación del jefe) se genera y guarda un ZIP permanente con todo lo vigente (tipo=archivo_final), sin bloquear subidas posteriores. Verificado en Local: 3 regeneraciones reales del acta vía la ficha (clic real) confirman versiones 1/2/3 y el ZIP descargado solo contiene la v3; el archivado automático verificado con un endpoint de depuración temporal forzando el caso límite del mismo segundo. Pendiente: disparo real desde un cierre completo de punta a punta en producción.',
+    ];
+    return $fases;
+});

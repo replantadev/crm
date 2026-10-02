@@ -44,6 +44,53 @@ function crm_inst_table_documentos() {
 	return $wpdb->prefix . 'crm_instalacion_documentos';
 }
 
+/**
+ * "Documentos actuales" de una instalación — v1.20.190: se queda con la
+ * versión más reciente de cada (tipo, categoría) en vez de devolver TODO el
+ * historial. Hasta ahora, regenerar el acta (o en el futuro, re-subir una
+ * foto de una categoría) dejaba filas viejas sueltas que nadie limpiaba ni
+ * marcaba como obsoletas — la columna `version` del esquema existe desde la
+ * Fase 1 pero nunca se usaba.
+ *
+ * Las fotos SIN categoría (modo libre, hasta 6 fotos de cierre cuando el
+ * subtipo no tiene categorías definidas) NO se deduplican entre sí — cada
+ * una es una foto distinta tomada a la vez, no una versión de la misma.
+ *
+ * Usada por crm_inst_construir_zip_documentos() (includes/documentos-zip.php)
+ * para corregir el bug real encontrado: el ZIP incluía TODAS las versiones
+ * históricas del acta, no solo la vigente.
+ *
+ * @param int $instalacion_id
+ * @param string[] $excluir_tipos Tipos a dejar fuera por completo (por
+ *                                defecto 'archivo_final': son los propios
+ *                                ZIP archivados, no tiene sentido meterlos
+ *                                dentro de otro ZIP).
+ * @return array[] Filas (id, tipo, categoria, ruta, version, subido_en).
+ */
+function crm_inst_documentos_actuales( $instalacion_id, $excluir_tipos = [ 'archivo_final' ] ) {
+	global $wpdb;
+	$filas = $wpdb->get_results( $wpdb->prepare(
+		"SELECT id, tipo, categoria, ruta, version, subido_en FROM " . crm_inst_table_documentos() . " WHERE instalacion_id = %d ORDER BY id ASC",
+		$instalacion_id
+	), ARRAY_A );
+
+	$actuales = [];
+	$sueltas  = [];
+	foreach ( (array) $filas as $fila ) {
+		if ( in_array( $fila['tipo'], $excluir_tipos, true ) ) {
+			continue;
+		}
+		if ( $fila['tipo'] === 'foto' && empty( $fila['categoria'] ) ) {
+			$sueltas[] = $fila;
+			continue;
+		}
+		$clave = $fila['tipo'] . '|' . ( $fila['categoria'] ?: '' );
+		$actuales[ $clave ] = $fila; // Vienen ordenadas ASC por id — la última en pisar es la más reciente.
+	}
+
+	return array_merge( array_values( $actuales ), $sueltas );
+}
+
 function crm_inst_table_agenda() {
 	global $wpdb;
 	return $wpdb->prefix . 'crm_instalacion_agenda';
@@ -229,7 +276,7 @@ function crm_instalaciones_install_tables() {
 	$sql4 = "CREATE TABLE $t4 (
   id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   instalacion_id BIGINT(20) UNSIGNED NOT NULL,
-  tipo ENUM('presupuesto','albaran','foto','certificado','acta') NOT NULL,
+  tipo ENUM('presupuesto','albaran','foto','certificado','acta','archivo_final') NOT NULL,
   categoria VARCHAR(40) DEFAULT NULL,
   ruta VARCHAR(500) NOT NULL DEFAULT '',
   subido_por BIGINT(20) UNSIGNED NOT NULL,
@@ -1837,9 +1884,23 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 	), ARRAY_A );
 
 	// v1.20.167 — acta de entrega en PDF (includes/acta-entrega.php): la más
-	// reciente, por si alguna vez se regenera a mano.
+	// reciente, por si alguna vez se regenera a mano. v1.20.190: se añade
+	// `version` — la columna existe en el esquema desde la Fase 1 pero nunca
+	// se rellenaba (siempre quedaba en 1); ahora acta-entrega.php la calcula
+	// de verdad al insertar.
 	$acta_doc = $wpdb->get_row( $wpdb->prepare(
-		"SELECT ruta, subido_en FROM " . crm_inst_table_documentos() . " WHERE instalacion_id = %d AND tipo = 'acta' ORDER BY id DESC LIMIT 1",
+		"SELECT ruta, subido_en, version FROM " . crm_inst_table_documentos() . " WHERE instalacion_id = %d AND tipo = 'acta' ORDER BY id DESC LIMIT 1",
+		$instalacion_id
+	), ARRAY_A );
+
+	// v1.20.190 — "archivado automático al finalizar": el ZIP de
+	// documentación (ya existente, crm_inst_construir_zip_documentos()) se
+	// genera solo y se guarda como documento permanente en cuanto el cierre
+	// queda definitivo (ver crm_inst_archivar_documentacion_final(),
+	// includes/documentos-zip.php). Aquí solo se lee la última versión
+	// guardada para mostrar el enlace en la ficha.
+	$archivo_final_doc = $wpdb->get_row( $wpdb->prepare(
+		"SELECT ruta, subido_en, version FROM " . crm_inst_table_documentos() . " WHERE instalacion_id = %d AND tipo = 'archivo_final' ORDER BY id DESC LIMIT 1",
 		$instalacion_id
 	), ARRAY_A );
 	$cierre_declarado_por_user = $inst['cierre_declarado_por'] ? get_userdata( (int) $inst['cierre_declarado_por'] ) : null;
@@ -1915,6 +1976,12 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 			'fotos'                => $fotos_cierre,
 			'acta_pdf_url'         => $acta_doc['ruta'] ?? '',
 			'acta_generada_en'     => $acta_doc['subido_en'] ?? '',
+			'acta_version'         => (int) ( $acta_doc['version'] ?? 1 ),
+		],
+		'archivo_final'       => [
+			'url'         => $archivo_final_doc['ruta'] ?? '',
+			'version'     => (int) ( $archivo_final_doc['version'] ?? 0 ),
+			'generado_en' => $archivo_final_doc['subido_en'] ?? '',
 		],
 		'checklist_confirmado_en' => $inst['checklist_confirmado_en'],
 		'holded_invoice_id'   => $inst['holded_invoice_id'],
@@ -3727,6 +3794,16 @@ function crm_inst_ajax_cerrar_instalacion() {
 		}
 	}
 
+	// v1.20.190 — "archivado automático al finalizar": se genera después del
+	// acta a propósito (así el ZIP ya incluye el PDF recién creado).
+	// Best-effort, mismo criterio que el acta: nunca bloquea el cierre real.
+	if ( ! $requiere_aprobacion && function_exists( 'crm_inst_archivar_documentacion_final' ) ) {
+		$archivo_resultado = crm_inst_archivar_documentacion_final( $instalacion_id );
+		if ( is_wp_error( $archivo_resultado ) ) {
+			crm_inst_log_action( $instalacion_id, 'instalacion', 'archivo_final_error', 'No se pudo archivar la documentación final: ' . $archivo_resultado->get_error_message() );
+		}
+	}
+
 	crm_inst_log_action(
 		$instalacion_id,
 		'instalacion',
@@ -3801,6 +3878,16 @@ function crm_inst_ajax_validar_cierre() {
 		$acta_resultado = crm_inst_generar_acta_entrega( $instalacion_id );
 		if ( is_wp_error( $acta_resultado ) ) {
 			crm_inst_log_action( $instalacion_id, 'instalacion', 'acta_error', 'No se pudo generar el acta de entrega: ' . $acta_resultado->get_error_message() );
+		}
+	}
+
+	// v1.20.190 — mismo "archivado automático al finalizar" que en
+	// crm_inst_ajax_cerrar_instalacion(), para cuando el cierre SÍ requiere
+	// aprobación del jefe.
+	if ( $nuevo_estado === 'aprobado' && function_exists( 'crm_inst_archivar_documentacion_final' ) ) {
+		$archivo_resultado = crm_inst_archivar_documentacion_final( $instalacion_id );
+		if ( is_wp_error( $archivo_resultado ) ) {
+			crm_inst_log_action( $instalacion_id, 'instalacion', 'archivo_final_error', 'No se pudo archivar la documentación final: ' . $archivo_resultado->get_error_message() );
 		}
 	}
 
@@ -6009,7 +6096,7 @@ function crm_inst_shortcode_ficha() {
 						<?php endif; ?>
 						<?php if ( $data['cierre']['estado'] === 'aprobado' ) : ?>
 							<p class="crm-inst-field-info">
-								Acta de entrega:
+								Acta de entrega<?php echo $data['cierre']['acta_version'] > 1 ? ' (v' . (int) $data['cierre']['acta_version'] . ')' : ''; ?>:
 								<?php if ( ! empty( $data['cierre']['acta_pdf_url'] ) ) : ?>
 									<a href="<?php echo esc_url( $data['cierre']['acta_pdf_url'] ); ?>" target="_blank" rel="noopener noreferrer" class="crm-btn">Descargar PDF</a>
 									<span style="color:#6b7280;">generada el <?php echo esc_html( $data['cierre']['acta_generada_en'] ? date_i18n( 'd/m/Y H:i', strtotime( $data['cierre']['acta_generada_en'] ) ) : '—' ); ?></span>
@@ -6019,6 +6106,9 @@ function crm_inst_shortcode_ficha() {
 								<?php if ( current_user_can( 'crm_inst_close' ) ) : ?>
 									<button type="button" class="crm-btn" id="crm-inst-generar-acta-btn" data-instalacion-id="<?php echo esc_attr( $data['id'] ); ?>" style="background:#6b7280;"><?php echo ! empty( $data['cierre']['acta_pdf_url'] ) ? 'Regenerar' : 'Generar'; ?> acta</button>
 									<span id="crm-inst-generar-acta-msg"></span>
+								<?php endif; ?>
+								<?php if ( $data['cierre']['acta_version'] > 1 ) : ?>
+									<br><span style="color:#9ca3af;font-size:12px;">Las versiones anteriores del acta se conservan en el servidor (no se borran), pero solo esta cuenta como vigente.</span>
 								<?php endif; ?>
 							</p>
 							<?php
@@ -6035,6 +6125,13 @@ function crm_inst_shortcode_ficha() {
 								<p>
 									<a href="<?php echo esc_url( $zip_url ); ?>" class="crm-btn" style="background:#374151;">Descargar toda la documentación (ZIP)</a>
 								</p>
+								<?php if ( ! empty( $data['archivo_final']['url'] ) ) : ?>
+									<p class="crm-inst-field-info">
+										Documentación archivada (v<?php echo (int) $data['archivo_final']['version']; ?>):
+										<a href="<?php echo esc_url( $data['archivo_final']['url'] ); ?>" class="crm-btn" style="background:#374151;">Descargar archivo final</a>
+										<span style="color:#6b7280;">generado el <?php echo esc_html( $data['archivo_final']['generado_en'] ? date_i18n( 'd/m/Y H:i', strtotime( $data['archivo_final']['generado_en'] ) ) : '—' ); ?></span>
+									</p>
+								<?php endif; ?>
 						<?php endif; ?>
 					<?php endif; ?>
 				</div>

@@ -274,7 +274,28 @@ function crm_inst_generar_acta_entrega($instalacion_id) {
     if (!file_exists($upload_dir['basedir'] . $subdir)) {
         wp_mkdir_p($upload_dir['basedir'] . $subdir);
     }
-    $nombre_fichero = 'acta-instalacion-' . $instalacion_id . '-' . gmdate('Ymd-His') . '.pdf';
+    // v1.20.190 — versionado real: la columna `version` existe en el
+    // esquema desde la Fase 1 pero nunca se rellenaba (se quedaba siempre en
+    // 1, su default). Al regenerar el acta no se borra la fila/archivo
+    // anterior (decisión del usuario: conservar historial) — simplemente
+    // queda una fila con un número de versión mayor, y crm_inst_documentos_actuales()
+    // (includes/instalaciones.php) se encarga de que solo la última cuente
+    // como vigente en el ZIP y en la ficha.
+    //
+    // El nombre de archivo incluye la versión, no solo la marca de tiempo:
+    // dos regeneraciones dentro del mismo segundo (doble clic, o dos
+    // llamadas automáticas seguidas) generaban antes el MISMO nombre de
+    // fichero y la versión nueva pisaba físicamente a la anterior en disco,
+    // aunque la fila de la base de datos fuese distinta — rompiendo la
+    // promesa de conservar el historial. Encontrado probando el archivado
+    // automático dos veces seguidas en Local.
+    $version_anterior = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT MAX(version) FROM " . crm_inst_table_documentos() . " WHERE instalacion_id = %d AND tipo = 'acta'",
+        $instalacion_id
+    ));
+    $version = $version_anterior + 1;
+
+    $nombre_fichero = 'acta-instalacion-' . $instalacion_id . '-v' . $version . '-' . gmdate('Ymd-His') . '.pdf';
     $ruta_absoluta  = $upload_dir['basedir'] . $subdir . '/' . $nombre_fichero;
 
     if (file_put_contents($ruta_absoluta, $pdf_contenido) === false) {
@@ -288,6 +309,7 @@ function crm_inst_generar_acta_entrega($instalacion_id) {
         'ruta'           => $url,
         'subido_por'     => get_current_user_id(),
         'subido_en'      => current_time('mysql'),
+        'version'        => $version,
     ]);
 
     if (function_exists('crm_inst_log_action')) {

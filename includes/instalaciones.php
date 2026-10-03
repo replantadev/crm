@@ -1930,7 +1930,7 @@ function crm_inst_get_instalacion_data( $instalacion_id ) {
 	// v1.20.102: una fila por instalador asignado, no una sola para toda la
 	// instalación — ver crm_inst_ajax_guardar_agenda().
 	$agenda_filas = $wpdb->get_results( $wpdb->prepare(
-		"SELECT fecha_cita, estado, instalador_id FROM " . crm_inst_table_agenda() . " WHERE instalacion_id = %d ORDER BY fecha_cita ASC",
+		"SELECT id AS agenda_id, fecha_cita, estado, instalador_id, recordatorio_enviado_en FROM " . crm_inst_table_agenda() . " WHERE instalacion_id = %d ORDER BY fecha_cita ASC",
 		$instalacion_id
 	), ARRAY_A );
 	$agenda_por_instalador = [];
@@ -2626,17 +2626,10 @@ function crm_inst_aviso_calendario_run() {
 		// de entrada (crm_whatsapp_webhook_recibir(), includes/whatsapp-api.php),
 		// que la correlaciona por teléfono + esta misma fila de agenda
 		// (marcada por `recordatorio_enviado_en`, sin necesitar un token
-		// aparte). Si no hay plantilla configurada, no se intenta nada —
-		// mismo criterio best-effort de siempre.
-		if ( ! empty( $r['telefono'] ) && function_exists( 'crm_whatsapp_configurado' ) && crm_whatsapp_configurado() ) {
-			$template_cliente = trim( (string) get_option( 'crm_whatsapp_template_confirmacion_visita_cliente', '' ) );
-			if ( $template_cliente !== '' ) {
-				$resultado_cliente = crm_whatsapp_enviar_plantilla( $r['telefono'], $template_cliente, [ $cliente_nombre, $fecha_label, $r['direccion_instalacion'] ?: '—' ] );
-				if ( is_wp_error( $resultado_cliente ) ) {
-					crm_whatsapp_log_error( $template_cliente, 'Confirmación de visita al cliente — instalación ' . crm_inst_id_visible( (int) $r['instalacion_id'] ) . ': ' . $resultado_cliente->get_error_message() );
-				}
-			}
-		}
+		// aparte). Factorizado en crm_inst_enviar_confirmacion_whatsapp_cliente()
+		// (v1.20.202) para que la ficha de instalación pueda reutilizarlo con
+		// un botón "Enviar ahora", sin esperar a este cron.
+		crm_inst_enviar_confirmacion_whatsapp_cliente( $r, $cliente_nombre, $fecha_label );
 
 		// Instalador asignado — in-app + email, mismo canal que el resto de
 		// avisos al instalador (v1.20.110). v1.20.129: + WhatsApp, reutiliza
@@ -2696,6 +2689,93 @@ function crm_inst_aviso_recordatorio_enviar_whatsapp_jefes( $cliente_nombre, $fe
 			crm_whatsapp_log_error( $template, 'Recordatorio de visita a jefe #' . $u->ID . ': ' . $resultado->get_error_message() );
 		}
 	}
+}
+
+/**
+ * true si hay todo lo necesario para mandarle al cliente la confirmación de
+ * visita por WhatsApp (teléfono, canal configurado y plantilla elegida) —
+ * v1.20.202, para que la ficha de instalación pueda decidir si mostrar el
+ * botón "Enviar ahora" sin intentarlo a ciegas.
+ */
+function crm_inst_whatsapp_confirmacion_cliente_disponible( $telefono ) {
+	if ( empty( $telefono ) || ! function_exists( 'crm_whatsapp_configurado' ) || ! crm_whatsapp_configurado() ) {
+		return false;
+	}
+	return trim( (string) get_option( 'crm_whatsapp_template_confirmacion_visita_cliente', '' ) ) !== '';
+}
+
+/**
+ * Envía al cliente la plantilla de confirmación de visita por WhatsApp
+ * (botones "Confirmo"/"Necesito cambiar"). Factorizada (v1.20.202) de
+ * crm_inst_aviso_calendario_run() para que también la use el botón manual
+ * "Enviar recordatorio por WhatsApp ahora" de la ficha de instalación.
+ *
+ * @param array  $r              Necesita al menos 'telefono', 'instalacion_id', 'direccion_instalacion'.
+ * @param string $cliente_nombre
+ * @param string $fecha_label    Fecha ya formateada (d/m/Y H:i).
+ * @return true|WP_Error
+ */
+function crm_inst_enviar_confirmacion_whatsapp_cliente( array $r, $cliente_nombre, $fecha_label ) {
+	if ( ! crm_inst_whatsapp_confirmacion_cliente_disponible( $r['telefono'] ?? '' ) ) {
+		return new WP_Error( 'crm_inst_whatsapp_no_disponible', 'Falta el teléfono del cliente, WhatsApp sin configurar, o no hay plantilla de confirmación elegida en Ajustes.' );
+	}
+	$template_cliente = trim( (string) get_option( 'crm_whatsapp_template_confirmacion_visita_cliente', '' ) );
+	$resultado = crm_whatsapp_enviar_plantilla( $r['telefono'], $template_cliente, [ $cliente_nombre, $fecha_label, $r['direccion_instalacion'] ?: '—' ] );
+	if ( is_wp_error( $resultado ) ) {
+		crm_whatsapp_log_error( $template_cliente, 'Confirmación de visita al cliente — instalación ' . crm_inst_id_visible( (int) $r['instalacion_id'] ) . ': ' . $resultado->get_error_message() );
+	}
+	return $resultado;
+}
+
+/**
+ * Botón "Enviar recordatorio por WhatsApp ahora" en la ficha de instalación
+ * (v1.20.202) — dispara la misma confirmación de visita que el cron del día
+ * antes, sin esperar a esa fecha. Marca `recordatorio_enviado_en` igual que
+ * el cron, así que éste no la reenvía duplicada mañana.
+ */
+add_action( 'wp_ajax_crm_inst_reenviar_recordatorio_whatsapp', 'crm_inst_ajax_reenviar_recordatorio_whatsapp' );
+function crm_inst_ajax_reenviar_recordatorio_whatsapp() {
+	if ( ! crm_inst_current_user_can_manage() || ! check_ajax_referer( 'crm_inst_holded', 'nonce', false ) ) {
+		wp_send_json_error( [ 'message' => 'Sin permisos.' ], 403 );
+	}
+	$agenda_id = (int) ( $_POST['agenda_id'] ?? 0 );
+	if ( $agenda_id <= 0 ) {
+		wp_send_json_error( [ 'message' => 'Fila de agenda no válida.' ] );
+	}
+
+	global $wpdb;
+	$r = $wpdb->get_row( $wpdb->prepare(
+		"SELECT a.id AS agenda_id, a.instalacion_id, a.fecha_cita,
+		        i.direccion_instalacion,
+		        c.cliente_nombre, c.telefono
+		 FROM " . crm_inst_table_agenda() . " a
+		 INNER JOIN " . crm_inst_table_instalaciones() . " i ON i.id = a.instalacion_id
+		 LEFT JOIN {$wpdb->prefix}crm_clients c ON c.id = i.client_id
+		 WHERE a.id = %d",
+		$agenda_id
+	), ARRAY_A );
+	if ( ! $r ) {
+		wp_send_json_error( [ 'message' => 'Fila de agenda no encontrada.' ] );
+	}
+	if ( empty( $r['fecha_cita'] ) ) {
+		wp_send_json_error( [ 'message' => 'Todavía no hay fecha de visita agendada.' ] );
+	}
+
+	$fecha_label    = date_i18n( 'd/m/Y H:i', strtotime( $r['fecha_cita'] ) );
+	$cliente_nombre = $r['cliente_nombre'] ?: ( 'instalación ' . crm_inst_id_visible( (int) $r['instalacion_id'] ) );
+	$resultado      = crm_inst_enviar_confirmacion_whatsapp_cliente( $r, $cliente_nombre, $fecha_label );
+	if ( is_wp_error( $resultado ) ) {
+		wp_send_json_error( [ 'message' => $resultado->get_error_message() ] );
+	}
+
+	$enviado_en = current_time( 'mysql' );
+	$wpdb->update( crm_inst_table_agenda(), [ 'recordatorio_enviado_en' => $enviado_en ], [ 'id' => $agenda_id ] );
+	crm_inst_log_action( (int) $r['instalacion_id'], 'instalacion', 'recordatorio_visita_enviado_manual', 'Confirmación de visita reenviada por WhatsApp a mano al cliente.' );
+
+	wp_send_json_success( [
+		'enviado_en'       => $enviado_en,
+		'enviado_en_label' => date_i18n( 'd/m/Y H:i', strtotime( $enviado_en ) ),
+	] );
 }
 
 /**
@@ -5974,44 +6054,15 @@ function crm_inst_shortcode_ficha() {
 					<?php endif; ?>
 				</div>
 
-				<div class="crm-inst-ficha-section">
-					<h4>Facturación y margen</h4>
-					<p class="crm-inst-field-info">
-						Margen calculado (materiales + extras aprobadas):
-						<strong><?php echo esc_html( number_format_i18n( $data['totales']['margen'], 2 ) ); ?> €</strong>
-						<span id="crm-inst-margen-badge" class="crm-inst-extra-badge crm-inst-extra-badge-neutro">Provisional — pendiente de los dos checks de abajo</span>
-					</p>
-
-					<div class="crm-inst-facturacion-check">
-						<strong>Cliente → Ecovolt</strong>
-						<span id="crm-inst-pago-cliente-estado" class="crm-inst-field-info">
-							<?php if ( ! empty( $data['holded_invoice_id'] ) ) : ?>
-								Factura <?php echo esc_html( $data['holded_invoice_id'] ); ?> — pulsa "Comprobar" para ver el estado.
-							<?php else : ?>
-								Todavía no se ha buscado la factura de este presupuesto en Holded.
-							<?php endif; ?>
-						</span>
-						<button type="button" class="crm-btn" id="crm-inst-comprobar-pago-cliente-btn">Comprobar pago del cliente</button>
+				<div class="crm-inst-ficha-section crm-inst-tabs-wrap">
+					<div class="crm-inst-tabs-nav">
+						<button type="button" class="is-active" data-tab="planificacion">Planificación</button>
+						<button type="button" data-tab="facturacion">Facturación y margen</button>
 					</div>
 
-					<div class="crm-inst-facturacion-check">
-						<strong>Ecovolt → Proveedor</strong>
-						<?php if ( empty( $data['holded_purchase_id'] ) ) : ?>
-							<p class="crm-inst-field-info">Todavía no se ha vinculado ninguna compra de proveedor a esta instalación.</p>
-							<div class="crm-inst-compra-buscador">
-								<input type="text" id="crm-inst-buscar-compra-input" placeholder="Buscar por proveedor o nº de documento…">
-								<button type="button" class="crm-btn" id="crm-inst-buscar-compra-btn">Buscar</button>
-							</div>
-							<div id="crm-inst-compra-resultados"></div>
-						<?php else : ?>
-							<span id="crm-inst-pago-proveedor-estado" class="crm-inst-field-info">Compra <?php echo esc_html( $data['holded_purchase_id'] ); ?> — pulsa "Comprobar" para ver el estado.</span>
-							<button type="button" class="crm-btn" id="crm-inst-comprobar-pago-proveedor-btn">Comprobar pago al proveedor</button>
-							<button type="button" class="crm-btn" id="crm-inst-desvincular-compra-btn" style="background:#fee2e2;color:#991b1b;">Quitar vínculo</button>
-						<?php endif; ?>
-					</div>
-				</div>
+					<div class="crm-inst-tab-panel is-active" data-tab-panel="planificacion">
 
-				<div class="crm-inst-ficha-section">
+					<div class="crm-inst-ficha-section">
 					<h4>Instaladores asignados</h4>
 					<div id="crm-inst-instaladores-lista">
 						<?php if ( empty( $data['instaladores'] ) ) : ?>
@@ -6038,7 +6089,7 @@ function crm_inst_shortcode_ficha() {
 							<span id="crm-inst-instalador-msg"></span>
 						</p>
 					<?php endif; ?>
-				</div>
+					</div>
 
 				<?php if ( ! empty( $data['instaladores'] ) ) : ?>
 					<div class="crm-inst-ficha-section">
@@ -6047,19 +6098,43 @@ function crm_inst_shortcode_ficha() {
 							<p class="crm-inst-field-info">Con varios instaladores asignados, la fecha se agenda a la vez para todos — cada uno la verá en su propio calendario.</p>
 						<?php endif; ?>
 						<ul style="margin:0 0 8px;padding-left:18px;">
-							<?php foreach ( $data['instaladores'] as $inst_asig ) :
+							<?php
+							// v1.20.202 — a petición del usuario: junto a la fecha de
+							// cada instalador, si ya se avisó al CLIENTE por WhatsApp
+							// para que confirme la visita (y cuándo), cuándo se le
+							// avisará solo si todavía no se le ha avisado, y un botón
+							// para adelantar ese aviso sin esperar al cron del día antes.
+							$whatsapp_cliente_disponible = crm_inst_whatsapp_confirmacion_cliente_disponible( $data['telefono'] );
+							$aviso_calendario_hora       = (int) get_option( 'crm_inst_aviso_calendario_hora', 9 );
+							foreach ( $data['instaladores'] as $inst_asig ) :
 								$fila_agenda = $data['agenda_por_instalador'][ (int) $inst_asig['user_id'] ] ?? null;
 							?>
 								<li>
 									<strong><?php echo esc_html( $inst_asig['display_name'] ); ?>:</strong>
 									<?php if ( $fila_agenda ) : ?>
 										<?php echo esc_html( date_i18n( 'd/m/Y H:i', strtotime( $fila_agenda['fecha_cita'] ) ) ); ?> (<?php echo esc_html( crm_instalaciones_estados_agenda()[ $fila_agenda['estado'] ] ?? $fila_agenda['estado'] ); ?>)
+										<br>
+										<span class="crm-inst-field-info">
+											<?php if ( ! empty( $fila_agenda['recordatorio_enviado_en'] ) ) : ?>
+												📲 Confirmación por WhatsApp enviada al cliente el <?php echo esc_html( date_i18n( 'd/m/Y H:i', strtotime( $fila_agenda['recordatorio_enviado_en'] ) ) ); ?>
+											<?php elseif ( $whatsapp_cliente_disponible ) :
+												$envio_previsto = ( new DateTime( $fila_agenda['fecha_cita'] ) )->modify( '-1 day' )->setTime( $aviso_calendario_hora, 0 );
+											?>
+												📲 Se le avisará por WhatsApp para confirmar el <?php echo esc_html( date_i18n( 'd/m/Y H:i', $envio_previsto->getTimestamp() ) ); ?> (recordatorio automático del día antes)
+											<?php else : ?>
+												📲 Confirmación por WhatsApp no disponible (falta el teléfono del cliente, o configurar el canal/la plantilla en Ajustes).
+											<?php endif; ?>
+											<?php if ( $whatsapp_cliente_disponible ) : ?>
+												<button type="button" class="crm-btn crm-inst-reenviar-recordatorio-btn" data-agenda-id="<?php echo esc_attr( $fila_agenda['agenda_id'] ); ?>" style="margin-left:6px;"><?php echo empty( $fila_agenda['recordatorio_enviado_en'] ) ? 'Enviar por WhatsApp ahora' : 'Reenviar por WhatsApp'; ?></button>
+											<?php endif; ?>
+										</span>
 									<?php else : ?>
 										<span class="crm-inst-field-info">sin fecha todavía</span>
 									<?php endif; ?>
 								</li>
 							<?php endforeach; ?>
 						</ul>
+						<span id="crm-inst-recordatorio-msg" class="crm-inst-field-info"></span>
 						<?php
 						// v1.20.143 — reunión con cliente 2026-09-22, punto 2: la
 						// hora casi siempre es 7:00 u 8:00 — 3 botones rápidos en
@@ -6089,22 +6164,6 @@ function crm_inst_shortcode_ficha() {
 						</p>
 					</div>
 				<?php endif; ?>
-
-				<div class="crm-inst-ficha-section">
-					<h4>Proyecto de Holded</h4>
-					<p class="crm-inst-field-info">Se usa para etiquetar el albarán de salida de materiales (abajo) con el proyecto correspondiente en Holded.</p>
-					<?php if ( empty( $data['holded_project_id'] ) ) : ?>
-						<p class="crm-inst-field-info">Todavía no se ha vinculado ningún proyecto de Holded a esta instalación.</p>
-						<div class="crm-inst-compra-buscador">
-							<input type="text" id="crm-inst-buscar-proyecto-input" placeholder="Buscar por nombre de proyecto o cliente…">
-							<button type="button" class="crm-btn" id="crm-inst-buscar-proyecto-btn">Buscar</button>
-						</div>
-						<div id="crm-inst-proyecto-resultados"></div>
-					<?php else : ?>
-						<span class="crm-inst-field-info">Proyecto <?php echo esc_html( $data['holded_project_id'] ); ?> vinculado.</span>
-						<button type="button" class="crm-btn" id="crm-inst-desvincular-proyecto-btn" style="background:#fee2e2;color:#991b1b;">Quitar vínculo</button>
-					<?php endif; ?>
-				</div>
 
 				<div class="crm-inst-ficha-section">
 					<h4>Cierre de la instalación</h4>
@@ -6236,6 +6295,67 @@ function crm_inst_shortcode_ficha() {
 						<?php endif; ?>
 					<?php endif; ?>
 				</div>
+
+					</div><!-- /tab-panel planificacion -->
+
+					<div class="crm-inst-tab-panel" data-tab-panel="facturacion">
+
+					<div class="crm-inst-ficha-section">
+						<h4>Facturación y margen</h4>
+						<p class="crm-inst-field-info">
+							Margen calculado (materiales + extras aprobadas):
+							<strong><?php echo esc_html( number_format_i18n( $data['totales']['margen'], 2 ) ); ?> €</strong>
+							<span id="crm-inst-margen-badge" class="crm-inst-extra-badge crm-inst-extra-badge-neutro">Provisional — pendiente de los dos checks de abajo</span>
+						</p>
+
+						<div class="crm-inst-facturacion-check">
+							<strong>Cliente → Ecovolt</strong>
+							<span id="crm-inst-pago-cliente-estado" class="crm-inst-field-info">
+								<?php if ( ! empty( $data['holded_invoice_id'] ) ) : ?>
+									Factura <?php echo esc_html( $data['holded_invoice_id'] ); ?> — pulsa "Comprobar" para ver el estado.
+								<?php else : ?>
+									Todavía no se ha buscado la factura de este presupuesto en Holded.
+								<?php endif; ?>
+							</span>
+							<button type="button" class="crm-btn" id="crm-inst-comprobar-pago-cliente-btn">Comprobar pago del cliente</button>
+						</div>
+
+						<div class="crm-inst-facturacion-check">
+							<strong>Ecovolt → Proveedor</strong>
+							<?php if ( empty( $data['holded_purchase_id'] ) ) : ?>
+								<p class="crm-inst-field-info">Todavía no se ha vinculado ninguna compra de proveedor a esta instalación.</p>
+								<div class="crm-inst-compra-buscador">
+									<input type="text" id="crm-inst-buscar-compra-input" placeholder="Buscar por proveedor o nº de documento…">
+									<button type="button" class="crm-btn" id="crm-inst-buscar-compra-btn">Buscar</button>
+								</div>
+								<div id="crm-inst-compra-resultados"></div>
+							<?php else : ?>
+								<span id="crm-inst-pago-proveedor-estado" class="crm-inst-field-info">Compra <?php echo esc_html( $data['holded_purchase_id'] ); ?> — pulsa "Comprobar" para ver el estado.</span>
+								<button type="button" class="crm-btn" id="crm-inst-comprobar-pago-proveedor-btn">Comprobar pago al proveedor</button>
+								<button type="button" class="crm-btn" id="crm-inst-desvincular-compra-btn" style="background:#fee2e2;color:#991b1b;">Quitar vínculo</button>
+							<?php endif; ?>
+						</div>
+					</div>
+
+					<div class="crm-inst-ficha-section">
+						<h4>Proyecto de Holded</h4>
+						<p class="crm-inst-field-info">Se usa para etiquetar el albarán de salida de materiales (abajo) con el proyecto correspondiente en Holded.</p>
+						<?php if ( empty( $data['holded_project_id'] ) ) : ?>
+							<p class="crm-inst-field-info">Todavía no se ha vinculado ningún proyecto de Holded a esta instalación.</p>
+							<div class="crm-inst-compra-buscador">
+								<input type="text" id="crm-inst-buscar-proyecto-input" placeholder="Buscar por nombre de proyecto o cliente…">
+								<button type="button" class="crm-btn" id="crm-inst-buscar-proyecto-btn">Buscar</button>
+							</div>
+							<div id="crm-inst-proyecto-resultados"></div>
+						<?php else : ?>
+							<span class="crm-inst-field-info">Proyecto <?php echo esc_html( $data['holded_project_id'] ); ?> vinculado.</span>
+							<button type="button" class="crm-btn" id="crm-inst-desvincular-proyecto-btn" style="background:#fee2e2;color:#991b1b;">Quitar vínculo</button>
+						<?php endif; ?>
+					</div>
+
+					</div><!-- /tab-panel facturacion -->
+
+				</div><!-- /crm-inst-tabs-wrap planificacion/facturacion -->
 
 				<?php if ( $data['cierre']['estado'] === 'aprobado' ) : ?>
 					<div class="crm-inst-ficha-section">
@@ -6444,12 +6564,17 @@ function crm_inst_shortcode_ficha() {
 
 		// v1.20.185 — pestañas para Incidencias/Notificaciones/Actividad, a
 		// petición del usuario ("mucho scroll" con las 3 secciones seguidas).
+		// v1.20.202: escopado al .crm-inst-tabs-wrap más cercano — ahora hay
+		// un segundo grupo de pestañas (Planificación/Facturación) en la
+		// misma página, y sin escopar, pulsar una pestaña de un grupo
+		// desactivaba también las del otro.
 		$('.crm-inst-tabs-nav button').on('click', function () {
+			var $wrap = $(this).closest('.crm-inst-tabs-wrap');
 			var tab = $(this).data('tab');
-			$('.crm-inst-tabs-nav button').removeClass('is-active');
+			$wrap.find('.crm-inst-tabs-nav button').removeClass('is-active');
 			$(this).addClass('is-active');
-			$('.crm-inst-tab-panel').removeClass('is-active');
-			$('.crm-inst-tab-panel[data-tab-panel="' + tab + '"]').addClass('is-active');
+			$wrap.find('.crm-inst-tab-panel').removeClass('is-active');
+			$wrap.find('.crm-inst-tab-panel[data-tab-panel="' + tab + '"]').addClass('is-active');
 		});
 
 		// v1.20.84: los botones de esta ficha usan $.post(url, datos, callback)
@@ -6685,6 +6810,26 @@ function crm_inst_shortcode_ficha() {
 					return;
 				}
 				$('#crm-inst-agenda-msg').css('color', '#065f46').text('Guardado para todos los instaladores asignados: ' + resp.data.fecha_cita_label);
+				setTimeout(function () { location.reload(); }, 700);
+			});
+		});
+
+		// v1.20.202 — botón "Enviar/Reenviar por WhatsApp" junto a cada
+		// instalador en Agenda de la visita: adelanta la confirmación de
+		// visita al cliente sin esperar al cron del día antes.
+		$('.crm-inst-reenviar-recordatorio-btn').on('click', function () {
+			var btn = $(this).prop('disabled', true);
+			$('#crm-inst-recordatorio-msg').css('color', '#6b7280').text('Enviando…');
+			$.post(ajaxurl, {
+				action: 'crm_inst_reenviar_recordatorio_whatsapp', nonce: nonce,
+				agenda_id: btn.data('agenda-id')
+			}, function (resp) {
+				btn.prop('disabled', false);
+				if (!resp.success) {
+					$('#crm-inst-recordatorio-msg').css('color', '#991b1b').text(resp.data.message);
+					return;
+				}
+				$('#crm-inst-recordatorio-msg').css('color', '#065f46').text('Enviado — se recargará la página.');
 				setTimeout(function () { location.reload(); }, 700);
 			});
 		});
@@ -7573,6 +7718,13 @@ add_filter( 'crm_roadmap_fases', function ( $fases ) {
 		'titulo'  => 'QA end-to-end de los 3 flujos validados con el cliente',
 		'estado'  => 'hecho',
 		'detalle' => '**Revisión cruzada de permisos verificada en Local (2026-10-03)**, con usuarios reales de cada rol: un instalador solo ve SUS instalaciones asignadas en su panel (una instalación de otro instalador no aparece ni en "asignadas sin fecha"), y no puede abrir la ficha de gestión (`/instalacion/?id=X`, exige `crm_inst_manage`) ni el panel de otro — solo el suyo propio. Un comercial queda bloqueado de los 3 puntos de entrada del módulo (`/instalaciones/`, la ficha, el panel del instalador) con el aviso correspondiente, Y además los endpoints AJAX sensibles (asignar instalador, cambiar estado) rechazan la petición con 403 "Sin permisos" aunque se llame directamente sin pasar por la pantalla — doble capa confirmada, no solo un candado visual. Recorrido completo de principio a fin con datos reales también cubierto esta sesión: alta → asignación de instalador(es) → agenda multi-instalador → cierre con fotos → acta + archivo final automáticos → notificación trazada en ficha de instalación y de cliente → encuesta de satisfacción. **Cerrado (2026-10-03)**: añadida la revisión cruzada que faltaba, en el módulo de VISITAS (distinto del de instalaciones) — un visitador de prueba con una única visita asignada (cliente #31) pudo abrir esa ficha y marcar SU visita como realizada, pero la ficha de un cliente sin visita asignada (#30) le devolvió "No tienes permisos"; un intento forzado por fetch directo contra `admin-post.php?action=crm_visita_estado` sobre una visita ajena (de otro comercial, con un nonce válido pero de otra visita) fue rechazado con 403 y no modificó esa fila, mientras que la petición idéntica sobre su propia visita sí se aplicó — confirmado en la base de datos antes/después. Pendiente opcional, no bloqueante: un recorrido formal con checklist escrito contra los 3 diagramas de flujo originales (instalaciones, notificación interna, notificación cliente), si se quiere un documento de QA firmado aparte de las pruebas ya realizadas.',
+	];
+
+	$fases[] = [
+		'fase'    => 'Ficha de instalación · pestañas',
+		'titulo'  => 'Reorganizar en pestañas (Planificación / Facturación) + visibilidad del aviso de WhatsApp al reprogramar',
+		'estado'  => 'en_pruebas',
+		'detalle' => 'Pedido explícito del usuario 2026-10-03: la ficha tenía 5 secciones seguidas (Facturación, Instaladores, Agenda, Proyecto Holded, Cierre) justo debajo de Materiales — mucho scroll. Reorganizada en 2 pestañas (mismo patrón ya usado para Incidencias/Notificaciones/Actividad, ahora reutilizado — el JS de pestañas se escopó al `.crm-inst-tabs-wrap` más cercano para que los dos grupos no se interfieran): "Planificación" (Instaladores asignados + Agenda de la visita + Cierre de la instalación) y "Facturación y margen" (el check de facturación + Proyecto de Holded). De paso, junto a la fecha de cada instalador en Agenda: si ya se avisó al CLIENTE por WhatsApp para confirmar la visita (y cuándo), si no, cuándo se le avisará solo (recordatorio automático del día antes, `crm_inst_aviso_calendario_run()`), y un botón "Enviar/Reenviar por WhatsApp ahora" (`crm_inst_enviar_confirmacion_whatsapp_cliente()`, factorizada del propio cron) para adelantarlo sin esperar — marca `recordatorio_enviado_en` igual que el cron, así que éste no la duplica. Construido, pendiente de probar en Local.',
 	];
 
 	return $fases;

@@ -29,7 +29,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CRM_ECOVOLT_LEADS_DEFAULT_URL', 'https://ecovolt.replanta.dev/wp-json/ecovolt/v1/leads');
+define('CRM_ECOVOLT_LEADS_DEFAULT_URL', 'https://ecovoltrenovables.com/wp-json/ecovolt/v1/leads');
 
 /**
  * Credenciales configuradas en Ajustes. El Application Password nunca se
@@ -375,7 +375,7 @@ add_filter('crm_roadmap_fases', function ($fases) {
         'fase'    => 'Ecovolt · leads web',
         'titulo'  => 'Importación incremental de leads del formulario web de Ecovolt',
         'estado'  => 'en_pruebas',
-        'detalle' => 'Especificación del lado emisor en docs/CRM-LEADS-INTEGRATION.md del proyecto Ecovolt (repo separado, no se toca desde aquí). Cron horario + botón "Sincronizar ahora" (Ajustes) piden el endpoint autenticado de Ecovolt (usuario técnico + Application Password, Basic Auth) y los insertan en la cola de Leads MK (origen_lead=\'lead_mk\'), reutilizando los helpers de duplicados y notas ya existentes. Idempotente por external_id (mismo criterio que el import de LeadKit CSV), cursor por opción avanzado y guardado lead a lead — un fallo a mitad de lote no reprocesa ni salta nada. Verificado con un script standalone (401, 403, importación, duplicados, cursor, paginación, error a mitad de lote) antes de desplegar. Pendiente: probar contra el endpoint real de Ecovolt en cuanto exista el usuario técnico.',
+        'detalle' => 'Especificación del lado emisor en docs/CRM-LEADS-INTEGRATION.md del proyecto Ecovolt (repo separado, no se toca desde aquí). Cron horario + botón "Sincronizar ahora" (Ajustes) piden el endpoint autenticado de Ecovolt (usuario técnico + Application Password, Basic Auth) y los insertan en la cola de Leads MK (origen_lead=\'lead_mk\'), reutilizando los helpers de duplicados y notas ya existentes. Idempotente por external_id (mismo criterio que el import de LeadKit CSV), cursor por opción avanzado y guardado lead a lead — un fallo a mitad de lote no reprocesa ni salta nada. Verificado con un script standalone (401, 403, importación, duplicados, cursor, paginación, error a mitad de lote) antes de desplegar. Usuario técnico ya creado en producción (ecovolt-crm, credencial "Leads MK") — "Último uso" reciente confirma que la autenticación real funciona. v1.20.199: corregida la URL por defecto del endpoint, que seguía apuntando a un dominio antiguo (`ecovolt.replanta.dev`) en vez del real (`ecovoltrenovables.com`) — sin efecto si Ajustes ya tenía la URL correcta guardada a mano, pero afectaba a cualquier entorno sin configurar (como Local). Pendiente: confirmar que "Sincronizar ahora" importa de verdad leads nuevos como filas de cliente en producción.',
     ];
     return $fases;
 });

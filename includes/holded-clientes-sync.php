@@ -387,9 +387,16 @@ function crm_holded_sync_actualizar_cliente($client_id, array $contacto) {
     // nunca el propio documento — quedaba sin marcar en la columna
     // "Documentos" del listado de clientes). Reutiliza el mismo mecanismo
     // que ya usaba el alta de instalación desde presupuesto.
+    // v1.20.199: solo se intenta si el presupuesto ya no está en borrador —
+    // Holded no genera PDF descargable para un presupuesto todavía en
+    // borrador (`GET /estimates/{id}/pdf` devuelve 404), así que antes esto
+    // reintentaba en CADA pasada de la sincro contra el mismo presupuesto
+    // sin posibilidad real de éxito, dejando un "PDF fallido" permanente en
+    // el log (detectado en producción, cliente con un presupuesto en
+    // borrador nunca enviado).
     $pdf_error     = null;
     $pdf_adjuntado = false;
-    if ($presupuesto && !empty($presupuesto['id']) && function_exists('crm_inst_adjuntar_presupuesto_holded_si_falta')) {
+    if ($presupuesto && !empty($presupuesto['id']) && !empty($presupuesto['aprobado']) && function_exists('crm_inst_adjuntar_presupuesto_holded_si_falta')) {
         $presupuesto_actualizado = crm_inst_adjuntar_presupuesto_holded_si_falta($client, $presupuesto['id'], $pdf_error);
         if ($presupuesto_actualizado !== null) {
             $update['presupuesto'] = $presupuesto_actualizado;
@@ -541,7 +548,7 @@ add_filter('crm_roadmap_fases', function ($fases) {
         'fase'    => 'Fase 2bis',
         'titulo'  => 'Sincronización periódica de clientes desde Holded (contactos + oportunidades de venta)',
         'estado'  => 'hecho',
-        'detalle' => 'Cron horario (activable en Ajustes) que crea/actualiza cada contacto type=client de Holded como cliente, con su último presupuesto, estado real, tipo (empresa/persona) y su oportunidad de venta (cantidad, probabilidad, etapa, comercial). Confirmado por el usuario contra la cuenta real: el botón "Sincronizar ahora" (Ajustes → Sincronización de clientes desde Holded) rellenó bien los códigos postales de clientes existentes (v1.20.154) al probarlo en vivo.',
+        'detalle' => 'Cron horario (activable en Ajustes) que crea/actualiza cada contacto type=client de Holded como cliente, con su último presupuesto, estado real, tipo (empresa/persona) y su oportunidad de venta (cantidad, probabilidad, etapa, comercial). Confirmado por el usuario contra la cuenta real: el botón "Sincronizar ahora" (Ajustes → Sincronización de clientes desde Holded) rellenó bien los códigos postales de clientes existentes (v1.20.154) al probarlo en vivo. v1.20.199: bug real detectado en producción (log 2026-10-03, cliente #348) — la sincro intentaba adjuntar el PDF del último presupuesto aunque siguiera en borrador; Holded no genera PDF para un presupuesto sin enviar (`GET /estimates/{id}/pdf` → 404 siempre), así que reintentaba y fallaba en CADA pasada horaria sin posibilidad real de éxito. Corregido: solo se intenta adjuntar cuando el presupuesto ya no está en borrador (`$presupuesto[\'aprobado\']`).',
     ];
     return $fases;
 });

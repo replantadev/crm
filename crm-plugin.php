@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.195
+Version: 1.20.196
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.195');
+define('CRM_PLUGIN_VERSION', '1.20.196');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -3901,8 +3901,8 @@ add_filter('crm_roadmap_fases', function ($fases) {
     $fases[] = [
         'fase'    => 'Clientes · wp-admin',
         'titulo'  => 'Listado y borrado en lote de clientes desde wp-admin → CRM → Clientes',
-        'estado'  => 'en_pruebas',
-        'detalle' => 'Pedido por el usuario para limpiar clientes de ejemplo antes de una prueba real con el equipo. El borrado ahora es de verdad completo (antes dejaba huérfanas las instalaciones del cliente y las filas del log de actividad) — cascada nueva vía crm_inst_borrar_instalacion_completa() e integrada en crm_purge_client_related_data(). Sin marcador de "cliente de prueba" en el esquema, la selección en la pantalla es manual. De paso se corrigió el botón de borrar roto (desde que se creó) de la vista frontend "Todos los clientes". Construido, sin prueba real todavía.',
+        'estado'  => 'hecho',
+        'detalle' => 'Pedido por el usuario para limpiar clientes de ejemplo antes de una prueba real con el equipo. El borrado ahora es de verdad completo (antes dejaba huérfanas las instalaciones del cliente y las filas del log de actividad) — cascada nueva vía crm_inst_borrar_instalacion_completa() e integrada en crm_purge_client_related_data(). Sin marcador de "cliente de prueba" en el esquema, la selección en la pantalla es manual. De paso se corrigió el botón de borrar roto (desde que se creó) de la vista frontend "Todos los clientes". **Verificado en Local (2026-10-03)**: cliente de prueba con una instalación, una nota y una visita vinculadas, borrado de verdad desde wp-admin → CRM → Clientes (checkbox + "Eliminar seleccionados", clic real) — las 4 filas (cliente, instalación, nota, visita) desaparecieron; solo quedó, correctamente, la entrada de auditoría "cliente_eliminado" que registra el borrado en sí (no es una fuga, es el registro de que se borró).',
     ];
     return $fases;
 });

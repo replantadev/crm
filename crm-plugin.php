@@ -3,7 +3,7 @@
 Plugin Name: CRM Energitel Avanzado
 Plugin URI: https://github.com/replantadev/crm/
 Description: Plugin avanzado para gestionar clientes con roles, panel de administración completo, sistema de logs, herramientas de backup y exportación, monitoreo en tiempo real y funcionalidades offline.
-Version: 1.20.200
+Version: 1.20.201
 Author: Luis Javier
 Author URI: https://github.com/replantadev
 Update URI: https://github.com/replantadev/crm/
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes del plugin
-define('CRM_PLUGIN_VERSION', '1.20.200');
+define('CRM_PLUGIN_VERSION', '1.20.201');
 define('CRM_PLUGIN_FILE', __FILE__);
 define('CRM_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CRM_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -212,8 +212,18 @@ function crm_enqueue_scripts()
         // Encolar DataTables (JavaScript y CSS)
         wp_enqueue_script('datatables-js', 'https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js', ['jquery'], null, true);
         wp_enqueue_style('datatables-css', 'https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css');
-
-        // Los datos ahora se definen directamente en el JavaScript inline de la tabla
+    }
+    if (is_page('mis-altas-de-cliente')) {
+        // v1.20.201: JS propio (antes inline dentro del shortcode — ver
+        // crm_lista_altas_resolver_contexto() para por qué se movió).
+        wp_enqueue_script('mis-altas-js', CRM_PLUGIN_URL . 'js/mis-altas.js', ['jquery', 'datatables-js'], CRM_PLUGIN_VERSION, true);
+        $contexto = crm_lista_altas_resolver_contexto();
+        wp_localize_script('mis-altas-js', 'crmData', [
+            'ajaxurl' => admin_url('admin-ajax.php'),
+            'nonce'   => wp_create_nonce('crm_obtener_clientes_nonce'),
+            'user_id' => $contexto['user_id'],
+            'see_all' => $contexto['see_all'],
+        ]);
     }
     if (is_page('todas-las-altas-de-cliente')) {
         // Encolar DataTables (JavaScript y CSS)
@@ -3046,6 +3056,31 @@ add_action('wp_ajax_crm_eliminar_contrato_firmado', function () {
 
 
 
+/**
+ * Resuelve qué user_id debe ver la tabla "Mis altas" y si ve todos los
+ * clientes (visitador, o admin sin ?user_id). Factorizado (v1.20.201) para
+ * que tanto el shortcode como el wp_enqueue_scripts que localiza crmData
+ * usen exactamente la misma lógica — antes solo vivía duplicada dentro del
+ * <script> inline del shortcode.
+ *
+ * @return array{user_id:int, see_all:bool}
+ */
+function crm_lista_altas_resolver_contexto() {
+    $requested_user_id = isset($_GET['user_id']) ? intval($_GET['user_id']) : null;
+    $current_user_id = get_current_user_id();
+    $is_visitador_user = function_exists('crm_user_is_visitador') && crm_user_is_visitador();
+    $is_admin_user     = function_exists('crm_user_is_admin') && crm_user_is_admin();
+    $see_all = $is_visitador_user || ($is_admin_user && !$requested_user_id);
+
+    if ($requested_user_id && current_user_can('crm_admin') && $requested_user_id !== $current_user_id) {
+        $user_id = $requested_user_id;
+        $see_all = false;
+    } else {
+        $user_id = $current_user_id;
+    }
+    return ['user_id' => $user_id, 'see_all' => $see_all];
+}
+
 add_shortcode('crm_lista_altas', 'crm_lista_altas');
 function crm_lista_altas()
 {
@@ -3056,24 +3091,10 @@ function crm_lista_altas()
     global $wpdb;
     $table_name = $wpdb->prefix . "crm_clients";
 
-    $requested_user_id = isset($_GET['user_id']) ? intval($_GET['user_id']) : null;
-
-    // Determinar si el usuario puede ver las altas de otro comercial
     $current_user_id = get_current_user_id();
-    // v1.20.16: el visitador ve TODAS las altas (de cualquier comercial)
-    // para poder abrir cualquier ficha y registrar el resultado de la visita.
-    $is_visitador_user = function_exists('crm_user_is_visitador') && crm_user_is_visitador();
-    $is_admin_user     = function_exists('crm_user_is_admin') && crm_user_is_admin();
-    $see_all = $is_visitador_user || ($is_admin_user && !$requested_user_id);
-
-    if ($requested_user_id && current_user_can('crm_admin') && $requested_user_id !== $current_user_id) {
-        // Admin viendo otro comercial
-        $user_id = $requested_user_id;
-        $see_all = false;
-    } else {
-        // Comercial viendo sus propias altas (o visitador viendo todas)
-        $user_id = $current_user_id;
-    }
+    $contexto = crm_lista_altas_resolver_contexto();
+    $user_id  = $contexto['user_id'];
+    $see_all  = $contexto['see_all'];
 
     // Obtener información del comercial si es diferente del usuario actual
     $comercial_name = '';
@@ -3142,257 +3163,12 @@ function crm_lista_altas()
         </div>
     </div>
 
-    <script>
-    // Definir crmData directamente en el script
-    window.crmData = {
-        ajaxurl: '<?php echo admin_url('admin-ajax.php'); ?>',
-        nonce: '<?php echo wp_create_nonce('crm_obtener_clientes_nonce'); ?>',
-        user_id: <?php echo $user_id; ?>,
-        see_all: <?php echo $see_all ? 'true' : 'false'; ?>
-    };
-    
-    jQuery(document).ready(function($) {
-        console.log('Energitel CRM - Inicializando tabla de clientes...');
-        
-        // Verificar si la tabla ya está inicializada y destruirla si es necesario
-        if ($.fn.DataTable.isDataTable('#crm-lista-altas')) {
-            console.log('DataTable ya existe, destruyendo...');
-            $('#crm-lista-altas').DataTable().destroy();
-            $('#crm-lista-altas tbody').empty();
-        }
-        
-        // Verificar que crmData existe
-        if (typeof crmData === 'undefined') {
-            console.error('crmData no está definido');
-            return;
-        }
-        
-        try {
-            var table = $('#crm-lista-altas').DataTable({
-            "processing": true,
-            "serverSide": false,
-            "ajax": {
-                "url": crmData.ajaxurl,
-                "type": "POST",
-                "data": function(d) {
-                    d.action = 'crm_obtener_altas';
-                    d.nonce = crmData.nonce;
-                    d.user_id = crmData.user_id;
-                    if (crmData.see_all) { d.see_all = 'true'; }
-                },
-                "dataSrc": function(json) {
-                    console.log('DataTable - Respuesta AJAX recibida:', json);
-                    if (json.success && json.data && json.data.data) {
-                        console.log('DataTable - Datos encontrados:', json.data.data.length, 'registros');
-                        return json.data.data;  // Acceder al array dentro de data.data
-                    } else {
-                        console.log('DataTable - No hay datos o error:', json);
-                        return [];
-                    }
-                },
-                "error": function(xhr, error, code) {
-                    console.error('Error en AJAX DataTables:', error, code);
-                    console.error('Respuesta del servidor:', xhr.responseText);
-                    alert('Error al cargar los datos: ' + error);
-                }
-            },
-            "columns": [
-                { 
-                    "data": "id",
-                    "className": "text-center",
-                    "width": "60px"
-                },
-                { 
-                    "data": "fecha",
-                    "render": function(data, type, row) {
-                        if (type === 'display' || type === 'type') {
-                            const date = new Date(data);
-                            return date.toLocaleDateString('es-ES', {
-                                day: '2-digit',
-                                month: '2-digit',
-                                year: '2-digit'
-                            });
-                        }
-                        return data;
-                    }
-                },
-                {
-                    "data": "cliente_nombre",
-                    "render": function(data, type, row) {
-                        // v1.20.134: mismo tratamiento condensado que
-                        // todas-las-altasv2.js (.cliente-info/.cliente-detalle
-                        // en css/crm-styles.css) — antes cada vista tenía su
-                        // propio tamaño de letra suelto en línea, ahora las 2
-                        // se ven iguales.
-                        let html = '<div class="cliente-info">';
-                        html += '<strong>' + data + '</strong>';
-                        if (row.empresa) {
-                            html += '<span class="cliente-detalle">' + row.empresa + '</span>';
-                        }
-                        if (row.email_cliente) {
-                            html += '<a href="mailto:' + row.email_cliente + '" class="cliente-detalle email-link">' + row.email_cliente + '</a>';
-                        }
-                        if (crmData.see_all && row.comercial_nombre) {
-                            html += '<span class="cliente-detalle">Comercial: ' + row.comercial_nombre + '</span>';
-                        }
-                        html += '</div>';
-                        return html;
-                    },
-                    "width": "250px"
-                },
-                { 
-                    "data": "intereses",
-                    "render": function(data, type, row) {
-                        // v1.20.14: badges minimal coherentes con el resto del CRM
-                        // (.crm-badge.sector-xxx con dot del color del sector).
-                        if (Array.isArray(data) && data.length > 0) {
-                            const labels = {
-                                energia: 'Energía', alarmas: 'Alarmas',
-                                telecomunicaciones: 'Telecom',
-                                seguros: 'Seguros', renovables: 'Renovables'
-                            };
-                            let html = '';
-                            data.slice(0, 3).forEach(function(interes) {
-                                const k = String(interes).toLowerCase();
-                                const lbl = labels[k] || interes;
-                                html += '<span class="crm-badge sector-' + k + '">' + lbl + '</span> ';
-                            });
-                            if (data.length > 3) {
-                                html += '<span class="crm-badge">+' + (data.length - 3) + '</span>';
-                            }
-                            return html;
-                        }
-                        return '<em style="color:#999;">Sin intereses</em>';
-                    },
-                    "width": "180px"
-                },
-                { 
-                    "data": "estado_por_sector",
-                    "render": function(data, type, row) {
-                        // v1.20.14: pills minimal con escala HSL por sector y paso.
-                        const stepMap = {
-                            borrador: 0, enviado: 1,
-                            presupuesto_generado: 2, presupuesto_aceptado: 3,
-                            contratos_generados: 4, contratos_firmados: 5
-                        };
-                        const abre = {
-                            energia: 'Energía', alarmas: 'Alarmas',
-                            telecomunicaciones: 'Telecom',
-                            seguros: 'Seguros', renovables: 'Renovables'
-                        };
-                        function pill(sector, estado) {
-                            const sec = String(sector).toLowerCase();
-                            const step = stepMap[estado] ?? 0;
-                            const lbl = getEstadoLabel(estado);
-                            return '<span class="crm-estado-pill" data-sector="' + sec + '" data-step="' + step + '" title="' + (abre[sec] || sec) + ' · ' + lbl + '">' +
-                                   '<span class="crm-estado-pill__dot" aria-hidden="true"></span>' +
-                                   '<span class="crm-estado-pill__sector">' + (abre[sec] || sec) + '</span>' +
-                                   '<span class="crm-estado-pill__sep" aria-hidden="true">·</span>' +
-                                   '<span class="crm-estado-pill__estado">' + lbl + '</span>' +
-                                   '</span>';
-                        }
-                        if (data && typeof data === 'object' && Object.keys(data).length > 0) {
-                            let html = '<div style="display:flex; flex-wrap:wrap; gap:4px;">';
-                            Object.entries(data).forEach(function(pair) {
-                                html += pill(pair[0], pair[1]);
-                            });
-                            html += '</div>';
-                            return html;
-                        }
-                        return pill('energia', row.estado || 'borrador');
-                    }
-                },
-                { 
-                    "data": "actualizado_en",
-                    "render": function(data, type, row) {
-                        if (type === 'display' || type === 'type') {
-                            if (data) {
-                                const date = new Date(data);
-                                const day = date.getDate().toString().padStart(2, '0');
-                                const month = (date.getMonth() + 1).toString().padStart(2, '0');
-                                const hours = date.getHours().toString().padStart(2, '0');
-                                const minutes = date.getMinutes().toString().padStart(2, '0');
-                                return day + '/' + month + ' ' + hours + ':' + minutes + 'h';
-                            }
-                        }
-                        return data || '-';
-                    },
-                    "width": "100px"
-                },
-                { 
-                    "data": "id",
-                    "orderable": false,
-                    "className": "text-center",
-                    "render": function(data, type, row) {
-                        const editUrl = window.location.origin + '/editar-cliente/?client_id=' + data;
-                        // v1.20.8: SVG sobrio en vez de emoji+bg azul.
-                        const svgPencil = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M227.31,73.37,182.63,28.69a16,16,0,0,0-22.62,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96A16,16,0,0,0,227.31,73.37Z"/></svg>';
-                        return '<div class="action-buttons">' +
-                               '<a href="' + editUrl + '" class="action-btn action-btn--edit" title="Editar cliente" aria-label="Editar cliente">' + svgPencil + '</a>' +
-                               '</div>';
-                    },
-                    "width": "80px"
-                }
-            ],
-            "language": {
-                "url": "//cdn.datatables.net/plug-ins/1.13.4/i18n/es-ES.json"
-            },
-            "pageLength": 15,
-            "responsive": true,
-            "dom": '<"top"fl>rt<"bottom"ip><"clear">',
-            "order": [[ 5, "desc" ]], // Ordenar por fecha actualizada (nueva posición)
-            "columnDefs": [
-                { "targets": [6], "orderable": false }  // Columna de acciones no ordenable
-            ]
-        });
-
-        // Función para obtener etiquetas de estado
-        function getEstadoLabel(estado) {
-            const labels = {
-                'borrador': 'Sin enviar',
-                'enviado': 'Enviado',
-                'presupuesto_generado': 'Presupuesto Generado',
-                'presupuesto_aceptado': 'Presupuesto Aceptado',
-                'contratos_generados': 'Contratos Generados',
-                'contratos_firmados': 'Contratos Firmados'
-            };
-            return labels[estado] || estado;
-        }
-
-        // Función para eliminar cliente
-        window.eliminarCliente = function(clienteId) {
-            if (confirm('¿Estás seguro de que quieres eliminar este cliente?')) {
-                $.ajax({
-                    url: crmData.ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'crm_borrar_cliente',
-                        nonce: crmData.nonce,
-                        client_id: clienteId
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            table.ajax.reload();
-                            alert('Cliente eliminado correctamente');
-                        } else {
-                            alert('Error: ' + response.data.message);
-                        }
-                    },
-                    error: function() {
-                        alert('Error al conectar con el servidor');
-                    }
-                });
-            }
-        };
-        
-        } catch (error) {
-            console.error('Error inicializando DataTable:', error);
-        }
-    });
-    </script>
-
 
 <?php
+    // v1.20.201: el JS vive ahora en js/mis-altas.js (enqueued con
+    // wp_localize_script) — ver crm_enqueue_scripts(). Antes era un <script>
+    // inline aquí mismo, y el contenido de la página lo corrompía (ver
+    // comentario en ese fichero).
     return ob_get_clean();
 }
 

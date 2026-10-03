@@ -5027,6 +5027,12 @@ function crm_inst_shortcode_listado() {
 	<style>
 	.crm-inst-holded-wrap { max-width:1100px; margin:0 auto; padding:18px; font-family:system-ui,-apple-system,sans-serif; }
 	.crm-inst-holded-wrap .widget-header-compact { flex-wrap:wrap; gap:10px; }
+	.crm-inst-holded-wrap #crm-inst-export-csv {
+		display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 14px; margin-left:0;
+		border-radius:999px; border:1px solid var(--crm-n-200,#e4e4e7); background:var(--crm-n-0,#fff);
+		color:var(--crm-n-700,#3f3f46); font-size:13px; font-weight:600; text-decoration:none; white-space:nowrap;
+	}
+	.crm-inst-holded-wrap #crm-inst-export-csv:hover { background:var(--crm-n-50,#fafafa); border-color:var(--crm-n-300,#d4d4d8); }
 	.crm-inst-holded-wrap .crm-inst-filtros { display:flex; gap:8px; flex-wrap:wrap; margin:16px 0; align-items:center; }
 	.crm-inst-holded-wrap input[type="text"],
 	.crm-inst-holded-wrap select { padding:8px 10px; border:1px solid #e5e7eb; border-radius:6px; font-size:13px; color:#374151; }
@@ -5047,7 +5053,7 @@ function crm_inst_shortcode_listado() {
 		<div class="crm-widget-compact">
 			<div class="widget-header-compact">
 				<h3 class="widget-title-compact">Instalaciones</h3>
-				<a href="#" id="crm-inst-export-csv" class="crm-btn"><?php echo crm_icon( 'file-text', 14 ); ?> Exportar CSV</a>
+				<a href="#" id="crm-inst-export-csv"><?php echo crm_icon( 'file-text', 14 ); ?> Exportar CSV</a>
 				<a href="<?php echo esc_url( home_url( '/encuestas-de-satisfaccion/' ) ); ?>" class="crm-btn">Encuestas de satisfacción</a>
 				<a href="<?php echo esc_url( $nueva_url ); ?>" class="crm-btn">+ Nueva instalación</a>
 			</div>

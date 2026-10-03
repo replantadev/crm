@@ -415,18 +415,20 @@ function crm_inst_panel_get_asignadas_sin_fecha($user_id) {
  * él solo (checklist, materiales, extras, cierre son varias piezas a la vez).
  */
 function crm_inst_panel_siguiente_paso_texto(array $v) {
-    if ($v['estado'] === 'finalizada') {
-        return 'Instalación completada. No queda ninguna acción pendiente.';
-    }
+    $nota_incidencias = ' ¿Algo va mal (material dañado, acceso imposible...)? Usa "+ Reportar incidencia": queda registrado y avisa a tus jefes, pero no bloquea ni retrasa nada.';
+
     if ($v['estado'] === 'cancelada') {
         return 'Instalación cancelada.';
     }
+    if ($v['estado'] === 'finalizada') {
+        return 'Instalación completada. No queda ninguna acción pendiente.' . $nota_incidencias;
+    }
     if (!empty($v['cierre_estado'])) {
         if ($v['cierre_estado'] === 'declarado') {
-            return 'Cierre enviado — esperando que tu jefe de instalaciones lo apruebe.';
+            return 'Cierre enviado — esperando que tu jefe de instalaciones lo apruebe.' . $nota_incidencias;
         }
         if ($v['cierre_estado'] === 'rechazado') {
-            return 'Tu jefe rechazó el cierre anterior. Corrígelo y vuelve a declararlo cuando puedas.';
+            return 'Tu jefe rechazó el cierre anterior. Corrígelo y vuelve a declararlo cuando puedas.' . $nota_incidencias;
         }
     }
     if (!empty($v['checklist_confirmado_en'])) {
@@ -440,7 +442,7 @@ function crm_inst_panel_siguiente_paso_texto(array $v) {
         if ($extras_sin_resolver > 0) {
             $texto .= ' Tienes ' . $extras_sin_resolver . ' partida(s) extra sin resolver todavía.';
         }
-        return $texto;
+        return $texto . $nota_incidencias;
     }
     $materiales_sin_recibir = 0;
     foreach ($v['materiales'] as $m) {
@@ -449,9 +451,9 @@ function crm_inst_panel_siguiente_paso_texto(array $v) {
         }
     }
     if ($materiales_sin_recibir > 0) {
-        return 'Todavía faltan ' . $materiales_sin_recibir . ' material(es) por recibir en almacén. En cuanto lleguen todos podrás confirmar el checklist para empezar.';
+        return 'Todavía faltan ' . $materiales_sin_recibir . ' material(es) por recibir en almacén. En cuanto lleguen todos podrás confirmar el checklist para empezar.' . $nota_incidencias;
     }
-    return 'Todos los materiales están en almacén. Confirma el checklist de materiales y plan de seguridad para poder empezar a trabajar.';
+    return 'Todos los materiales están en almacén. Confirma el checklist de materiales y plan de seguridad para poder empezar a trabajar.' . $nota_incidencias;
 }
 
 /**
@@ -846,6 +848,15 @@ function crm_inst_panel_shared_css(array $settings) {
     .crm-panel-inst-extra-materiales-resultados li:hover { background:#f3f4f6; }
     .crm-panel-inst-extra-foto-label { flex:1 1 100%; font-size:12.5px; font-weight:600; color:#374151; margin-bottom:-2px; }
     .crm-panel-inst-extra-msg { font-size:12px; }
+    .crm-panel-inst-incidencias { margin-top:10px; }
+    .crm-panel-inst-incidencias-lista { list-style:none; margin:0 0 8px; padding:0; display:flex; flex-direction:column; gap:6px; }
+    .crm-panel-inst-incidencias-lista li { font-size:12.5px; color:#374151; display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+    .crm-panel-inst-incidencia-en-curso-btn, .crm-panel-inst-incidencia-resolver-btn { background:none; border:1px solid #d1d5db; color:#374151; font-size:11px; font-weight:600; cursor:pointer; padding:4px 8px; border-radius:6px; }
+    .crm-panel-inst-incidencia-form-wrap { margin-top:10px; }
+    .crm-panel-inst-incidencia-toggle { background:none; border:1px solid #fbbf24; color:#92400e; font-size:12px; font-weight:600; cursor:pointer; padding:6px 10px; border-radius:6px; }
+    .crm-panel-inst-incidencia-form { display:flex; flex-direction:column; gap:6px; margin-top:8px; padding:8px; background:#f9fafb; border-radius:8px; }
+    .crm-panel-inst-incidencia-form input[type="text"], .crm-panel-inst-incidencia-form textarea { font-family:inherit; padding:6px 8px; border:1px solid #e5e7eb; border-radius:6px; font-size:13px; resize:vertical; }
+    .crm-panel-inst-incidencia-msg { font-size:12px; }
     .crm-panel-modal-backdrop { position:fixed; inset:0; background:rgba(17,24,39,.5); display:flex; align-items:center; justify-content:center; z-index:9999; padding:16px; }
     .crm-panel-modal { background:#fff; border-radius:10px; padding:20px; max-width:380px; width:100%; box-shadow:0 10px 30px rgba(0,0,0,.2); }
     .crm-panel-modal h3 { margin:0 0 12px; font-size:15px; color:#1f2937; }
